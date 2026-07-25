@@ -25,6 +25,32 @@ const uint32_t PALETTE[C_COUNT] = {
     [C_WARN]      = 0xE0B33F,
     [C_GREEN]     = 0x6FA84B,
     [C_RUST]      = 0xA84B20,
+    [C_SKY_HI]    = 0x7A6A5A,   // dust-choked zenith
+    [C_SKY_MID]   = 0xB08A5E,
+    [C_SUN]       = 0xF7E0A8,
+    [C_SUN_GLOW]  = 0xE8B060,
+    [C_DUNE_MID]  = 0x7A6044,
+    [C_DUST]      = 0xD8C098,
+    [C_PANEL_HI]  = 0x4A3D2C,   // lit bevel edge
+    [C_PANEL_LO]  = 0x140F0A,   // shaded bevel edge
+};
+
+// ---------------------------------------------------------------- maths
+int32_t isin(int32_t a) {
+    a &= 2047;
+    int32_t sign = 1;
+    if (a >= 1024) { a -= 1024; sign = -1; }
+    int32_t u = a * (1024 - a);              // 0 .. 262144
+    int32_t v = (int32_t)((16LL * u * 256) / (5242880 - 4 * u));
+    return sign * v;                          // -256 .. 256
+}
+
+// 4x4 ordered dither. Values are the standard Bayer matrix scaled 0..15.
+static const uint8_t BAYER[16] = {
+     0,  8,  2, 10,
+    12,  4, 14,  6,
+     3, 11,  1,  9,
+    15,  7, 13,  5
 };
 
 // ---------------------------------------------------------------- font 8x8
@@ -176,6 +202,74 @@ void fill_rect(Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb) {
     }
 }
 
+void fill_vgrad(Framebuffer *fb, int x, int y, int w, int h,
+                uint32_t top, uint32_t bot) {
+    if (h <= 0) return;
+    int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    int x1 = x + w, y1 = y + h;
+    if (x1 > fb->w) x1 = fb->w;
+    if (y1 > fb->h) y1 = fb->h;
+
+    for (int py = y0; py < y1; ++py) {
+        int t = (py - y) * 17 / h;            // 0..16 down the band
+        uint32_t *row = fb->pixels + py * fb->w;
+        const uint8_t *brow = BAYER + ((py & 3) << 2);
+        for (int px = x0; px < x1; ++px)
+            row[px] = (t > brow[px & 3]) ? bot : top;
+    }
+}
+
+void fill_scrim(Framebuffer *fb, int x, int y, int w, int h,
+                uint32_t rgb, int level) {
+    int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    int x1 = x + w, y1 = y + h;
+    if (x1 > fb->w) x1 = fb->w;
+    if (y1 > fb->h) y1 = fb->h;
+    for (int py = y0; py < y1; ++py) {
+        uint32_t *row = fb->pixels + py * fb->w;
+        const uint8_t *brow = BAYER + ((py & 3) << 2);
+        for (int px = x0; px < x1; ++px)
+            if (level > brow[px & 3]) row[px] = rgb;
+    }
+}
+
+void fill_glow(Framebuffer *fb, int cx, int cy, int r, uint32_t rgb, int peak) {
+    if (r <= 0) return;
+    int y0 = cy - r < 0 ? 0 : cy - r, y1 = cy + r;
+    int x0 = cx - r < 0 ? 0 : cx - r, x1 = cx + r;
+    if (y1 > fb->h) y1 = fb->h;
+    if (x1 > fb->w) x1 = fb->w;
+    int rr = r * r;
+
+    for (int py = y0; py < y1; ++py) {
+        int dy = py - cy;
+        uint32_t *row = fb->pixels + py * fb->w;
+        const uint8_t *brow = BAYER + ((py & 3) << 2);
+        for (int px = x0; px < x1; ++px) {
+            int dx = px - cx;
+            int d2 = dx * dx + dy * dy;
+            if (d2 >= rr) continue;
+            int level = peak - peak * d2 / rr;   // dense centre, thin rim
+            if (level > brow[px & 3]) row[px] = rgb;
+        }
+    }
+}
+
+void fill_disc(Framebuffer *fb, int cx, int cy, int r, uint32_t rgb) {
+    if (r <= 0) return;
+    int y0 = cy - r < 0 ? 0 : cy - r, y1 = cy + r;
+    if (y1 > fb->h) y1 = fb->h;
+    int rr = r * r;
+    for (int py = y0; py < y1; ++py) {
+        int dy = py - cy, span = rr - dy * dy;
+        if (span < 0) continue;
+        // Integer square root by descent; radii here are small.
+        int dx = 0;
+        while ((dx + 1) * (dx + 1) <= span) ++dx;
+        fill_rect(fb, cx - dx, py, dx * 2, 1, rgb);
+    }
+}
+
 void draw_rect(Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb) {
     fill_rect(fb, x, y, w, 1, rgb);
     fill_rect(fb, x, y + h - 1, w, 1, rgb);
@@ -183,9 +277,30 @@ void draw_rect(Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb) {
     fill_rect(fb, x + w - 1, y, 1, h, rgb);
 }
 
+// Two rows of increasingly transparent-looking shadow. There is no alpha in the
+// framebuffer, so the "softness" comes from stepping through darker browns.
+void draw_drop(Framebuffer *fb, int x, int y, int w, int h) {
+    fill_rect(fb, x + 6, y + h, w, 3, 0x241C13);
+    fill_rect(fb, x + w, y + 6, 3, h - 3, 0x241C13);
+    fill_rect(fb, x + 4, y + h + 3, w, 2, 0x2E251A);
+    fill_rect(fb, x + w + 3, y + 4, 2, h, 0x2E251A);
+}
+
+void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset) {
+    uint32_t lit = PALETTE[inset ? C_PANEL_LO : C_PANEL_HI];
+    uint32_t shd = PALETTE[inset ? C_PANEL_HI : C_PANEL_LO];
+    fill_rect(fb, x, y, w, 1, lit);
+    fill_rect(fb, x, y, 1, h, lit);
+    fill_rect(fb, x, y + h - 1, w, 1, shd);
+    fill_rect(fb, x + w - 1, y, 1, h, shd);
+}
+
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h) {
-    fill_rect(fb, x, y, w, h, PALETTE[C_PANEL]);
-    draw_rect(fb, x, y, w, h, PALETTE[C_BORDER]);
+    draw_drop(fb, x, y, w, h);
+    // A faint internal ramp stops large panels reading as flat slabs.
+    fill_vgrad(fb, x, y, w, h, PALETTE[C_PANEL], PALETTE[C_INK]);
+    draw_bevel(fb, x, y, w, h, 0);
+    draw_rect(fb, x + 1, y + 1, w - 2, h - 2, PALETTE[C_BORDER]);
 }
 
 void draw_line(Framebuffer *fb, int x0, int y0, int x1, int y1, uint32_t rgb) {

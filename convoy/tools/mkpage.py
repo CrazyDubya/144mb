@@ -50,6 +50,8 @@ def main():
     gif = uri(os.path.join(MEDIA, "run.gif"), "image/gif")
     pct = BYTES_USED * 100.0 / LIMIT
 
+    win = uri(os.path.join(MEDIA, "windows.png"), "image/png")
+
     stills_html = []
     for fn, title, caption in STILLS:
         src = uri(os.path.join(MEDIA, fn), "image/png")
@@ -72,6 +74,7 @@ def main():
         "barpct": "%.3f" % max(pct, 0.45),   # keep the sliver visible
         "stills": "\n".join(stills_html),
         "facts": facts_html,
+        "win": win,
     }
     with open(OUT, "w") as f:
         f.write(html)
@@ -256,6 +259,25 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
     </p>
   </div>
 
+  <h2>Proof it runs on Windows</h2>
+  <p>
+    Everything above was rendered by a Linux build on a machine with no display
+    that cannot execute a Windows binary at all. So until this screenshot existed,
+    the submission target had never run anywhere &mdash; the riskiest kind of
+    untested code, since it is the only version that will ever be judged.
+  </p>
+  <div class="run">
+    <img src="%(win)s" alt="Convoy running in a window on Windows Server 2025" />
+    <p class="cap">
+      Captured automatically on a GitHub Actions <span class="mono">windows-latest</span>
+      runner: the build launches, survives ten seconds of the real message loop,
+      and screenshots itself. The pixels are identical to the Linux renders. The
+      runner has no sound card, so the audio layer detected the missing device and
+      disabled itself instead of failing to start &mdash; the exact failure that
+      would otherwise surface first on a judge's machine.
+    </p>
+  </div>
+
   <h2>What a player sees</h2>
   <p>
     Nothing on screen is written in any language. Meaning is carried by icon,
@@ -274,9 +296,9 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
 
   <h2>What is proven, and what is not</h2>
   <p>
-    Every rule below was verified by tracing the simulation or by inspecting
-    rendered frames &mdash; not by assuming. The last row is the one that matters:
-    the submission binary has never executed on the platform it targets.
+    Every row below was verified by tracing the simulation, measuring rendered
+    output, or running the binary &mdash; not by assuming. What remains is
+    tuning, which needs a human playing rather than a bot.
   </p>
   <div class="tbl">
     <table>
@@ -297,8 +319,14 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
           <td>Peak and DC measured over rendered output</td>
           <td class="n yes">&minus;2.1 dB</td></tr>
       <tr><td>Runs on Windows</td>
-          <td>Not yet tested on any Windows machine</td>
-          <td class="n no">unproven</td></tr>
+          <td>Launched and screenshotted on a windows-latest runner</td>
+          <td class="n yes">verified</td></tr>
+      <tr><td>Survives a machine with no sound card</td>
+          <td>The CI runner has none; the game started anyway</td>
+          <td class="n yes">verified</td></tr>
+      <tr><td>Balanced, and finished</td>
+          <td>Win and lose screens are still placeholder</td>
+          <td class="n no">not yet</td></tr>
     </table>
   </div>
 

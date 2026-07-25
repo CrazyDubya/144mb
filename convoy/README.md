@@ -2,7 +2,7 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**72,192 bytes — 4.90% of 1,474,560.**
+**77,824 bytes — 5.28% of 1,474,560.**
 
 You run a convoy east across eight sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
@@ -30,10 +30,15 @@ storms take water and fuel, and an empty hold is death. You die broke.
 Routes burn out behind you, so the pressure to push into the dangerous outer
 sectors is economic rather than an artificial timer.
 
-You start with six fuel and the Green Zone is seven hops away, which means
-reaching it is arithmetically impossible without trading. Measured over 60 seeds:
-a bot that buys fuel wins **38%** of runs; one that ignores the economy wins
-**0%**.
+You start with five fuel and the Green Zone is seven hops away, so reaching it
+is arithmetically impossible without trading. Fuel also gets dearer the further
+east you go, which means the run grows harder to afford exactly as it grows
+harder to survive.
+
+Measured over 200 seeds: a bot that buys fuel at every market wins **27%** of
+runs; one that ignores the economy wins **0%** and dies in 148 of them. Those
+bots follow fixed key sequences, so they cannot react to prices — they measure
+the floor, not the ceiling. Arbitrage is what a human adds.
 
 ## Controls
 
@@ -104,8 +109,11 @@ PIL.
 
 ## Status
 
-Mechanically complete and verified by trace: markets, travel, five encounter
-types, three death conditions, win condition. Zero crashes across 200 seeds.
+Version 1. Title screen, procedural backdrop, five encounter types, three death
+conditions, win condition, procedural audio, balanced. Zero crashes across 300
+seeds. Verified running on Windows by CI, which launches the binary and
+screenshots it on every push.
 
-Not done: balance tuning, win and lose screens are placeholder, and **the binary
-has never been run on Windows** — that is what CI is for.
+The backdrop is generated every frame and stored nowhere: a Bayer-dithered sky,
+three parallax dune layers summed from sines, a dithered sun corona, and dust
+motes derived from the tick counter so they carry no state.

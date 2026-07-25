@@ -6,6 +6,7 @@
 #include "render.h"
 #include "world.h"
 #include "audio.h"
+#include "scene.h"
 
 typedef struct {
     World      w;
@@ -13,6 +14,7 @@ typedef struct {
     uint32_t   seed;
     int        sel;        // selected good on the trade screen
     int        map_sel;    // index into the reachable-node list on the map
+    int        title;      // showing the title screen rather than a run
     AudioState audio;
 } GameState;
 
@@ -41,8 +43,9 @@ static void restart(GameState *gs, uint32_t seed) {
 
 void game_init(GameMemory *mem, uint32_t seed) {
     GameState *gs = (GameState *)mem->permanent;
-    gs->tick = 0;
-    gs->seed = seed ? seed : 1u;
+    gs->tick  = 0;
+    gs->seed  = seed ? seed : 1u;
+    gs->title = 1;
     restart(gs, gs->seed);
     audio_init(&gs->audio, gs->seed);
     mem->initialized = 1;
@@ -105,6 +108,10 @@ static void draw_map(Framebuffer *fb, GameState *gs) {
 
     int cand[NODES_PER], ncand = reachable(w, cand);
 
+    // No scrim behind the route: any band wide enough to help leaves a visible
+    // hard edge across the screen, and the nodes carry enough contrast alone
+    // now that they have ink backing and drop shadows.
+
     // Links first, so nodes sit on top of them.
     for (int s = 0; s < SECTORS - 1; ++s) {
         for (int n = 0; n < NODES_PER; ++n) {
@@ -127,15 +134,39 @@ static void draw_map(Framebuffer *fb, GameState *gs) {
             uint32_t c = node_colour(nd->type);
 
             if (nd->type == NODE_GREEN) {
-                fill_rect(fb, x - 2, y - 2, 24, 24, c);
-                draw_rect(fb, x - 2, y - 2, 24, 24, PALETTE[C_BONE]);
+                // The goal: a lit block with a growing thing on it, the only
+                // green in the world.
+                draw_drop(fb, x - 4, y - 4, 28, 28);
+                fill_rect(fb, x - 4, y - 4, 28, 28, PALETTE[C_GREEN]);
+                fill_rect(fb, x - 4, y + 20, 28, 4, PALETTE[C_ROAD]);
+                draw_bevel(fb, x - 4, y - 4, 28, 28, 0);
+                fill_rect(fb, x + 9, y + 4, 2, 14, PALETTE[C_BONE]);
+                fill_rect(fb, x + 4, y + 6, 12, 2, PALETTE[C_BONE]);
+                fill_rect(fb, x + 6, y + 10, 8, 2, PALETTE[C_BONE]);
             } else if (nd->type == NODE_EMPTY) {
-                fill_rect(fb, x + 6, y + 6, 8, 8, c);
+                fill_rect(fb, x + 7, y + 7, 6, 6, PALETTE[C_INK]);
+                fill_rect(fb, x + 8, y + 8, 4, 4, c);
             } else {
+                draw_drop(fb, x, y, 20, 20);
                 fill_rect(fb, x, y, 20, 20, PALETTE[C_INK]);
-                fill_rect(fb, x + 3, y + 3, 14, 14, c);
-                if (nd->type == NODE_EVENT)
+                // Flat badge: the inner mark is drawn in ink, so the field
+                // behind it has to stay bright the whole way down.
+                fill_rect(fb, x + 2, y + 2, 16, 16, c);
+                fill_rect(fb, x + 2, y + 16, 16, 2, PALETTE[C_ROAD]);
+                draw_bevel(fb, x, y, 20, 20, 0);
+
+                if (nd->type == NODE_EVENT) {
                     draw_glyph(fb, x + 6, y + 6, G_X, 1, PALETTE[C_INK]);
+                } else if (nd->type == NODE_HAZARD) {
+                    // Stacked bars: a storm front.
+                    fill_rect(fb, x + 4, y + 6,  12, 2, PALETTE[C_INK]);
+                    fill_rect(fb, x + 6, y + 10, 10, 2, PALETTE[C_INK]);
+                    fill_rect(fb, x + 4, y + 14, 12, 2, PALETTE[C_INK]);
+                } else {
+                    // Settlement: a roofline.
+                    fill_rect(fb, x + 5, y + 10, 10, 6, PALETTE[C_INK]);
+                    fill_rect(fb, x + 7, y + 6,   6, 4, PALETTE[C_INK]);
+                }
             }
 
             if (nd->visited) draw_rect(fb, x - 1, y - 1, 22, 22, PALETTE[C_DIM]);
@@ -310,29 +341,119 @@ static void draw_event(Framebuffer *fb, GameState *gs) {
 }
 
 // ---------------------------------------------------------------- end
+// A row of "icon xN" summary figures, centred as a group.
+static void draw_summary(Framebuffer *fb, const World *w, int cx, int y) {
+    const int items[3] = { ICON_WATER, ICON_FUEL, ICON_SCRAP };
+    const int vals[3]  = { w->held[G_WATER], w->held[G_FUEL], world_cargo(w) };
+    int total = 0;
+    for (int i = 0; i < 3; ++i) total += 34 + number_w(vals[i], 2) + 22;
+
+    int x = cx - total / 2;
+    for (int i = 0; i < 3; ++i) {
+        draw_icon(fb, x, y, items[i], 1);
+        x += 22;
+        x += draw_number(fb, x, y + 4, vals[i], 2, PALETTE[C_BONE]) + 34;
+    }
+}
+
+static void draw_title(Framebuffer *fb, GameState *gs) {
+    scene_draw(fb, gs->tick, 0, 20);
+
+    // The convoy drives the width of the screen and wraps, so the title screen
+    // is never still.
+    int drive = (int)((gs->tick * 2) % (uint32_t)(fb->w + 260)) - 200;
+    draw_convoy(fb, drive, fb->h / 2 - 30, 4, gs->tick, 0);
+
+    // The goal, waiting at the right-hand edge.
+    int gx = fb->w - 70, gy = fb->h / 2 - 34;
+    draw_drop(fb, gx, gy, 40, 40);
+    fill_rect(fb, gx, gy, 40, 40, PALETTE[C_GREEN]);
+    fill_rect(fb, gx, gy + 32, 40, 8, PALETTE[C_ROAD]);
+    draw_bevel(fb, gx, gy, 40, 40, 0);
+    fill_rect(fb, gx + 18, gy + 10, 4, 22, PALETTE[C_BONE]);
+    fill_rect(fb, gx + 10, gy + 14, 20, 4, PALETTE[C_BONE]);
+    fill_rect(fb, gx + 13, gy + 22, 14, 4, PALETTE[C_BONE]);
+
+    // Controls, shown rather than described.
+    const int py = fb->h - 96;
+    draw_panel(fb, fb->w / 2 - 190, py, 380, 60);
+
+    int x = fb->w / 2 - 172;
+    draw_glyph(fb, x, py + 24, G_UP,   2, PALETTE[C_DIM]);
+    draw_glyph(fb, x + 14, py + 24, G_DOWN, 2, PALETTE[C_DIM]);
+    x += 44;
+
+    x += draw_key(fb, x, py + 18, G_KEY_Z, 2) + 6;
+    draw_glyph(fb, x, py + 24, G_PLUS, 2, PALETTE[C_GOOD]);
+    x += glyph_w(2) + 26;
+
+    x += draw_key(fb, x, py + 18, G_X, 2) + 6;
+    draw_glyph(fb, x, py + 24, G_MINUS, 2, PALETTE[C_BAD]);
+    x += glyph_w(2) + 26;
+
+    x += draw_key(fb, x, py + 18, G_ENTER, 2) + 6;
+    draw_glyph(fb, x, py + 24, G_RIGHT, 2, PALETTE[C_BONE]);
+
+    // Start prompt, pulsing so it reads as the thing to press.
+    if ((gs->tick / 24) & 1) {
+        int kx = fb->w / 2 - key_w(3) / 2;
+        draw_key(fb, kx, py - 52, G_ENTER, 3);
+    }
+}
+
 static void draw_end(Framebuffer *fb, GameState *gs, int won) {
     World *w = &gs->w;
-    fill_rect(fb, 0, 0, fb->w, fb->h,
-              won ? PALETTE[C_GREEN] : PALETTE[C_INK]);
-    const int x = fb->w / 2 - 120, y = fb->h / 2 - 70;
-    draw_panel(fb, x, y, 240, 140);
+
+    scene_draw(fb, gs->tick, won ? SECTORS - 1 : w->sector, won ? 0 : 200);
+    // Wash the whole scene toward triumph or toward dust.
+    fill_scrim(fb, 0, 0, fb->w, fb->h,
+               won ? PALETTE[C_GREEN] : PALETTE[C_INK], won ? 4 : 8);
+
+    int cx = fb->w / 2;
 
     if (won) {
-        fill_rect(fb, x + 100, y + 24, 40, 40, PALETTE[C_GREEN]);
+        // Parked at the Green Zone.
+        int gx = cx + 60, gy = fb->h / 2 - 70;
+        draw_drop(fb, gx, gy, 46, 46);
+        fill_rect(fb, gx, gy, 46, 46, PALETTE[C_GREEN]);
+        fill_rect(fb, gx, gy + 38, 46, 8, PALETTE[C_ROAD]);
+        draw_bevel(fb, gx, gy, 46, 46, 0);
+        fill_rect(fb, gx + 21, gy + 10, 4, 28, PALETTE[C_BONE]);
+        fill_rect(fb, gx + 12, gy + 16, 22, 4, PALETTE[C_BONE]);
+        draw_convoy(fb, cx - 150, fb->h / 2 - 60, 3, gs->tick, 0);
     } else {
-        // Cause of death as an icon, not a sentence.
-        int icon = w->death == DEATH_THIRST    ? ICON_WATER :
-                   w->death == DEATH_STRANDED  ? ICON_FUEL  : ICON_SCRAP;
-        draw_icon(fb, x + 104, y + 24, icon, 2);
-        draw_glyph(fb, x + 150, y + 34, G_X, 3, PALETTE[C_BAD]);
+        draw_convoy(fb, cx - 40, fb->h / 2 - 60, 3, gs->tick, 1);
     }
 
-    // Final score: day reached and credits.
-    draw_number(fb, x + 40, y + 84, w->day, 2, PALETTE[C_BONE]);
-    draw_number(fb, x + 140, y + 84, w->credits, 2, PALETTE[C_WARN]);
+    // What ended the run, as an icon with a cross through it.
+    const int py = fb->h - 150;
+    draw_panel(fb, cx - 180, py, 360, 108);
 
-    // Run it again.
-    draw_key(fb, x + 108, y + 108, G_ENTER, 2);
+    if (!won) {
+        int icon = w->death == DEATH_THIRST   ? ICON_WATER :
+                   w->death == DEATH_STRANDED ? ICON_FUEL  : ICON_SCRAP;
+        draw_icon(fb, cx - 150, py + 18, icon, 2);
+        draw_glyph(fb, cx - 112, py + 26, G_X, 3, PALETTE[C_BAD]);
+    } else {
+        // Arrival is stated with the Green Zone's own mark, not a health icon.
+        int bx = cx - 150, by = py + 18;
+        fill_rect(fb, bx, by, 32, 32, PALETTE[C_GREEN]);
+        fill_rect(fb, bx, by + 26, 32, 6, PALETTE[C_ROAD]);
+        draw_bevel(fb, bx, by, 32, 32, 0);
+        fill_rect(fb, bx + 14, by + 7, 4, 19, PALETTE[C_BONE]);
+        fill_rect(fb, bx + 8,  by + 11, 16, 4, PALETTE[C_BONE]);
+        fill_rect(fb, bx + 10, by + 18, 12, 3, PALETTE[C_BONE]);
+    }
+
+    // Day reached and credits banked: the score.
+    int x = cx - 40;
+    x += draw_number(fb, x, py + 26, w->day, 3, PALETTE[C_BONE]) + 28;
+    draw_number(fb, x, py + 26, w->credits, 3, PALETTE[C_WARN]);
+
+    draw_summary(fb, w, cx, py + 66);
+
+    if ((gs->tick / 24) & 1)
+        draw_key(fb, cx - key_w(2) / 2, py + 88, G_ENTER, 2);
 }
 
 // ---------------------------------------------------------------- update
@@ -340,6 +461,18 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     GameState *gs = (GameState *)mem->permanent;
     World *w = &gs->w;
     gs->tick++;
+
+    if (gs->title) {
+        if (in->pressed[BTN_START] || in->pressed[BTN_A]) {
+            gs->title = 0;
+            // Deterministic from the seed handed in at init, so a given seed
+            // always produces the same run for testing. Replays from the end
+            // screen vary instead.
+            restart(gs, gs->seed);
+        }
+        draw_title(fb, gs);
+        return;
+    }
 
     // Snapshot enough to tell whether an action actually did anything, so
     // sounds only fire on real state changes rather than on every keypress.
@@ -403,11 +536,11 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         return;
     }
 
-    // Shared backdrop.
-    const int horizon = fb->h * 34 / 100;
-    fill_rect(fb, 0, 0, fb->w, horizon, PALETTE[C_SKY]);
-    fill_rect(fb, 0, horizon - 12, fb->w, 12, PALETTE[C_HAZE]);
-    fill_rect(fb, 0, horizon, fb->w, fb->h - horizon, PALETTE[C_DUNE_NEAR]);
+    // Shared backdrop, generated fresh every frame.
+    {
+        int thirst = w->held[G_WATER] < 4 ? (4 - w->held[G_WATER]) * 30 : 0;
+        scene_draw(fb, gs->tick, w->sector, w->sector * 20 + thirst);
+    }
 
     switch (w->state) {
     case ST_MAP:   draw_map(fb, gs);   break;

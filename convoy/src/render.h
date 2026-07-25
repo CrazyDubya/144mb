@@ -14,6 +14,8 @@ enum {
     C_INK, C_PANEL, C_BORDER, C_BONE, C_DIM,
     C_WATER, C_FUEL, C_AMMO, C_MEDS, C_SCRAP,
     C_GOOD, C_BAD, C_WARN, C_GREEN, C_RUST,
+    C_SKY_HI, C_SKY_MID, C_SUN, C_SUN_GLOW,
+    C_DUNE_MID, C_DUST, C_PANEL_HI, C_PANEL_LO,
     C_COUNT
 };
 extern const uint32_t PALETTE[C_COUNT];
@@ -34,7 +36,28 @@ enum {
 enum { ICON_WATER, ICON_FUEL, ICON_AMMO, ICON_MEDS, ICON_SCRAP, ICON_COUNT };
 
 // ---------------------------------------------------------------- api
+// ---------------------------------------------------------------- maths
+// Fixed-point sine: angle 0..2047 spans a full turn, result -256..256.
+// Bhaskara's approximation, so there is no table and no libm.
+int32_t isin(int32_t a);
+
+// ---------------------------------------------------------------- api
 void clear     (Framebuffer *fb, uint32_t rgb);
+// Ordered-dither vertical ramp between two colours. The dither is the point:
+// it keeps the limited-palette look instead of smoothing into 24-bit mush.
+void fill_vgrad(Framebuffer *fb, int x, int y, int w, int h,
+                uint32_t top, uint32_t bot);
+void fill_disc (Framebuffer *fb, int cx, int cy, int r, uint32_t rgb);
+// Dithered overlay at a given density (0..16). There is no alpha channel, so
+// darkening is done with a screen-door pattern -- which also happens to be the
+// period-correct way to do it.
+void fill_scrim(Framebuffer *fb, int x, int y, int w, int h,
+                uint32_t rgb, int level);
+// Radial dithered glow: dense at the centre, thinning to nothing at the rim.
+void fill_glow (Framebuffer *fb, int cx, int cy, int r, uint32_t rgb, int peak);
+// Panel with a lit top-left edge, shaded bottom-right, and a soft drop shadow.
+void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset);
+void draw_drop (Framebuffer *fb, int x, int y, int w, int h);
 void fill_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h);

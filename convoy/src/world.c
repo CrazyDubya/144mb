@@ -1,7 +1,7 @@
 #include "world.h"
 
 // Nominal value of each good before local supply and demand distort it.
-static const int BASE_PRICE[GOODS_COUNT] = { 12, 18, 25, 40, 6 };
+static const int BASE_PRICE[GOODS_COUNT] = { 12, 20, 25, 40, 6 };
 
 // ---------------------------------------------------------------- rng
 static uint32_t rng_next(uint32_t *s) {
@@ -16,10 +16,14 @@ static int rng_range(uint32_t *s, int lo, int hi) {
 static void roll_event(World *w);
 
 // ---------------------------------------------------------------- setup
-static void price_node(World *w, Node *n) {
+static void price_node(World *w, Node *n, int sector) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        int pct = rng_range(&w->rng, 50, 165);
+        // A wide spread is what makes arbitrage worth the cargo space.
+        int pct = rng_range(&w->rng, 40, 195);
         int p = BASE_PRICE[g] * pct / 100;
+        // Fuel gets dearer the further east you go, so the run gets harder to
+        // afford exactly as it gets harder to survive.
+        if (g == G_FUEL) p = p * (100 + sector * 5) / 100;
         n->price[g] = (int16_t)(p < 1 ? 1 : p);
     }
 }
@@ -48,7 +52,7 @@ void world_init(World *w, uint32_t seed) {
                                      r < 74 ? NODE_EVENT  :
                                      r < 90 ? NODE_HAZARD : NODE_EMPTY);
             }
-            price_node(w, nd);
+            price_node(w, nd, s);
         }
     }
 
@@ -70,9 +74,11 @@ void world_init(World *w, uint32_t seed) {
     w->sector = 0;
     w->index  = 0;
     w->node[0][0].visited = 1;
-    w->credits = 150;
+    // Deliberately lean: enough to start trading, not enough to simply buy
+    // your way east without ever selling at a profit.
+    w->credits = 110;
     w->held[G_WATER] = 8;
-    w->held[G_FUEL]  = 6;
+    w->held[G_FUEL]  = 5;
     w->held[G_AMMO]  = 4;
     w->held[G_MEDS]  = 1;
     w->held[G_SCRAP] = 2;

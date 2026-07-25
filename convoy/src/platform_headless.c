@@ -208,6 +208,7 @@ int main(int argc, char **argv) {
     const char *script = NULL;
     int         verbose = 0;
     int         wav_secs = 0;
+    int         skip_title = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -217,6 +218,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-i") && i + 1 < argc) script = argv[++i];
         else if (!strcmp(argv[i], "-v")) verbose = 1;
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) wav_secs = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-T")) skip_title = 1;
     }
 
     GameMemory mem = {0};
@@ -239,6 +241,15 @@ int main(int argc, char **argv) {
 
     Input in = {0};
     int dumped = 0;
+
+    // Dismiss the title screen so scripts describe the run itself.
+    if (skip_title) {
+        memset(&in, 0, sizeof in);
+        in.down[BTN_START] = in.pressed[BTN_START] = 1;
+        game_update(&mem, &in, &fb);
+        memset(&in, 0, sizeof in);
+        game_update(&mem, &in, &fb);
+    }
 
     if (script) {
         int n = (int)strlen(script);
