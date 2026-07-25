@@ -124,6 +124,7 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
 #include "bot.h"
 
 const World *game_world(GameMemory *mem);
+int          audio_mood_of(GameMemory *mem);
 void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title);
 
 // Renders the synth to a WAV and reports level statistics. There is no way to
@@ -168,8 +169,8 @@ static int write_wav(const char *path, GameMemory *mem, int seconds) {
     fwrite(buf, 1, data_bytes, f);
     fclose(f);
 
-    printf("wav: %s  %ds  peak=%ld  rms=%.0f  dc=%.1f  clipped=%ld\n",
-           path, seconds, peak, rms, dc, clipped);
+    printf("wav: %s  %ds  peak=%ld  rms=%.0f  dc=%.1f  clipped=%ld  mood=%d\n",
+           path, seconds, peak, rms, dc, clipped, audio_mood_of(mem));
     free(buf);
     return 1;
 }
@@ -237,15 +238,6 @@ int main(int argc, char **argv) {
     Framebuffer fb = { pixels, FB_W, FB_H };
 
     game_init(&mem, seed);
-
-    if (wav_secs > 0) {
-        char wpath[512];
-        snprintf(wpath, sizeof wpath, "%s/audio.wav", outdir);
-        if (!write_wav(wpath, &mem, wav_secs)) {
-            fprintf(stderr, "convoy: could not write %s\n", wpath);
-            return 1;
-        }
-    }
 
     Input in = {0};
     int dumped = 0;
@@ -337,6 +329,11 @@ int main(int argc, char **argv) {
                 ++dumped;
             }
         }
+        if (wav_secs > 0) {
+            char wpath[512];
+            snprintf(wpath, sizeof wpath, "%s/audio.wav", outdir);
+            if (!write_wav(wpath, &mem, wav_secs)) return 1;
+        }
         printf("convoy headless: %d scripted steps, %d frames written to %s/\n",
                n, dumped, outdir);
         return 0;
@@ -354,6 +351,18 @@ int main(int argc, char **argv) {
                 return 1;
             }
             ++dumped;
+        }
+    }
+
+    // Audio is rendered last so a script can drive the game into whatever
+    // state is being listened for -- the title theme is not the only one worth
+    // measuring.
+    if (wav_secs > 0) {
+        char wpath[512];
+        snprintf(wpath, sizeof wpath, "%s/audio.wav", outdir);
+        if (!write_wav(wpath, &mem, wav_secs)) {
+            fprintf(stderr, "convoy: could not write %s\n", wpath);
+            return 1;
         }
     }
 

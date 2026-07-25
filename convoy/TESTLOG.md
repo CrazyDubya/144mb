@@ -308,6 +308,34 @@ It is reachable in principle -- a careless human will find it -- but by the
 standard applied to unaffordable kit and no-op upgrades, unverified content is
 unverified. Either force reachability in phase F or cut the ending.
 
+## Phase B — the audio engine
+
+| metric | before | after |
+|---|---:|---:|
+| engine | one fixed 16-step pattern, 3 voices | 4-channel sequencer, 6 instruments, 6 songs |
+| lines | 117 | 268 |
+| peak | -2.1 dBFS | -3.1 dBFS |
+| DC offset | -13 | **-6** |
+| clipped samples | 0 | 0 |
+
+Win rate 39% (n=150), unchanged within noise: audio is presentation only.
+
+**Finding: a duty-cycle square has a DC offset.** The first render measured a
+-1290 DC and 298 clipped samples. A plain +/- full-scale square at 37% duty
+spends more time low than high, so its mean sits at -8520 -- audible as a thump
+on every note, and it eats the headroom the music needs. Scaling each half by
+the other's share puts the mean at zero for any duty:
+
+    hi = 32767 - duty * 128;   lo = -duty * 128;
+
+**Debugging note.** Two moods reported byte-identical audio and the first
+suspicion was another silent edit failure. It was not: the test scripts never
+dismissed the three-panel opening cut scene, and while a cut scene owns the
+screen `game_update` returns before it reaches the music. A packed probe --
+`cut*1000 + title*100 + mood*10 + mood_next` -- gave the answer in one run
+where single-value prints had failed three times. When a guess has been wrong
+twice, return the whole state path as one number.
+
 ---
 
 ## Bugs found, and what found them

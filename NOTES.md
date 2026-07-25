@@ -319,3 +319,31 @@ are visible at a glance instead of requiring a bespoke investigation each time.
 The general rule: **an option nobody takes and an option that loses are
 indistinguishable in an outcome metric.** If a system can be engaged with,
 instrument the engagement, not just the result.
+
+## When two runs match exactly, suspect the harness before the feature
+
+convoy's new mood system reported identical audio for a settlement and for the
+open road. Identical numbers across a change had already been documented here
+as a bug report rather than a coincidence, so the first suspicion was a silent
+edit failure -- the previous cause.
+
+It was not. The code was correct and the *test* was wrong: the scripts never
+dismissed the three-panel opening cut scene, and while a cut scene owns the
+screen `game_update` returns before it reaches the music. Both runs were still
+playing the title theme, correctly.
+
+What resolved it was a packed probe returning several pieces of state at once:
+
+    return cut_running * 1000 + title * 100 + mood * 10 + mood_next;
+
+`1000` said the cut scene was still up, which no amount of staring at the mood
+code would have revealed. One integer, four facts, and the answer immediately.
+
+Two things worth keeping:
+
+- **A probe that returns one value answers one question.** When a guess has
+  already been wrong twice, pack the whole state path into a single number and
+  read it once rather than adding prints one at a time.
+- **A test that drives a UI has to account for modal screens.** Idle ticks do
+  not dismiss a dialog; only input does. Any scripted harness will eventually
+  hit this, and it looks exactly like a broken feature.

@@ -16,6 +16,13 @@ const World *game_world(GameMemory *mem) {
     return &((GameState *)mem->permanent)->w;
 }
 
+// Harness-only: which theme is playing, so mood switching can be verified.
+// Harness-only: which theme is playing, so mood switching can be verified
+// without listening to anything.
+int audio_mood_of(GameMemory *mem) {
+    return ((GameState *)mem->permanent)->audio.mood;
+}
+
 // The test bot drives the real UI rather than calling the simulation directly,
 // so it has to see where the cursor is. Read-only, harness-only.
 void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
@@ -91,6 +98,7 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
             // screen vary instead.
             restart(gs, gs->seed);
         }
+        audio_mood(&gs->audio, MOOD_TITLE);
         ui_title(fb, gs);
         return;
     }
@@ -190,7 +198,19 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         int depth  = w->sector * 20;
         int thirst = w->held[G_WATER] < 4 ? (4 - w->held[G_WATER]) * 30 : 0;
         int dry    = w->held[G_FUEL]  < 3 ? (3 - w->held[G_FUEL])  * 30 : 0;
-        audio_tension(&gs->audio, depth + thirst + dry);
+        int tension = depth + thirst + dry;
+        audio_tension(&gs->audio, tension);
+
+        // The music follows what the player is doing, and gives way to the
+        // tense theme when the convoy is genuinely in trouble rather than
+        // merely far east.
+        int mood;
+        if (w->state == ST_DEAD || w->state == ST_WON) mood = MOOD_ENDING;
+        else if (w->state == ST_EVENT)                 mood = MOOD_ENCOUNTER;
+        else if (thirst + dry > 40)                    mood = MOOD_TENSE;
+        else if (w->state == ST_TRADE)                 mood = MOOD_MARKET;
+        else                                           mood = MOOD_ROAD;
+        audio_mood(&gs->audio, mood);
     }
 
     // ------------------------------------------------------------ render
