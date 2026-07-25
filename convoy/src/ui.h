@@ -20,5 +20,8 @@ void ui_end  (Framebuffer *fb, GameState *gs, int won);
 // How many selectable rows the given tab offers. Lets game.c clamp the cursor
 // without knowing how any tab is laid out.
 int  ui_tab_rows(const GameState *gs, int tab);
+// Whether a tab should appear at all. Distinct from its row count: the journal
+// is a record with no selectable rows, but it is still a place to go.
+int  ui_tab_live(const GameState *gs, int tab);
 
 #endif

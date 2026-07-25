@@ -12,7 +12,7 @@
 #include "cutscene_fwd.h"
 
 // Tabs on the settlement screen. Switched with left/right.
-enum { TAB_MARKET, TAB_GARAGE, TAB_CREW, TAB_CONTRACTS, TAB_COUNT };
+enum { TAB_MARKET, TAB_GARAGE, TAB_CREW, TAB_CONTRACTS, TAB_JOURNAL, TAB_COUNT };
 
 typedef struct {
     World      w;

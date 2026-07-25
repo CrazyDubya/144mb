@@ -122,6 +122,7 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
 }
 
 #include "bot.h"
+#include "state.h"   // TAB_* for the journal screenshot flag
 
 const World *game_world(GameMemory *mem);
 int          audio_mood_of(GameMemory *mem);
@@ -216,6 +217,10 @@ int main(int argc, char **argv) {
     int         skip_title = 0;
     int         bot_mode = 0;
     int         bot_float = 30;
+    // Screenshot the journal at a given bot step. It is driven with real tab
+    // presses rather than by reaching into GameState, so the shot also proves
+    // the tab can actually be reached -- which for a while it could not.
+    int         journal_at = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -228,6 +233,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-T")) skip_title = 1;
         else if (!strcmp(argv[i], "-B")) bot_mode = 1;
         else if (!strcmp(argv[i], "-F") && i + 1 < argc) bot_float = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-J") && i + 1 < argc) journal_at = atoi(argv[++i]);
     }
 
     GameMemory mem = {0};
@@ -266,6 +272,26 @@ int main(int argc, char **argv) {
             memset(&in, 0, sizeof in);
             game_update(&mem, &in, &fb);
 
+            if (journal_at && steps == journal_at && w->state == ST_TRADE) {
+                for (int k = 0; k < TAB_COUNT; ++k) {
+                    int t = 0;
+                    game_ui(&mem, NULL, NULL, &t, NULL);
+                    if (t == TAB_JOURNAL) break;
+                    memset(&in, 0, sizeof in);
+                    in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
+                    game_update(&mem, &in, &fb);
+                    memset(&in, 0, sizeof in);
+                    game_update(&mem, &in, &fb);
+                }
+                int t = 0;
+                game_ui(&mem, NULL, NULL, &t, NULL);
+                char path[512];
+                snprintf(path, sizeof path, "%s/journal.png", outdir);
+                write_png(path, pixels, FB_W, FB_H);
+                printf("journal shot at step %d, tab=%d (want %d)\n",
+                       steps, t, TAB_JOURNAL);
+            }
+
             if (verbose) trace(steps, '*', game_world(&mem));
             if (every > 0 && (steps % every) == 0) {
                 char path[512];
@@ -283,15 +309,25 @@ int main(int argc, char **argv) {
             int upg = 0, crew = 0;
             for (int i = 0; i < UPG_COUNT; ++i)  upg  += w->upgrade[i] ? 1 : 0;
             for (int i = 0; i < CREW_COUNT; ++i) crew += w->crew[i] ? 1 : 0;
+            // How many of the five were met at all, and which way the run left
+            // them feeling. If met stays near zero the characters are writing
+            // nobody reads; if regard never moves, the choices are not landing.
+            int met = 0, regard = 0;
+            for (int i = 0; i < CHAR_COUNT; ++i) {
+                met    += w->met[i] ? 1 : 0;
+                regard += w->regard[i];
+            }
             static const char *const OUT_NAME[] = {
                 "DEAD", "EMPTY", "PARTIAL", "INTACT", "EXEMPLARY"
             };
             printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d "
-                   "seed_left=%d outcome=%s upg=%d crew=%d steps=%d\n",
+                   "seed_left=%d outcome=%s upg=%d crew=%d met=%d regard=%d "
+                   "enc=%d steps=%d\n",
                    seed,
                    w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
                    w->sector, w->day, w->credits, world_cargo(w),
-                   world_payload(w), OUT_NAME[world_outcome(w)], upg, crew, steps);
+                   world_payload(w), OUT_NAME[world_outcome(w)], upg, crew,
+                   met, regard, w->encounters, steps);
         }
         return 0;
     }

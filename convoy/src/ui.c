@@ -34,14 +34,39 @@ const char *const ARCH_DESC[6] = {
 };
 
 static const char *const TAB_NAME[TAB_COUNT] = {
-    T_TAB_MARKET, T_TAB_GARAGE, T_TAB_CREW, T_TAB_CONTRACTS
+    T_TAB_MARKET, T_TAB_GARAGE, T_TAB_CREW, T_TAB_CONTRACTS, T_TAB_JOURNAL
 };
+
+// Who is who, and what they say. Three lines each: a first meeting, a warm
+// return and a cold one, picked by the regard the player has earned.
+static const char *const WHO_NAME[CHAR_COUNT] = {
+    T_WHO_CHIEF, T_WHO_CAPTAIN, T_WHO_TRADER, T_WHO_DOC, T_WHO_DRIFTER
+};
+static const char *const WHO_LINE[CHAR_COUNT][3] = {
+    { T_CHIEF_1,   T_CHIEF_WARM,   T_CHIEF_COLD   },
+    { T_CAPTAIN_1, T_CAPTAIN_WARM, T_CAPTAIN_COLD },
+    { T_TRADER_1,  T_TRADER_WARM,  T_TRADER_COLD  },
+    { T_DOC_1,     T_DOC_WARM,     T_DOC_COLD     },
+    { T_DRIFTER_1, T_DRIFTER_WARM, T_DRIFTER_COLD },
+};
+
+// Portraits are generated, so a character's face is just a seed -- but with
+// only five recurring people, leaving their faces to chance is not worth it.
+// Evenly spaced seeds and then a hash both produced three near-identical
+// faces, because draw_portrait reads skin, cloth, hat, beard and scar from
+// separate bit fields and nothing forces those to differ. These seeds were
+// searched for: each yields a deliberately chosen combination, so the chief is
+// dark and scarred under a dust wrap, the trader is bare-headed, the doctor
+// wears violet, and so on. Distinctness is checked rather than hoped for.
+static const uint32_t WHO_SEED[CHAR_COUNT] = { 109, 160, 456, 7, 559 };
+static uint32_t who_seed(int who) { return WHO_SEED[who]; }
 
 int ui_tab_rows(const GameState *gs, int tab) {
     switch (tab) {
     case TAB_MARKET:    return GOODS_COUNT;
     // One row, and only when there is something to press it for.
     case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
+    case TAB_JOURNAL:   return 0;              // a record, not a menu
     case TAB_GARAGE:    return gs->w.offer_upg  < UPG_COUNT  ? 1 : 0;
     case TAB_CREW:      return gs->w.offer_crew < CREW_COUNT ? 1 : 0;
     default:            return 0;
@@ -50,7 +75,7 @@ int ui_tab_rows(const GameState *gs, int tab) {
 
 // A tab is shown when it has something in it. Empty tabs are not drawn at all,
 // so no placeholder UI ever reaches a player.
-static int tab_live(const GameState *gs, int tab) {
+int ui_tab_live(const GameState *gs, int tab) {
     if (tab == TAB_MARKET) return 1;
     if (tab == TAB_CONTRACTS) return gs->w.job.state != CONTRACT_NONE;
     // The garage and the crew board only exist where there is something on
@@ -64,12 +89,46 @@ static int tab_live(const GameState *gs, int tab) {
         if (gs->w.offer_crew < CREW_COUNT) return 1;
         return world_crew_count(&gs->w) > 0;
     }
+    if (tab == TAB_JOURNAL) {
+        for (int i = 0; i < CHAR_COUNT; ++i) if (gs->w.met[i]) return 1;
+        return 0;
+    }
     return 0;
+}
+
+// Everyone met so far, how often, and where you stand with them. The regard
+// line is the point: it tells the player that the choices they made at an
+// encounter are still being carried around.
+static void draw_journal(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
+    const World *w = &gs->w;
+    (void)pw;
+    int any = 0, ly = y + 8;
+
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        if (!w->met[i]) continue;
+        any = 1;
+        draw_portrait(fb, x + 14, ly, 2, who_seed(i),
+                      w->regard[i] > 0 ? 1 : (w->regard[i] < 0 ? -1 : 0));
+        draw_text(fb, x + 56, ly + 4, WHO_NAME[i], 1, PALETTE[C_BONE]);
+
+        int rx = x + 56;
+        rx += draw_number(fb, rx, ly + 20, w->met[i], 1, PALETTE[C_DIM]) + 6;
+        draw_text(fb, rx, ly + 20, w->met[i] == 1 ? T_TIME : T_TIMES, 1,
+                  PALETTE[C_DIM]);
+
+        const char *r = w->regard[i] > 0 ? T_REGARD_GOOD
+                      : w->regard[i] < 0 ? T_REGARD_BAD : T_REGARD_NEUT;
+        draw_text(fb, x + 190, ly + 12, r, 1,
+                  PALETTE[w->regard[i] > 0 ? C_GOOD
+                        : w->regard[i] < 0 ? C_BAD : C_DIM]);
+        ly += 40;
+    }
+    if (!any) draw_text(fb, x + 14, y + 12, T_NOBODY_YET, 1, PALETTE[C_DIM]);
 }
 
 static int tab_count_live(const GameState *gs) {
     int n = 0;
-    for (int t = 0; t < TAB_COUNT; ++t) n += tab_live(gs, t);
+    for (int t = 0; t < TAB_COUNT; ++t) n += ui_tab_live(gs, t);
     return n;
 }
 
@@ -78,7 +137,7 @@ static int draw_tabs(Framebuffer *fb, const GameState *gs, int x, int y, int pw)
     if (tab_count_live(gs) < 2) return 0;
     int tx = x + 10;
     for (int t = 0; t < TAB_COUNT; ++t) {
-        if (!tab_live(gs, t)) continue;
+        if (!ui_tab_live(gs, t)) continue;
         int tw = text_w(TAB_NAME[t], 1) + 16;
         int on = (t == gs->tab);
         fill_rect(fb, tx, y, tw, 20, PALETTE[on ? C_BORDER : C_INK]);
@@ -501,6 +560,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     if (gs->tab != TAB_MARKET) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
+        else if (gs->tab == TAB_JOURNAL) draw_journal(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_GARAGE) {
             draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
                         UPG_NAME, UPG_DESC, gs->w.upgrade,
@@ -648,41 +708,54 @@ static const char *const EV_DECLINE[EV_KINDS] = {
     T_CHECK_B, T_LEAK_B, T_REFUGEE_B, T_SIGNAL_B
 };
 
-// Red frames a threat, green an opportunity: readable before any number is.
-static int event_is_threat(int kind) {
-    switch (kind) {
-    case EV_WRECK: case EV_CACHE: case EV_RIVAL:
-    case EV_TRADER: case EV_REFUGEE: case EV_SIGNAL:
-        return 0;
-    default:
-        return 1;
-    }
-}
 
 void ui_event(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
     const Event *e = &w->event;
-    const int x = 110, y = 88, pw = 420, ph = 280;
+    const int x = 96, y = 74, pw = 448, ph = 322;
 
-    int threat = event_is_threat(e->kind);
+    int threat = world_event_is_threat(e->kind);
     uint32_t frame = threat ? PALETTE[C_BAD] : PALETTE[C_GOOD];
 
     draw_panel(fb, x, y, pw, ph);
-    fill_rect(fb, x + 3, y + 3, pw - 6, 10, frame);
+    // Red for a threat, green for an offer. Kept to a hairline: at ten pixels
+    // this was a saturated slab across the widest panel in the game, and the
+    // palette is warm everywhere else, so it read as a rendering fault rather
+    // than as a signal. Three pixels says the same thing and stays out of the
+    // way of the words underneath.
+    fill_rect(fb, x + 3, y + 3, pw - 6, 3, frame);
 
     // Name the situation. The icons show the price; only words can say why.
-    draw_text_c(fb, x + pw / 2, y + 24, EV_TITLE[e->kind], 2, PALETTE[C_BONE]);
+    draw_text_c(fb, x + pw / 2, y + 22, EV_TITLE[e->kind], 2, PALETTE[C_BONE]);
+
+    // And give it a face. Which line you get depends on whether you have met
+    // before and how you left it, so an encounter carries the history of the
+    // run rather than resetting each time.
+    int who = world_event_char(e->kind);
+    if (who != CHAR_NONE) {
+        draw_portrait(fb, x + 16, y + 44, 2, who_seed(who),
+                      w->regard[who] > 0 ? 1 : (w->regard[who] < 0 ? -1 : 0));
+
+        int slot = 0;                                    // first meeting
+        if (w->met[who] > 1) slot = (w->regard[who] >= 0) ? 1 : 2;
+
+        draw_text(fb, x + 58, y + 46, WHO_NAME[who], 1, PALETTE[C_WARN]);
+        if (w->met[who] > 1)
+            draw_text(fb, x + 58 + text_w(WHO_NAME[who], 1) + 12, y + 46,
+                      T_MET_BEFORE, 1, PALETTE[C_DIM]);
+        draw_text(fb, x + 58, y + 60, WHO_LINE[who][slot], 1, PALETTE[C_BONE]);
+    }
 
     int affordable = world_can_accept(w);
 
-    draw_text(fb, x + 20, y + 52, EV_ACCEPT[e->kind], 1,
+    draw_text(fb, x + 20, y + 94, EV_ACCEPT[e->kind], 1,
               affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
     if (!affordable)
-        draw_text(fb, x + 20 + text_w(EV_ACCEPT[e->kind], 1) + 12, y + 52,
+        draw_text(fb, x + 20 + text_w(EV_ACCEPT[e->kind], 1) + 12, y + 94,
                   T_CANNOT, 1, PALETTE[C_BAD]);
 
     // --- accept -------------------------------------------------------
-    int ay = y + 66;
+    int ay = y + 108;
     fill_rect(fb, x + 10, ay - 6, pw - 20, 74, PALETTE[C_INK]);
     draw_rect(fb, x + 10, ay - 6, pw - 20, 74, affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
 
@@ -703,8 +776,8 @@ void ui_event(Framebuffer *fb, GameState *gs) {
     }
 
     // --- decline ------------------------------------------------------
-    draw_text(fb, x + 20, y + 156, EV_DECLINE[e->kind], 1, PALETTE[C_DIM]);
-    int by = y + 170;
+    draw_text(fb, x + 20, y + 198, EV_DECLINE[e->kind], 1, PALETTE[C_DIM]);
+    int by = y + 212;
     fill_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_INK]);
     draw_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_DIM]);
 

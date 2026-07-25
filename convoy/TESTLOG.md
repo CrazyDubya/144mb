@@ -336,6 +336,107 @@ screen `game_update` returns before it reaches the music. A packed probe --
 where single-value prints had failed three times. When a guess has been wrong
 twice, return the whole state path as one number.
 
+## Phase C — day/night, weather, transitions
+
+Presentation only; win rate unchanged within noise.
+
+**Finding: a physically correct night was the wrong night.** The first pass
+took the palette to cold blue-grey after dusk and blended the land 150/255
+toward the sky. Every panel, icon and goods colour in the game is warm, so the
+backdrop fought all of them and dark sectors read as muddy rather than
+atmospheric. The fix was to keep night inside the game's own range -- a dusty,
+lamp-lit night -- and to cut the land tint to 70/255 so the desert keeps its
+own colour. Night now also has mechanical weight: dark settlements put fewer
+offers on the board, so it is a condition rather than a filter.
+
+**Finding: a full-screen transition is a large share of what a player sees.**
+A dithered wipe fired on every state change. It looked good in motion and
+awful in a still, and because it covered the whole frame it turned up in two
+screenshots taken at random and made the game look broken. It was cut to a
+brief scrim dip, and then measured: at its first setting the dip peaked at 62%
+ink over 8 frames.
+
+    trans = 8, level = trans > 4 ? (8 - trans) * 2 + 4 : trans * 2   -> peak 10/16
+
+The bot spends exactly one frame per step, and an encounter lasts about three
+steps, so the transition outlived the screen it was introducing -- the harness
+could not photograph a clean encounter at all. Cut to 4 frames with level =
+trans (peak 4/16, ~66ms). **If a screenshot keeps catching an effect by
+accident, that is a measurement of how much of the game the effect is.**
+
+---
+
+## Phase D — characters, dialogue and journal
+
+Five recurring characters (`met[]`, `regard[]` in `World`), portraits generated
+from a seed, dialogue that differs on first meeting / warm return / cold
+return, and a PEOPLE tab recording who was met, how often, and where you stand.
+
+| metric | phase C | phase D |
+|---|---:|---:|
+| size | 106,496 B (7.22%) | 107,008 B (**7.26%**) |
+| win rate (n=200) | 42% | **36%** |
+| stalls / crashes | 0 | **0** |
+| encounters per run | 1.76 | **2.75** |
+| runs meeting nobody | 43 / 200 | **7 / 200** |
+| runs meeting 3+ | 19 / 200 | **53 / 200** |
+
+New harness counters: `met=`, `regard=`, `enc=`.
+
+**Finding: the story was competing with the profitable route, and losing.**
+The generator makes 30% of nodes encounter nodes, which should give ~3.6 per
+run. Measured: **1.76**, and 43 of 200 runs -- including 19 of 84 *winning*
+runs -- met nobody at all. The cause was structural, not statistical: money is
+made in settlements, so the route that pays is the route that skips the story.
+Every portrait, dialogue line and journal entry was content a good player was
+paid to avoid.
+
+The fix was to stop making the two compete. A settlement arrival now has a 14%
+chance of also carrying an encounter, returning to the market afterwards
+(`after_event`). Meeting people where the people are costs nothing to opt into.
+
+**Finding: adding encounters costs win rate, which means encounters are a tax.**
+Raising encounter frequency dropped the win rate 42% -> 30%. A genuinely
+even-money encounter table would have added *variance* without moving the mean.
+That it moved the mean by twelve points says the fourteen kinds are net
+negative EV against a competent player. Two partial fixes were applied --
+market meetings re-roll once if they come up a threat (raids happen on the
+road, deals happen in town), worth +3 points, and the rate was cut from 20% to
+14%, worth another +3 -- landing at 36%. **The underlying EV imbalance is left
+for phase F**, which is the rebalance phase; it should be fixed in the payoff
+tables, not by hiding the content.
+
+**Bug: the journal could never be opened.** `cycle_tab` skipped any tab whose
+`ui_tab_rows` was zero, and the journal deliberately returns zero because it is
+a record rather than a menu. It was therefore skipped on every press. The tab
+strip already had the right predicate (`tab_live`); the fix was to export it as
+`ui_tab_live` and have both ask the same question. Found by reading the code,
+not by any sweep -- **no bot test would ever have caught it, because the bot
+never opens the journal.** The screenshot flag added for it (`-J`) drives real
+tab presses rather than reaching into `GameState`, so the shot proves the tab
+is reachable.
+
+**Bug: three of the five faces were near-identical.** `draw_portrait` reads
+skin, cloth, hat, beard and scar from separate bit fields of one seed, and
+nothing forces those to differ between characters. Evenly spaced seeds
+(`who * 977 + 13`) collided; replacing them with a hash collided differently.
+Both attempts were *hoping* rather than checking. Fixed by searching for five
+seeds that yield deliberately chosen combinations and hard-coding them. **With
+five of something and 1.3MB spare, pick them; do not roll for them.**
+
+**Repeat offence: a scripted `.replace()` silently did nothing.** A header
+declaration failed to land because the file had `int  world_event_char` with
+two spaces and the pattern had one. This is the same failure already recorded
+under phase 2, and it cost a build cycle -- during which `asan.sh` reported
+"sanitizers clean" against a stale binary. **A green result from a build that
+failed is worse than a red one.** Use `Edit`, and grep for the new text before
+believing any number that follows.
+
+**Still open.** `crew=0` in 159 of 200 runs: the crew board is bought from far
+less often than the garage (`upg>=1` in 148 of 200). Combined with the
+encounter-EV finding above, phase F has two known balance targets rather than
+one.
+
 ---
 
 ## Bugs found, and what found them

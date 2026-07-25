@@ -63,8 +63,6 @@ void fill_glow (Framebuffer *fb, int cx, int cy, int r, uint32_t rgb, int peak);
 // Panel with a lit top-left edge, shaded bottom-right, and a soft drop shadow.
 void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset);
 void draw_drop (Framebuffer *fb, int x, int y, int w, int h);
-// A dithered wipe used between screens. `t` runs 0..255 as it clears.
-void draw_wipe (Framebuffer *fb, int t);
 void fill_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h);

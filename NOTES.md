@@ -347,3 +347,64 @@ Two things worth keeping:
 - **A test that drives a UI has to account for modal screens.** Idle ticks do
   not dismiss a dialog; only input does. Any scripted harness will eventually
   hit this, and it looks exactly like a broken feature.
+
+---
+
+## Content the optimal route is paid to skip
+
+convoy's encounters were built as encounter *nodes* on a branching map. The
+generator made 30% of nodes encounters, which should have produced about 3.6 of
+them per fourteen-sector run. Instrumenting a 200-run sweep gave **1.76**, and
+43 runs -- including 19 of the 84 that *won* -- met nobody at all.
+
+Nothing was broken. Money is made in settlements, so the route that pays is the
+route that skips the story. Every portrait, dialogue line and journal entry was
+content a player was rewarded for avoiding.
+
+The structural fix was to stop making the two compete: a settlement arrival now
+also has a chance of carrying an encounter, returning to the market afterwards.
+Runs meeting nobody fell from 43 to 7.
+
+Two general lessons:
+
+- **If content sits on one branch of a choice and reward sits on the other, the
+  content does not exist for anyone playing well.** Frequency knobs will not fix
+  this; the placement is the bug.
+- **Count the content, not just the outcome.** A win-rate column cannot show
+  that a fifth of winning runs never saw the cast. The counter that found it
+  (`met=`) took five lines and should have been added the same day the feature
+  was.
+
+## Adding content changed the win rate, which was the real finding
+
+Raising encounter frequency dropped the win rate from 42% to 30%. An
+even-money encounter table would have added *variance* without moving the mean;
+moving the mean twelve points proved the encounters were net-negative EV -- a
+tax dressed up as a gamble. **If more of an optional system makes the game
+harder, that system is not optional.**
+
+## Distinctness has to be checked, not hoped for
+
+Five characters' faces were generated from one seed each, with skin, clothing,
+hat, beard and scar read from separate bit fields. Evenly spaced seeds gave
+three near-identical faces; replacing them with a hash gave three different
+near-identical faces. Both attempts assumed scattering the input scatters every
+output field, which nothing guarantees.
+
+Fixed by searching for five seeds that produce deliberately chosen combinations
+and hard-coding them. **With a handful of something and disk space to spare,
+pick them; do not roll for them.** Procedural generation earns its keep at
+scale, not at five.
+
+## A green result from a build that failed
+
+A scripted `.replace()` silently missed its pattern (`int  world_event_char`
+had two spaces, the pattern had one) so a header declaration never landed and
+the build failed. The next command in the chain ran the sanitizer suite, which
+reported **"sanitizers clean"** -- against the previous binary, still sitting on
+disk. The same shape appeared again when a 200-seed sweep ran to completion
+after a failed rebuild and produced a full, plausible, entirely stale table.
+
+**A build failure must stop everything downstream of it.** Chain build and test
+with `&&`, and treat any pass that arrives suspiciously fast, or any result
+identical to the previous run, as a stale-binary report until proven otherwise.

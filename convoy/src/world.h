@@ -144,6 +144,8 @@ typedef struct {
     // It occupies the hold, cannot be sold at any price, and can be taken --
     // so arriving and succeeding are not the same thing.
     uint8_t  payload;              // slots still aboard, of PAYLOAD_SLOTS
+    uint8_t  encounters;           // how many fired all run, for measurement
+    uint8_t  after_event;          // state to return to; 0 (ST_MAP) unless set
     uint8_t  payload_lost_to;      // what took the last of it, for the ending
 
     uint8_t  upgrade[UPG_COUNT];   // fitted or not
@@ -187,6 +189,7 @@ int  world_payload   (const World *w);
 // Which of the endings this run has earned.
 int  world_outcome   (const World *w);
 // Who is on the other side of this encounter, or CHAR_NONE.
+int  world_event_is_threat(int kind);
 int  world_event_char(int kind);
 
 int  world_cargo_cap (const World *w);   // grows with fitted racks

@@ -343,24 +343,6 @@ void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset) {
     fill_rect(fb, x + w - 1, y, 1, h, shd);
 }
 
-// A screen change with no transition reads as a glitch rather than a cut. This
-// is a diagonal dithered wipe: cheap, in keeping with the rest of the
-// rendering, and it costs one pass over the framebuffer.
-void draw_wipe(Framebuffer *fb, int t) {
-    if (t <= 0 || t >= 255) return;
-    for (int y = 0; y < fb->h; ++y) {
-        uint32_t *row = fb->pixels + y * fb->w;
-        const uint8_t *brow = BAYER + ((y & 3) << 2);
-        for (int x = 0; x < fb->w; ++x) {
-            // The diagonal term makes the wipe sweep rather than dissolve.
-            int edge = t + (x + y) / 4 - 40;
-            if (edge < 0) edge = 0;
-            if (edge > 255) edge = 255;
-            if ((edge >> 4) <= brow[x & 3]) row[x] = PALETTE[C_INK];
-        }
-    }
-}
-
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h) {
     draw_drop(fb, x, y, w, h);
     // A faint internal ramp stops large panels reading as flat slabs.

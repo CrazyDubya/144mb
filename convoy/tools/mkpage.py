@@ -10,7 +10,7 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 82944
+BYTES_USED = 104960
 LIMIT = 1474560
 
 
@@ -20,37 +20,34 @@ def uri(path, mime):
 
 
 STILLS = [
+    ("opening.png", "The reason",
+     "The last greenhouse in the west burned in the spring. What survived fits in six "
+     "crates, and the Green Zone has soil and water and nothing to plant. You cannot "
+     "sell the seed &mdash; not for fuel, not for water, not to save your own life."),
     ("title.png", "The title",
-     "The convoy drives east toward the only green thing in the world. Enter starts "
-     "a run; H opens the instructions."),
-    ("help.png", "How to play",
-     "Reachable at any time. It states the rule the icons cannot: there is no health "
-     "bar, your cargo is your life, and an empty hold ends the run."),
-    ("map.png", "The route",
-     "Fourteen sectors, one way, no going back. The map scrolls with the convoy and "
-     "the badges name each settlement's trade, so a road can be read before fuel is "
-     "spent reaching it."),
-    ("market.png", "A well",
-     "Every settlement makes something. A well sells water at 4 and charges 27 for "
-     "fuel; a refinery does the reverse. The arrow beside each price compares it to "
-     "every price you have personally seen."),
-    ("garage.png", "The gamble",
-     "Salvaged plate armour: 42 credits for something worth 140, which may give out "
-     "on the road &mdash; and nine encounters still ahead of you. Cost, expected "
-     "value, risk and relevance, all on one screen."),
-    ("event.png", "An encounter",
-     "Fourteen kinds, all judged the same way: pay the price on the top row, or take "
-     "the consequence on the bottom. A guard settles a raid out of hand; a mechanic "
-     "patches a leak from his own kit."),
-    ("win.png", "Arrival",
-     "The Green Zone, thirteen hops east. Roughly two runs in five get here."),
+     "Enter starts a run, H opens the instructions. The convoy drives east toward the "
+     "only green thing in the world."),
+    ("dawn.png", "First light",
+     "Every run is one day. You load the crates at dawn, and the sky is the clock: "
+     "there is no timer on screen and none is needed."),
+    ("midday.png", "The road",
+     "Fourteen sectors, one way. Settlement badges name what each place trades, so a "
+     "road can be read before fuel is spent reaching it."),
+    ("night.png", "Late light",
+     "The sky is the only clock, and by the far sectors it has gone. A dark town also "
+     "has less on offer &mdash; the forecourt is shut more often and the job board is "
+     "thinner &mdash; which bites hardest exactly where you can least afford it."),
+    ("ending.png", "Arrival",
+     "Five endings, graded on what survived rather than on whether you arrived. "
+     "Storms spoil seed and raiders take it, so reaching the Green Zone and "
+     "succeeding are not the same thing."),
 ]
 
 FACTS = [
+    ("6", "crates you cannot sell"),
     ("14", "encounter kinds"),
     ("0", "bytes of stored art or audio"),
-    ("42%", "win rate for skilled play"),
-    ("6.4%", "of the floppy used"),
+    ("7%", "of the floppy used"),
 ]
 
 
@@ -255,10 +252,9 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
 
   <h2>One complete run</h2>
   <p>
-    One seed, played end to end by the test bot rather than a fixed script, so
-    every trade is a response to an actual price. It starts at a market, buys fuel
-    it cannot finish without, and pushes fourteen sectors east through raiders,
-    storms and breakdowns toward the Green Zone.
+    One seed, played end to end by the test bot rather than a fixed script, so every
+    trade is a response to an actual price. Watch the sky: the run begins at first
+    light and finishes after dark, which is the only clock the game has.
   </p>
   <div class="run">
     <img src="%(gif)s" alt="Animated playthrough of Convoy" />
@@ -327,22 +323,22 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
           <td>A bot that ignores prices, 200 seeds</td>
           <td class="n yes">0%% win</td></tr>
       <tr><td>Skill is rewarded</td>
-          <td>A price-aware bot playing the real UI, 200 seeds</td>
-          <td class="n yes">42%% win</td></tr>
-      <tr><td>Runs end in more than one way</td>
-          <td>Cause of death across 60 runs</td>
-          <td class="n yes">56/44</td></tr>
+          <td>A price-aware bot playing the real UI, 150 seeds</td>
+          <td class="n yes">39%% win</td></tr>
       <tr><td>Outfitting is a real choice</td>
-          <td>Fittings and crew bought across 200 runs</td>
-          <td class="n yes">201 / 47</td></tr>
-      <tr><td>No crashes or deadlocks</td>
-          <td>200 seeds played to the end, plus AddressSanitizer</td>
+          <td>Kit priced off remaining payback; parity measured at n=250</td>
+          <td class="n yes">51 vs 49</td></tr>
+      <tr><td>All five endings are reachable</td>
+          <td>Outcome recorded across 200 bot runs</td>
+          <td class="n no">4 of 5</td></tr>
+      <tr><td>No crashes, deadlocks or memory errors</td>
+          <td>200 seeds played out, plus AddressSanitizer and UBSan</td>
           <td class="n yes">0</td></tr>
+      <tr><td>Audio never clips</td>
+          <td>Peak, DC and per-row RMS measured against the pattern tables</td>
+          <td class="n yes">&minus;3.1 dB</td></tr>
       <tr><td>Runs on Windows</td>
           <td>Launched and screenshotted on a windows-latest runner</td>
-          <td class="n yes">verified</td></tr>
-      <tr><td>Survives a machine with no sound card</td>
-          <td>The CI runner has none; the game started anyway</td>
           <td class="n yes">verified</td></tr>
       <tr><td>Played by a human</td>
           <td>Nobody has actually sat down with it yet</td>

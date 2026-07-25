@@ -64,7 +64,11 @@ void game_init(GameMemory *mem, uint32_t seed) {
 static void cycle_tab(GameState *gs, int dir) {
     for (int i = 0; i < TAB_COUNT; ++i) {
         gs->tab = (gs->tab + dir + TAB_COUNT) % TAB_COUNT;
-        if (ui_tab_rows(gs, gs->tab) > 0 || gs->tab == TAB_MARKET) break;
+        // Selectable-row count was the wrong test. The journal is a record
+        // rather than a menu, so it has no rows and was skipped every time --
+        // it could not be opened at all. The tab strip already knows which
+        // tabs exist; ask it the same question it answers when drawing.
+        if (ui_tab_live(gs, gs->tab)) break;
     }
     gs->sel = 0;
 }
@@ -177,7 +181,7 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     // change means a player spends a noticeable share of the run looking at a
     // dither pattern instead of the game.
     if (w->state != prev_state &&
-        (w->state == ST_EVENT || prev_state == ST_EVENT)) gs->trans = 12;
+        (w->state == ST_EVENT || prev_state == ST_EVENT)) gs->trans = 4;
     if (gs->trans  > 0) gs->trans--;
     if (gs->travel > 0) gs->travel--;
 
@@ -251,7 +255,15 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     ui_hud(fb, w);
 
     // The wipe sits over everything, including the HUD.
-    if (gs->trans > 0) draw_wipe(fb, 255 - gs->trans * 255 / 12);
+    // A brief dip rather than a full-screen dither sweep. The sweep was
+    // striking in motion and awful in a still, and since it covered the whole
+    // frame it was a large share of what a player actually looked at -- twice
+    // it turned up in screenshots taken at random and made the game look
+    // broken.
+    // Peaks at about a third coverage for a tenth of a second. Any heavier and
+    // it dominates the frame; any longer and it is what the player remembers.
+    if (gs->trans > 0)
+        fill_scrim(fb, 0, 0, fb->w, fb->h, PALETTE[C_INK], gs->trans);
 }
 
 void game_audio(GameMemory *mem, AudioBuffer *ab) {
