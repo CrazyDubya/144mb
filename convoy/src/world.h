@@ -109,6 +109,9 @@ typedef struct {
     uint8_t  upgrade[UPG_COUNT];   // fitted or not
     uint8_t  crew[CREW_COUNT];     // aboard or not
     uint8_t  offer_upg;            // what this settlement will fit, 0xFF if none
+    uint8_t  offer_salvaged;       // that offer is salvaged: cheap, and may fail
+    uint8_t  upg_salvaged[UPG_COUNT];
+    int8_t   kit_failed;           // an upgrade broke on the last hop, or -1
     uint8_t  offer_crew;           // who is looking for work here, 0xFF if none
 
     Event    event;
@@ -140,7 +143,12 @@ int  world_cargo_cap (const World *w);   // grows with fitted racks
 int  world_crew_count(const World *w);
 int  world_water_burn(const World *w);   // per day, given crew and tanks
 int  world_water_burn_on(const World *w, int day);
-int  world_upg_price (const World *w, int upg);
+int  world_upg_price (const World *w, int upg, int salvaged);
+// What a fitting can still return over the hops that remain. Price is derived
+// from this, so an offer that cannot repay itself is never made.
+int  world_upg_payback(const World *w, int upg);
+// What the road east still holds, for deciding whether kit is worth it.
+void world_road_ahead (const World *w, int *storms, int *encounters);
 int  world_crew_price(const World *w, int crew);
 void world_buy_upgrade(World *w);
 void world_hire_crew  (World *w);

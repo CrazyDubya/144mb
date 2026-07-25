@@ -119,7 +119,30 @@ effect exists because you wrote the code for it.**
 that exists and cannot be reached is worse than content that does not exist,
 and only an agent that plays every run to completion will tell you.
 
-### OPEN: kit loses to working capital, and should not
+### RESOLVED in phase 2A: kit is now a genuine choice
+
+| price (% of remaining payback) | skilled win | n |
+|---:|---:|---:|
+| 75% | 44% | 150 |
+| 60% | 39% | 150 |
+| 35% | 59% | 150 |
+| **45%** | **51%** | **250** |
+
+Parity is 45%: buying wins 51%, ignoring the garage won 49%. Both are
+defensible, which is the definition of a decision. Kit is bought in 39 of 40
+runs versus 2 of 30 before.
+
+Two notes on reading this. The 75/60/35 rows were 150-seed samples where the
+standard error is about +/-4 points, so 44% and 39% are the same number and
+only the 35% row was a real signal -- the sequence looks non-monotonic but is
+not. The final figure was re-measured at n=250 for that reason.
+
+Salvaged kit is priced at 67% of sound, which is exactly its reliability
+(it fails about one run in three). That makes the two options equal in
+expectation and different only in variance -- a real gamble. Priced any lower,
+as it was at 45%, salvaged is strictly better and there is no choice to make.
+
+### ORIGINAL PROBLEM: kit lost to working capital
 
 With payback-aware, surplus-only purchasing the bot buys kit **twice in thirty
 runs**. It is not being stupid: credits in the hold compound. Buy low, sell

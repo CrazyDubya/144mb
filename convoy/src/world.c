@@ -124,6 +124,7 @@ void world_init(World *w, uint32_t seed) {
     w->day   = 1;
     w->offer_upg  = 0xFF;
     w->offer_crew = 0xFF;
+    w->kit_failed = -1;
     w->state = ST_TRADE;   // the starting node is a settlement
     observe_market(w);
     contract_tick(w);
@@ -185,35 +186,102 @@ int world_water_burn_on(const World *w, int day) {
 
 int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
 
-// Kit gets *cheaper* the further east it is sold, which is the opposite of
-// what it did at first and the opposite of what fuel does.
-//
-// The reason is that its value rises late while working capital's falls.
-// Early on, credits in the hold compound over many legs and beat any fitting;
-// by the back half there are few legs left to compound through and the easy
-// routes have been burned flat by market memory. Pricing kit to escalate like
-// fuel made it dominated at exactly the point it should start winning.
-static int outfit_scale(const World *w) {
-    int left = (SECTORS - 1) - w->sector;
-    int pct  = 100 - (SECTORS - 1 - left) * 3;   // ~3% cheaper per sector east
-    return pct < 55 ? 55 : pct;
+// What each fitting can still earn back over the hops that remain, in credits.
+// Rates come from the generator: encounters are 30% of nodes across five
+// kinds, so any one kind fires about 0.8 times in a 13-hop run.
+#define FUEL_WORTH  22
+#define WATER_WORTH 13
+
+int world_upg_payback(const World *w, int upg) {
+    int hops = (SECTORS - 1) - w->sector;
+    if (hops < 1) return 0;
+    switch (upg) {
+    case UPG_HOLD:   return hops * 6;
+    case UPG_ECON:   return (hops / 2) * FUEL_WORTH;
+    case UPG_ARMOUR: return hops * 3 / 5 * 20;
+    case UPG_TANKS:  return (hops / 2) * WATER_WORTH;
+    default:         return 0;
+    }
 }
 
-int world_upg_price(const World *w, int upg) {
-    return UPG_BASE[upg] * outfit_scale(w) / 100;
+// Price is a fixed fraction of what the thing can still return, rather than a
+// base price with a sector multiplier bolted on.
+//
+// This is the change that makes kit a decision. A flat price is either
+// unaffordable early -- when capital is needed for trade and compounds better
+// -- or pointless late, when there is no run left to repay it. Deriving price
+// from remaining payback means an offer is always worth its asking price on
+// its face, and when payback falls to nothing the offer stops appearing at all
+// instead of becoming cheap and useless.
+// Two numbers, both derived rather than guessed.
+//
+// SOUND_PCT: credits left in the hold compound -- roughly tripling over a full
+// run -- so a fitting priced at three quarters of its payback is still a loss
+// against simply trading with the money. It has to come in near a third of
+// payback before it competes at all.
+//
+// SALVAGE_PCT: salvaged kit fails about one run in three, so it is worth two
+// thirds of sound kit. Pricing it at two thirds makes the two options equal in
+// expectation and different only in variance -- which is what makes it a
+// gamble rather than simply the correct answer. Priced any lower (it was 45%)
+// salvaged is strictly better and there is no decision to make.
+#define SOUND_PCT   45
+#define SALVAGE_PCT 67
+
+int world_upg_price(const World *w, int upg, int salvaged) {
+    int p = world_upg_payback(w, upg) * SOUND_PCT / 100;
+    if (salvaged) p = p * SALVAGE_PCT / 100;
+    return p < 8 ? 8 : p;
 }
+
 int world_crew_price(const World *w, int crew) {
-    return CREW_BASE[crew] * outfit_scale(w) / 100;
+    int hops = (SECTORS - 1) - w->sector;
+    int scale = 60 + hops * 4;               // falls as the road shortens
+    if (scale > 100) scale = 100;
+    return CREW_BASE[crew] * scale / 100;
+}
+
+void world_road_ahead(const World *w, int *storms, int *encounters) {
+    int st = 0, ev = 0;
+    for (int s = w->sector + 1; s < SECTORS; ++s) {
+        // Count the worst case across the sector: what the road *could* hold.
+        int sst = 0, sev = 0;
+        for (int n = 0; n < NODES_PER; ++n) {
+            if (!w->node[s][n].active) continue;
+            if (w->node[s][n].type == NODE_HAZARD) sst = 1;
+            if (w->node[s][n].type == NODE_EVENT)  sev = 1;
+        }
+        st += sst; ev += sev;
+    }
+    if (storms)     *storms = st;
+    if (encounters) *encounters = ev;
 }
 
 void world_buy_upgrade(World *w) {
     int u = w->offer_upg;
     if (u >= UPG_COUNT || w->upgrade[u]) return;
-    int p = world_upg_price(w, u);
+    int p = world_upg_price(w, u, w->offer_salvaged);
     if (w->credits < p) return;
     w->credits -= p;
     w->upgrade[u] = 1;
+    w->upg_salvaged[u] = w->offer_salvaged;
     w->offer_upg = 0xFF;
+}
+
+// Salvaged kit can give out on the road. Roughly a one-in-three chance across
+// a full run, which is often enough to be felt and rare enough to be worth
+// gambling on when the alternative is going without.
+static void salvage_check(World *w) {
+    w->kit_failed = -1;
+    for (int u = 0; u < UPG_COUNT; ++u) {
+        if (!w->upgrade[u] || !w->upg_salvaged[u]) continue;
+        if (rng_range(&w->rng, 0, 99) < 4) {
+            w->upgrade[u] = 0;
+            w->upg_salvaged[u] = 0;
+            w->kit_failed = (int8_t)u;
+            return;
+        }
+    }
 }
 
 void world_hire_crew(World *w) {
@@ -226,24 +294,69 @@ void world_hire_crew(World *w) {
     w->offer_crew = 0xFF;
 }
 
+// How badly the convoy wants a given fitting right now, given what it is short
+// of and what the road ahead holds. Offers follow need, so a settlement never
+// sells the answer to a question already answered.
+static int upg_want(const World *w, int u) {
+    int storms = 0, events = 0;
+    world_road_ahead(w, &storms, &events);
+    int hops = (SECTORS - 1) - w->sector;
+
+    switch (u) {
+    case UPG_ECON:   return w->held[G_FUEL]  < hops / 2 ? 5 : 1;
+    case UPG_TANKS:  return w->held[G_WATER] < hops / 2 ? 5 : 1;
+    case UPG_ARMOUR: return events >= 3 ? 4 : 1;
+    case UPG_HOLD:   return world_cargo(w) >= world_cargo_cap(w) - 4 ? 4 : 1;
+    default:         return 1;
+    }
+}
+
 // Each settlement stocks at most one of each, and only things not already had.
 static void roll_offers(World *w) {
     w->offer_upg = 0xFF;
     w->offer_crew = 0xFF;
+    w->offer_salvaged = 0;
+
+    int hops = (SECTORS - 1) - w->sector;
 
     // Sized for whichever list is longer: this scratch array is reused for
     // both, and sizing it to UPG_COUNT alone overflowed it by one on the crew
     // pass, which corrupted the stack rather than failing honestly.
     int avail[UPG_COUNT > CREW_COUNT ? UPG_COUNT : CREW_COUNT];
-    int n = 0;
-    for (int i = 0; i < UPG_COUNT; ++i) if (!w->upgrade[i]) avail[n++] = i;
-    if (n && rng_range(&w->rng, 0, 99) < 45)
-        w->offer_upg = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
+    int weight[UPG_COUNT > CREW_COUNT ? UPG_COUNT : CREW_COUNT];
 
-    n = 0;
-    for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
-    if (n && rng_range(&w->rng, 0, 99) < 40)
-        w->offer_crew = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
+    // Past this point nothing can repay itself, so nothing is offered. A
+    // fitting dangled at the last stop is noise, not a choice.
+    if (hops >= 4) {
+        int n = 0, total = 0;
+        for (int i = 0; i < UPG_COUNT; ++i) {
+            if (w->upgrade[i]) continue;
+            if (world_upg_payback(w, i) < 20) continue;   // cannot pay for itself
+            weight[n] = upg_want(w, i);
+            total += weight[n];
+            avail[n++] = i;
+        }
+        // Guaranteed early: kit has to appear while there is road left for it
+        // to matter on, so the first three sectors always stock something.
+        int chance = (w->sector <= 2) ? 100 : 55;
+        if (n && rng_range(&w->rng, 0, 99) < chance) {
+            int pick = rng_range(&w->rng, 0, total - 1);
+            for (int i = 0; i < n; ++i) {
+                pick -= weight[i];
+                if (pick < 0) { w->offer_upg = (uint8_t)avail[i]; break; }
+            }
+            if (w->offer_upg >= UPG_COUNT) w->offer_upg = (uint8_t)avail[n - 1];
+            // Roughly half of what is on a forecourt out here is salvage.
+            w->offer_salvaged = (uint8_t)(rng_range(&w->rng, 0, 99) < 50);
+        }
+    }
+
+    if (hops >= 5) {
+        int n = 0;
+        for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
+        if (n && rng_range(&w->rng, 0, 99) < 40)
+            w->offer_crew = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
+    }
 }
 
 // ---------------------------------------------------------------- contracts
@@ -348,6 +461,8 @@ void world_travel(World *w, int next_index) {
         }
         w->held[G_WATER] -= burn;
     }
+
+    salvage_check(w);
 
     w->sector++;
     w->index = next_index;

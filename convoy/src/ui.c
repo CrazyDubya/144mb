@@ -128,6 +128,41 @@ static void draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
     (void)any;
 }
 
+// Everything the garage knows that the base panel does not: the condition of
+// what is on offer, what it should return, and what is still on the road.
+static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
+    const World *w = &gs->w;
+    (void)pw;
+
+    if (w->offer_upg < UPG_COUNT) {
+        int salv = w->offer_salvaged;
+        int cx = x + 210;
+        draw_text(fb, cx, y + 12, salv ? T_SALVAGED : T_SOUND, 1,
+                  PALETTE[salv ? C_BAD : C_GOOD]);
+        draw_text(fb, x + 14, y + 76, salv ? T_SALVAGE_WARN : T_SOUND_NOTE, 1,
+                  PALETTE[salv ? C_BAD : C_DIM]);
+
+        // What it is expected to earn back, next to what it costs, so the
+        // player can see the bet rather than having to infer it.
+        int px = x + 14;
+        px += draw_text(fb, px, y + 92, T_PAYS_BACK, 1, PALETTE[C_DIM]) + 8;
+        draw_number(fb, px, y + 92, world_upg_payback(w, w->offer_upg), 1,
+                    PALETTE[C_WARN]);
+    }
+
+    // The road east, counted off the map the player can already see.
+    int storms = 0, events = 0;
+    world_road_ahead(w, &storms, &events);
+    int ry = y + 118;
+    draw_text(fb, x + 14, ry, T_ROAD_AHEAD, 1, PALETTE[C_BONE]);
+    int rx = x + 14;
+    rx += text_w(T_ROAD_AHEAD, 1) + 16;
+    rx += draw_number(fb, rx, ry, storms, 1, PALETTE[C_WARN]) + 6;
+    rx += draw_text(fb, rx, ry, T_AHEAD_STORMS, 1, PALETTE[C_DIM]) + 14;
+    rx += draw_number(fb, rx, ry, events, 1, PALETTE[C_BAD]) + 6;
+    draw_text(fb, rx, ry, T_AHEAD_EVENTS, 1, PALETTE[C_DIM]);
+}
+
 // ---------------------------------------------------------------- contracts
 static void draw_contracts(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
     const Contract *j = &gs->w.job;
@@ -432,6 +467,13 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     int th = draw_tabs(fb, gs, x, y + 44, pw);
 
+    // Salvaged kit giving out is announced, not silently accounted.
+    if (w->kit_failed >= 0) {
+        int px = x + 12;
+        px += draw_text(fb, px, y + 32, UPG_NAME[w->kit_failed], 1, PALETTE[C_BAD]) + 8;
+        draw_text(fb, px, y + 32, T_KIT_BROKE, 1, PALETTE[C_BAD]);
+    }
+
     // A delivery that paid out on arrival says so before anything else.
     if (w->job_paid > 0) {
         int px = x + pw - 150;
@@ -441,12 +483,15 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     if (gs->tab != TAB_MARKET) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
-        else if (gs->tab == TAB_GARAGE)
+        else if (gs->tab == TAB_GARAGE) {
             draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
                         UPG_NAME, UPG_DESC, gs->w.upgrade,
                         gs->w.offer_upg < UPG_COUNT
-                            ? world_upg_price(&gs->w, gs->w.offer_upg) : 0,
+                            ? world_upg_price(&gs->w, gs->w.offer_upg,
+                                              gs->w.offer_salvaged) : 0,
                         T_NO_GARAGE, T_BUY_UPGRADE, T_OWNED);
+            draw_garage_extra(fb, gs, x, y + 44 + th, pw);
+        }
         else if (gs->tab == TAB_CREW) {
             draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew, CREW_COUNT,
                         CREW_NAME, CREW_DESC, gs->w.crew,

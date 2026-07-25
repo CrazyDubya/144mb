@@ -112,9 +112,14 @@ static int upgrade_worth_buying(const World *w) {
     if (u >= UPG_COUNT || w->upgrade[u]) return 0;
     int hops = SECTORS_LAST - w->sector;
     if (hops < 5) return 0;
-    int price = world_upg_price(w, u);
-    if (w->credits - price < 170) return 0;
-    return upgrade_payback(u, hops) > price;
+    // Price is now derived from remaining payback, so the question is no
+    // longer "does this pay for itself" -- it always does on paper -- but
+    // "can the convoy spare the capital, and is the gamble worth it".
+    int price = world_upg_price(w, u, w->offer_salvaged);
+    int float_needed = w->offer_salvaged ? 70 : 120;
+    if (w->credits - price < float_needed) return 0;
+    (void)hops;
+    return 1;
 }
 
 static int crew_worth_hiring(const World *w) {
