@@ -13,10 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Installed directly rather than via setup-zig: that action resolves
+      # tagged releases against ziglang.org/builds, which only carries dev
+      # builds and 404s for 0.16.0.
       - name: Install Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.16.0
+        shell: pwsh
+        run: |
+          $ver = "0.16.0"
+          $url = "https://ziglang.org/download/$ver/zig-x86_64-windows-$ver.zip"
+          $dest = Join-Path $env:RUNNER_TEMP "zig"
+          Write-Host "downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\zig.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\zig.zip" -DestinationPath $dest -Force
+          $exe = Get-ChildItem -Path $dest -Recurse -Filter zig.exe | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::zig.exe not found in archive"; exit 1 }
+          Write-Host "zig at $($exe.DirectoryName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $exe.DirectoryName
+
+      - name: Verify Zig
+        shell: bash
+        run: zig version
 
       # Games are discovered by looking for build.sh, so adding one needs no
       # change here.
