@@ -20,7 +20,7 @@ fi
 
 mkdir -p "$ROOT/build"
 
-SRC=("$ROOT/src/game.c" "$ROOT/src/render.c" "$ROOT/src/world.c" "$ROOT/src/audio.c" "$ROOT/src/scene.c" "$ROOT/src/ui.c")
+SRC=("$ROOT/src/game.c" "$ROOT/src/render.c" "$ROOT/src/world.c" "$ROOT/src/audio.c" "$ROOT/src/scene.c" "$ROOT/src/ui.c" "$ROOT/src/cutscene.c")
 SIZE_FLAGS="-Os -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables"
 WARN="-Wall -Wextra -Wno-unused-parameter"
 

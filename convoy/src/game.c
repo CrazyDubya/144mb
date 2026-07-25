@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "world.h"
 #include "audio.h"
+#include "cutscene.h"
 
 // Exposed so the headless harness can trace the simulation; not used by the
 // Windows build, and costs nothing there since it is never referenced.
@@ -31,6 +32,8 @@ static void restart(GameState *gs, uint32_t seed) {
     gs->sel = 0;
     gs->map_sel = 0;
     gs->tab = TAB_MARKET;
+    for (int i = 0; i < SECTORS; ++i) gs->vignette_seen[i] = 0;
+    cutscene_begin(&gs->cut, &CS_OPENING, gs->tick);
 }
 
 void game_init(GameMemory *mem, uint32_t seed) {
@@ -59,6 +62,17 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     GameState *gs = (GameState *)mem->permanent;
     World *w = &gs->w;
     gs->tick++;
+
+    // A cut scene owns the screen while it runs. Any key advances it, Esc-like
+    // skipping is handled by the platform layer quitting; the opening is three
+    // panels and the endings are one.
+    if (gs->cut.running) {
+        int advance = 0;
+        for (int i = 0; i < BTN_COUNT; ++i) if (in->pressed[i]) advance = 1;
+        cutscene_update(&gs->cut, advance, gs->tick);
+        cutscene_draw(fb, &gs->cut, gs->tick);
+        return;
+    }
 
     if (gs->help) {
         for (int i = 0; i < BTN_COUNT; ++i)
@@ -135,6 +149,26 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     case ST_WON:
         if (in->pressed[BTN_START]) restart(gs, gs->seed + gs->tick);
         break;
+    }
+
+    // Arriving somewhere new can be worth a beat. Each fires at most once.
+    if (w->sector != prev_sector && w->state != ST_DEAD && w->state != ST_WON) {
+        if (!gs->vignette_seen[w->sector]) {
+            const Cutscene *v = cutscene_vignette(w);
+            if (v) {
+                gs->vignette_seen[w->sector] = 1;
+                cutscene_begin(&gs->cut, v, gs->tick);
+                cutscene_draw(fb, &gs->cut, gs->tick);
+                return;
+            }
+        }
+    }
+
+    // The run ending plays its scene once, then hands over to the summary.
+    if ((w->state == ST_DEAD || w->state == ST_WON) && prev_state != w->state) {
+        cutscene_begin(&gs->cut, &CS_ENDING[world_outcome(w)], gs->tick);
+        cutscene_draw(fb, &gs->cut, gs->tick);
+        return;
     }
 
     // Arriving somewhere new resets the cursor to the top of the market.

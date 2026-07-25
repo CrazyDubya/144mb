@@ -121,7 +121,8 @@ void world_init(World *w, uint32_t seed) {
     w->held[G_AMMO]  = 4;
     w->held[G_MEDS]  = 1;
     w->held[G_SCRAP] = 2;
-    w->day   = 1;
+    w->day     = 1;
+    w->payload = PAYLOAD_SLOTS;
     w->offer_upg  = 0xFF;
     w->offer_crew = 0xFF;
     w->kit_failed = -1;
@@ -434,9 +435,22 @@ static void contract_tick(World *w) {
     j->state     = CONTRACT_OFFERED;
 }
 
+// ---------------------------------------------------------------- payload
+int world_payload(const World *w) { return w->payload; }
+
+// Arriving is not succeeding. The seed stock is what the run was for, so the
+// ending is graded on how much of it survived rather than on getting there.
+int world_outcome(const World *w) {
+    if (w->state != ST_WON) return OUT_DEAD;
+    if (w->payload == 0)              return OUT_EMPTY;
+    if (w->payload < PAYLOAD_SLOTS)   return OUT_PARTIAL;
+    if (world_crew_count(w) > 0 || w->credits >= 80) return OUT_EXEMPLARY;
+    return OUT_INTACT;
+}
+
 // ---------------------------------------------------------------- helpers
 int world_cargo(const World *w) {
-    int t = 0;
+    int t = w->payload;      // the seed stock fills slots like anything else
     for (int g = 0; g < GOODS_COUNT; ++g) t += w->held[g];
     return t;
 }
@@ -444,6 +458,19 @@ int world_cargo(const World *w) {
 static void drop_random_cargo(World *w, int units) {
     for (int i = 0; i < units; ++i) {
         if (world_cargo(w) == 0) return;
+
+        // Tradeable cargo goes first. Only when there is nothing else left do
+        // they start on the seed stock -- which is what makes a bad raid a
+        // story beat rather than an accounting entry.
+        int tradeable = 0;
+        for (int g = 0; g < GOODS_COUNT; ++g) tradeable += w->held[g];
+        if (tradeable == 0) {
+            if (w->payload > 0) {
+                w->payload--;
+                if (w->payload == 0) w->payload_lost_to = (uint8_t)w->state;
+            }
+            continue;
+        }
         // Walk from a random start so losses spread across goods.
         int start = rng_range(&w->rng, 0, GOODS_COUNT - 1);
         for (int k = 0; k < GOODS_COUNT; ++k) {
@@ -503,6 +530,13 @@ void world_travel(World *w, int next_index) {
         // safe line through it.
         if (w->held[G_WATER] > 0) w->held[G_WATER]--;
         if (w->held[G_FUEL]  > 0) w->held[G_FUEL]--;
+
+        // Heat and grit get into the crates. This is the one threat to the
+        // seed that cannot be paid off, argued with or fought -- without it a
+        // competent convoy always arrives intact, because every other risk to
+        // the payload is an encounter you can simply buy your way out of, and
+        // two of the five endings are unreachable.
+        if (w->payload > 0 && rng_range(&w->rng, 0, 99) < 35) w->payload--;
         if (w->held[G_WATER] == 0 && w->held[G_FUEL] == 0 && world_cargo(w) == 0) {
             w->state = ST_DEAD; w->death = DEATH_STRIPPED; return;
         }
@@ -592,7 +626,11 @@ void world_decline(World *w) {
     Event *e = &w->event;
 
     if (e->lose_qty > 0) {
-        if (e->lose_good < 0) {
+        if (e->lose_good == -2) {
+            // Straight off the payload, whatever else is aboard.
+            int take = e->lose_qty;
+            while (take-- > 0 && w->payload > 0) w->payload--;
+        } else if (e->lose_good < 0) {
             drop_random_cargo(w, e->lose_qty);
         } else {
             int g = e->lose_good;
@@ -615,6 +653,7 @@ static void roll_event(World *w) {
     int depth = w->sector;
     int kind  = rng_range(&w->rng, 0, EV_KINDS - 1);
     e->kind = (uint8_t)kind;
+    int hold_searched = (kind == EV_RAID || kind == EV_TOLL || kind == EV_CHECKPOINT);
 
     switch (kind) {
     case EV_RAID:
@@ -715,5 +754,15 @@ static void roll_event(World *w) {
         if (w->crew[CREW_TRADER]) e->gain_credits += 40;  // knows what a tip is worth
         e->lose_qty = 0;
         break;
+    }
+
+    // Anyone who searches the hold past the halfway mark knows what the crates
+    // are worth. This is what puts the ending at stake rather than merely the
+    // accounting -- without it the seed always arrives and three of the five
+    // endings are unreachable.
+    if (hold_searched && depth >= (SECTORS - 1) / 3 && w->payload > 0
+        && rng_range(&w->rng, 0, 99) < 45) {
+        e->lose_good = -2;                        // -2 means the payload itself
+        e->lose_qty  = (int8_t)rng_range(&w->rng, 1, 2);
     }
 }

@@ -24,31 +24,33 @@ STILLS = [
      "The convoy drives east toward the only green thing in the world. Enter starts "
      "a run; H opens the instructions."),
     ("help.png", "How to play",
-     "Reachable at any time, not just from the title. It states the rule the icons "
-     "cannot: there is no health bar, your cargo is your life, and an empty hold "
-     "ends the run. Each good is listed with what it is actually for."),
+     "Reachable at any time. It states the rule the icons cannot: there is no health "
+     "bar, your cargo is your life, and an empty hold ends the run."),
     ("map.png", "The route",
-     "Ten sectors, one way, no going back. The strip along the bottom names the "
-     "destination and prices the hop, so choosing a road is never a guess about "
-     "what the badge meant."),
-    ("trade.png", "The market",
-     "Named goods, labelled columns, and the two actions spelled out on the "
-     "selected row. The line underneath says what the highlighted good is for "
-     "&mdash; the single most useful sentence for someone who has never played."),
+     "Fourteen sectors, one way, no going back. The map scrolls with the convoy and "
+     "the badges name each settlement's trade, so a road can be read before fuel is "
+     "spent reaching it."),
+    ("market.png", "A well",
+     "Every settlement makes something. A well sells water at 4 and charges 27 for "
+     "fuel; a refinery does the reverse. The arrow beside each price compares it to "
+     "every price you have personally seen."),
+    ("garage.png", "The gamble",
+     "Salvaged plate armour: 42 credits for something worth 140, which may give out "
+     "on the road &mdash; and nine encounters still ahead of you. Cost, expected "
+     "value, risk and relevance, all on one screen."),
     ("event.png", "An encounter",
-     "Titled, with both options described. Green frames an opportunity, red a "
-     "threat. Every quantity carries an explicit sign, so a cost can never be "
-     "mistaken for a reward."),
+     "Fourteen kinds, all judged the same way: pay the price on the top row, or take "
+     "the consequence on the bottom. A guard settles a raid out of hand; a mechanic "
+     "patches a leak from his own kit."),
     ("win.png", "Arrival",
-     "Day ten, twenty-two credits, six crates &mdash; and no fuel at all. The Green "
-     "Zone was reached on the last drop."),
+     "The Green Zone, thirteen hops east. Roughly two runs in five get here."),
 ]
 
 FACTS = [
-    ("35", "colours in the whole game"),
+    ("14", "encounter kinds"),
     ("0", "bytes of stored art or audio"),
-    ("300", "bytes for the whole alphabet"),
-    ("53%", "win rate for skilled play"),
+    ("42%", "win rate for skilled play"),
+    ("6.4%", "of the floppy used"),
 ]
 
 
@@ -253,10 +255,10 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
 
   <h2>One complete run</h2>
   <p>
-    Fifty decisions, ten days, one seed &mdash; played by the test bot rather than
-    a fixed script, so every trade here is a response to an actual price. It starts
-    at a market, buys fuel it cannot finish without, and pushes east through raiders
-    and breakdowns to the Green Zone.
+    One seed, played end to end by the test bot rather than a fixed script, so
+    every trade is a response to an actual price. It starts at a market, buys fuel
+    it cannot finish without, and pushes fourteen sectors east through raiders,
+    storms and breakdowns toward the Green Zone.
   </p>
   <div class="run">
     <img src="%(gif)s" alt="Animated playthrough of Convoy" />
@@ -321,24 +323,21 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
   <div class="tbl">
     <table>
       <tr><th>Claim</th><th>How it was checked</th><th class="n">Result</th></tr>
-      <tr><td>Trading moves prices permanently</td>
-          <td>Dumped water into one market, traced every sale</td>
-          <td class="n yes">15&rarr;6</td></tr>
       <tr><td>The economy is not optional</td>
           <td>A bot that ignores prices, 200 seeds</td>
           <td class="n yes">0%% win</td></tr>
       <tr><td>Skill is rewarded</td>
           <td>A price-aware bot playing the real UI, 200 seeds</td>
-          <td class="n yes">53%% win</td></tr>
-      <tr><td>No crashes</td>
-          <td>300 seeds played to the end by the bot</td>
+          <td class="n yes">42%% win</td></tr>
+      <tr><td>Runs end in more than one way</td>
+          <td>Cause of death across 60 runs</td>
+          <td class="n yes">56/44</td></tr>
+      <tr><td>Outfitting is a real choice</td>
+          <td>Fittings and crew bought across 200 runs</td>
+          <td class="n yes">201 / 47</td></tr>
+      <tr><td>No crashes or deadlocks</td>
+          <td>200 seeds played to the end, plus AddressSanitizer</td>
           <td class="n yes">0</td></tr>
-      <tr><td>Music is audible and correct</td>
-          <td>Per-step RMS against the sequencer table</td>
-          <td class="n yes">2.2&times;</td></tr>
-      <tr><td>Audio never clips</td>
-          <td>Peak and DC measured over rendered output</td>
-          <td class="n yes">&minus;2.1 dB</td></tr>
       <tr><td>Runs on Windows</td>
           <td>Launched and screenshotted on a windows-latest runner</td>
           <td class="n yes">verified</td></tr>

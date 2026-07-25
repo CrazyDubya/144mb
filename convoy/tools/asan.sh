@@ -13,7 +13,7 @@ OUT=/tmp/convoy_asan
 gcc -O0 -g -fsanitize=address,undefined -o "$OUT" \
     "$ROOT"/src/platform_headless.c "$ROOT"/src/bot.c "$ROOT"/src/game.c \
     "$ROOT"/src/render.c "$ROOT"/src/world.c "$ROOT"/src/audio.c \
-    "$ROOT"/src/scene.c "$ROOT"/src/ui.c -lm
+    "$ROOT"/src/scene.c "$ROOT"/src/ui.c "$ROOT"/src/cutscene.c -lm
 
 # The harness allocates its framebuffer and arena for the process lifetime and
 # never frees them, which is correct and not worth reporting.

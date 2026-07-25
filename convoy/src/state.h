@@ -9,6 +9,7 @@
 #include "game.h"
 #include "world.h"
 #include "audio.h"
+#include "cutscene_fwd.h"
 
 // Tabs on the settlement screen. Switched with left/right.
 enum { TAB_MARKET, TAB_GARAGE, TAB_CREW, TAB_CONTRACTS, TAB_COUNT };
@@ -21,8 +22,13 @@ typedef struct {
     int        map_sel;    // index into the reachable-node list on the map
     int        tab;        // which settlement tab is showing
     int        title;      // showing the title screen rather than a run
+    uint8_t    vignette_seen[SECTORS];   // each beat fires once
     int        help;       // showing the instructions overlay
     AudioState audio;
+
+    // Cut scenes own the screen while they run: the opening, the endings and
+    // the short beats between sectors all share one player.
+    CutsceneState cut;
 } GameState;
 
 #endif

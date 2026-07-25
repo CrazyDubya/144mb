@@ -281,6 +281,11 @@ static int decide_map(const World *w, int map_sel) {
 }
 
 // ---------------------------------------------------------------- event
+// The seed stock is never sold and never traded away -- world_sell refuses it
+// outright -- but it does occupy slots, which the capacity checks already see
+// through world_cargo(). The bot's only obligation is to protect it, which it
+// does by valuing the hold rather than by any special case.
+
 // Roughly what a unit of each good is worth to the convoy right now. Survival
 // stock is worth more than its price when the tank or the tanks are low, which
 // is what stops the bot trading away the thing that is about to kill it.
@@ -319,10 +324,13 @@ static int decide_event(const World *w) {
     int benefit = e->gain_credits;
     if (e->gain_good >= 0) benefit += e->gain_qty * good_value(w, e->gain_good);
 
-    // Refusing has a price too: either a named good or a bite out of the hold.
+    // Refusing has a price too: a named good, a bite out of the hold, or the
+    // seed itself. The seed is what the run is for, so it is priced far above
+    // anything it physically weighs.
     if (e->lose_qty > 0) {
-        if (e->lose_good >= 0) benefit += e->lose_qty * good_value(w, e->lose_good);
-        else                   benefit += e->lose_qty * 18;   // average cargo
+        if (e->lose_good == -2)      benefit += e->lose_qty * 90;
+        else if (e->lose_good >= 0)  benefit += e->lose_qty * good_value(w, e->lose_good);
+        else                         benefit += e->lose_qty * 18;
     }
 
     // Losing the last of the hold ends the run, so treat that as unaffordable

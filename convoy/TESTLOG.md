@@ -274,6 +274,40 @@ two no-op upgrades, unaffordable crew, and kit that lost runs when bought --
 all hid behind clean sweeps and a healthy win rate. An option nobody takes and
 an option that loses are indistinguishable in an outcome metric.
 
+# v3
+
+## Phase A — the payload, cut scenes, endings
+
+| change | skilled | endings reached |
+|---|---:|---|
+| payload + cut scenes, seed only lost when hold is empty | 40% | DEAD 119, INTACT 81 |
+| seed targeted by anyone who searches the hold | 40% | + PARTIAL 1, EXEMPLARY 9 |
+| storms spoil seed (unavoidable attrition) | **41%** | DEAD 118, PARTIAL 5, INTACT 68, EXEMPLARY 9 |
+
+n=200, 0 crashes, 0 stalls, sanitizers clean.
+
+**Finding: a threat you can pay off is not a threat.** The first attempt let
+raiders take the seed only once the tradeable hold was empty, then let them
+target it directly. Neither moved the numbers, because the bot values the seed
+at 90 credits a slot and simply *pays* every time -- which is correct play.
+Seed loss only ever happened when the convoy could not afford the price.
+
+Two of five endings stayed unreachable until storms were given a 35% chance to
+spoil a crate. That threat cannot be paid off, argued with or fought, and it is
+the only reason attrition exists at all.
+
+The general shape: **if every risk to a thing is purchasable, a competent player
+never loses it.** Something has to erode it unconditionally or the failure
+states are decoration.
+
+### OPEN: the EMPTY ending is still unreached
+
+Arriving with none of the seed has not occurred in 200 bot runs. It requires
+losing all six crates, and an optimal convoy avoids storms and pays off raids.
+It is reachable in principle -- a careless human will find it -- but by the
+standard applied to unaffordable kit and no-op upgrades, unverified content is
+unverified. Either force reachability in phase F or cut the ending.
+
 ---
 
 ## Bugs found, and what found them

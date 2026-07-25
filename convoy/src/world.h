@@ -9,6 +9,7 @@
 #define NODES_PER    4
 #define GOODS_COUNT  5
 #define CARGO_CAP    30
+#define PAYLOAD_SLOTS 6
 
 // Goods are indices into every per-good array, and match the ICON_* order.
 enum { G_WATER, G_FUEL, G_AMMO, G_MEDS, G_SCRAP };
@@ -76,6 +77,17 @@ typedef enum {
     DEATH_NONE = 0, DEATH_THIRST, DEATH_STRANDED, DEATH_STRIPPED
 } DeathCause;
 
+// How a run is judged, in descending order of how well it went. Arriving is
+// not the same as arriving with what you set out to carry.
+typedef enum {
+    OUT_DEAD,          // never got there
+    OUT_EMPTY,         // arrived with none of the seed stock
+    OUT_PARTIAL,       // arrived with some of it
+    OUT_INTACT,        // arrived with all of it
+    OUT_EXEMPLARY,     // all of it, crew alive, and money in the bank
+    OUT_COUNT
+} Outcome;
+
 // A delivery job. Gives the hold a purpose beyond speculation: cargo you are
 // contractually holding is cargo you cannot panic-sell for fuel, which is the
 // tension worth having.
@@ -115,6 +127,12 @@ typedef struct {
     int state;
     int death;
 
+    // The reason for the whole run: seed stock bound for the Green Zone.
+    // It occupies the hold, cannot be sold at any price, and can be taken --
+    // so arriving and succeeding are not the same thing.
+    uint8_t  payload;              // slots still aboard, of PAYLOAD_SLOTS
+    uint8_t  payload_lost_to;      // what took the last of it, for the ending
+
     uint8_t  upgrade[UPG_COUNT];   // fitted or not
     uint8_t  crew[CREW_COUNT];     // aboard or not
     uint8_t  offer_upg;            // what this settlement will fit, 0xFF if none
@@ -147,6 +165,11 @@ void world_contract_accept(World *w);
 // Units of `good` promised to an accepted contract, so nothing sells them out
 // from under the job.
 int  world_committed (const World *w, int good);
+// Slots the payload occupies. Counted against capacity like any other cargo,
+// because the whole point is that it competes for space you need.
+int  world_payload   (const World *w);
+// Which of the endings this run has earned.
+int  world_outcome   (const World *w);
 
 int  world_cargo_cap (const World *w);   // grows with fitted racks
 int  world_crew_count(const World *w);

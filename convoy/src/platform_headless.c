@@ -291,11 +291,15 @@ int main(int argc, char **argv) {
             int upg = 0, crew = 0;
             for (int i = 0; i < UPG_COUNT; ++i)  upg  += w->upgrade[i] ? 1 : 0;
             for (int i = 0; i < CREW_COUNT; ++i) crew += w->crew[i] ? 1 : 0;
+            static const char *const OUT_NAME[] = {
+                "DEAD", "EMPTY", "PARTIAL", "INTACT", "EXEMPLARY"
+            };
             printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d "
-                   "upg=%d crew=%d steps=%d\n",
+                   "seed_left=%d outcome=%s upg=%d crew=%d steps=%d\n",
                    seed,
                    w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
-                   w->sector, w->day, w->credits, world_cargo(w), upg, crew, steps);
+                   w->sector, w->day, w->credits, world_cargo(w),
+                   world_payload(w), OUT_NAME[world_outcome(w)], upg, crew, steps);
         }
         return 0;
     }
