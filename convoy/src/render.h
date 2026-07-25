@@ -1,0 +1,56 @@
+// convoy -- software rasterizer, bitmap font and icon vocabulary.
+//
+// Everything the player reads must be language-free: shapes, colours, Arabic
+// numerals and arrows only. There is deliberately no alphabetic font here, so
+// it is impossible to accidentally introduce English text the judges must read.
+#ifndef RENDER_H
+#define RENDER_H
+
+#include "game.h"
+
+// ---------------------------------------------------------------- palette
+enum {
+    C_SKY, C_HAZE, C_DUNE_FAR, C_DUNE_NEAR, C_ROAD,
+    C_INK, C_PANEL, C_BORDER, C_BONE, C_DIM,
+    C_WATER, C_FUEL, C_AMMO, C_MEDS, C_SCRAP,
+    C_GOOD, C_BAD, C_WARN, C_GREEN, C_RUST,
+    C_COUNT
+};
+extern const uint32_t PALETTE[C_COUNT];
+
+// ---------------------------------------------------------------- glyphs
+// Digits are indices 0..9 so draw_number can index directly.
+// G_KEY_Z and G_KEY_X label physical keycaps, not words: the same keys sit in
+// the same place on a Korean keyboard as an English one, so they carry no
+// language. G_ENTER is the universal return arrow.
+enum {
+    G_0, G_1, G_2, G_3, G_4, G_5, G_6, G_7, G_8, G_9,
+    G_MINUS, G_PLUS, G_UP, G_DOWN, G_X, G_SLASH, G_DOT,
+    G_KEY_Z, G_ENTER, G_RIGHT,
+    G_COUNT
+};
+
+// ---------------------------------------------------------------- goods
+enum { ICON_WATER, ICON_FUEL, ICON_AMMO, ICON_MEDS, ICON_SCRAP, ICON_COUNT };
+
+// ---------------------------------------------------------------- api
+void clear     (Framebuffer *fb, uint32_t rgb);
+void fill_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
+void draw_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
+void draw_panel(Framebuffer *fb, int x, int y, int w, int h);
+void draw_line (Framebuffer *fb, int x0, int y0, int x1, int y1, uint32_t rgb);
+
+void draw_glyph (Framebuffer *fb, int x, int y, int glyph, int scale, uint32_t rgb);
+int  glyph_w    (int scale);
+// Returns the width drawn, so callers can lay out rows without measuring twice.
+int  draw_number(Framebuffer *fb, int x, int y, int value, int scale, uint32_t rgb);
+int  number_w   (int value, int scale);
+
+void draw_icon  (Framebuffer *fb, int x, int y, int icon, int scale);
+// Draws a keycap containing a glyph. Returns its width.
+int  draw_key   (Framebuffer *fb, int x, int y, int glyph, int scale);
+int  key_w      (int scale);
+// Small up/down/flat indicator used for price trends.
+void draw_trend (Framebuffer *fb, int x, int y, int dir, int scale);
+
+#endif

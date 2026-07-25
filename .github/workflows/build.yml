@@ -1,0 +1,104 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: build and smoke-test on Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+
+      # Games are discovered by looking for build.sh, so adding one needs no
+      # change here.
+      - name: Build every game
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob
+          found=0
+          for f in */build.sh; do
+            d=$(dirname "$f")
+            echo "::group::build $d"
+            ( cd "$d" && ONLY_WIN=1 ZIG=zig bash build.sh )
+            echo "::endgroup::"
+            found=1
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no games found (expected */build.sh)"
+            exit 1
+          fi
+
+      # The real point of this workflow: prove the binary actually runs on the
+      # platform it targets. A game that renders perfectly in a headless harness
+      # can still die on window creation or audio init.
+      - name: Smoke-test and screenshot
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem -Recurse -Filter *.exe |
+                  Where-Object { $_.FullName -match '[\\/]build[\\/]' }
+          if (-not $exes) { Write-Host "::error::no executables were built"; exit 1 }
+
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $failed = $false
+
+          foreach ($e in $exes) {
+            Write-Host "launching $($e.Name)"
+            $p = Start-Process -FilePath $e.FullName -PassThru
+
+            # Long enough to open a window, initialise audio and render frames.
+            Start-Sleep -Seconds 10
+
+            if ($p.HasExited) {
+              Write-Host "::error::$($e.Name) exited early with code $($p.ExitCode)"
+              $failed = $true
+              continue
+            }
+
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+            $gfx.CopyFromScreen($b.X, $b.Y, 0, 0, $bmp.Size)
+            $bmp.Save("shots/$($e.BaseName).png",
+                      [System.Drawing.Imaging.ImageFormat]::Png)
+            $gfx.Dispose(); $bmp.Dispose()
+
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            Write-Host "$($e.Name) survived 10s and was screenshotted"
+          }
+
+          if ($failed) { exit 1 }
+
+      - name: Report sizes
+        shell: bash
+        run: |
+          LIMIT=1474560
+          {
+            echo "| binary | bytes | % of floppy |"
+            echo "|---|---:|---:|"
+            find . -path '*/build/*.exe' | while read -r f; do
+              b=$(stat -c%s "$f")
+              p=$(awk -v b="$b" -v l="$LIMIT" 'BEGIN{printf "%.2f", b*100/l}')
+              echo "| $(basename "$f") | $b | ${p}% |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload executables and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            */build/*.exe
+            shots/*.png
+          if-no-files-found: warn
