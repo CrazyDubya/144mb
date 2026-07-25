@@ -302,8 +302,9 @@ static int good_value(const World *w, int g) {
 // than from its kind. Fourteen kinds and counting all resolve through this, so
 // adding a fifteenth needs no change here at all -- which is the whole point,
 // since a mechanic the bot cannot judge is a mechanic nobody can measure.
-static int decide_event(const World *w) {
+static int decide_event(const Bot *b, const World *w) {
     const Event *e = &w->event;
+    if (b->refuse_all) return BTN_B;
     if (!world_can_accept(w)) return BTN_B;
 
     int keep[GOODS_COUNT];
@@ -379,7 +380,7 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         if (tab != TAB_MARKET) return BTN_RIGHT;
         return decide_trade(b, w, sel);
     case ST_MAP:   return decide_map(w, map_sel);
-    case ST_EVENT: return decide_event(w);
+    case ST_EVENT: return decide_event(b, w);
     default:       return -1;    // run is over
     }
 }

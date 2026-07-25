@@ -43,6 +43,36 @@ static void observe_market(World *w);
 static void contract_tick(World *w);
 static void roll_offers(World *w);
 
+// ---------------------------------------------------------------- difficulty
+// Three settings, each leaning on a different failure. Easy is not "the same
+// game with more credits": it is a game where fuel is the only thing that will
+// actually kill you, because the water margin and the storms are both slack.
+// Hard makes all three bite at once and, more importantly, makes the payload
+// genuinely hard to bring in whole -- which is the difference between arriving
+// and succeeding.
+typedef struct {
+    int16_t credits;        // starting capital
+    int8_t  water, fuel;    // starting stock
+    int8_t  fuel_scale;     // fuel price growth per sector, in percent
+    int8_t  spoil_pct;      // chance a storm takes a crate of seed
+    int8_t  storm_pct;      // share of non-settlement nodes that are storms
+    int8_t  settle_pct;     // share of nodes that are settlements
+} DiffRule;
+
+static const DiffRule DIFF[DIFF_COUNT] = {
+    /*                 cr   w   f  fscale  spoil  storm  settle */
+    /* EASY   */ {    180, 12,  8,      1,    22,     10,     52 },
+    /* NORMAL */ {    155, 10,  6,      2,    35,     15,     48 },
+    /* HARD   */ {    135,  9,  6,      3,    45,     18,     44 },
+};
+
+int world_score(const World *w) {
+    // Seed brought in is the point of the run, so it dominates. Credits are a
+    // tiebreak, and distance is what a losing run has to show for itself.
+    return w->payload * 500 + w->sector * 40 + w->credits
+         + (w->state == ST_WON ? 1000 : 0);
+}
+
 // ---------------------------------------------------------------- setup
 static void price_node(World *w, Node *n, int sector) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
@@ -53,14 +83,17 @@ static void price_node(World *w, Node *n, int sector) {
         p = p * (100 + ARCH_MOD[n->archetype][g]) / 100;
         // Fuel gets dearer the further east you go, so the run gets harder to
         // afford exactly as it gets harder to survive.
-        if (g == G_FUEL) p = p * (100 + sector * 2) / 100;
+        if (g == G_FUEL) p = p * (100 + sector * DIFF[w->diff].fuel_scale) / 100;
         n->price[g] = (int16_t)(p < 1 ? 1 : p);
     }
 }
 
-void world_init(World *w, uint32_t seed) {
+void world_init(World *w, uint32_t seed, int diff) {
     for (int i = 0; i < (int)sizeof *w; ++i) ((uint8_t *)w)[i] = 0;
-    w->rng = seed ? seed : 1u;
+    w->rng  = seed ? seed : 1u;
+    w->seed = w->rng;
+    w->diff = (uint8_t)(diff < 0 ? 0 : (diff >= DIFF_COUNT ? DIFF_COUNT - 1 : diff));
+    const DiffRule *D = &DIFF[w->diff];
 
     for (int s = 0; s < SECTORS; ++s) {
         int count;
@@ -77,10 +110,15 @@ void world_init(World *w, uint32_t seed) {
             if (s == 0)                     nd->type = NODE_SETTLE;
             else if (s == SECTORS - 1)      nd->type = NODE_GREEN;
             else {
+                // Settlements are resupply, so their density is the single
+                // biggest lever on survival; storms are the only threat to the
+                // seed that cannot be bought off.
                 int r = rng_range(&w->rng, 0, 99);
-                nd->type = (uint8_t)(r < 46 ? NODE_SETTLE :
-                                     r < 76 ? NODE_EVENT  :
-                                     r < 92 ? NODE_HAZARD : NODE_EMPTY);
+                int settle = D->settle_pct, storm = D->storm_pct;
+                nd->type = (uint8_t)(r < settle              ? NODE_SETTLE :
+                                     r < settle + 30         ? NODE_EVENT  :
+                                     r < settle + 30 + storm ? NODE_HAZARD
+                                                             : NODE_EMPTY);
             }
             // A general trading post shows up often enough to be the baseline
             // the specialists are read against.
@@ -115,9 +153,9 @@ void world_init(World *w, uint32_t seed) {
     w->node[0][0].visited = 1;
     // Deliberately lean: enough to start trading, not enough to simply buy
     // your way east without ever selling at a profit.
-    w->credits = 150;
-    w->held[G_WATER] = 9;
-    w->held[G_FUEL]  = 6;
+    w->credits = D->credits;
+    w->held[G_WATER] = D->water;
+    w->held[G_FUEL]  = D->fuel;
     w->held[G_AMMO]  = 4;
     w->held[G_MEDS]  = 1;
     w->held[G_SCRAP] = 2;
@@ -582,7 +620,8 @@ void world_travel(World *w, int next_index) {
         // competent convoy always arrives intact, because every other risk to
         // the payload is an encounter you can simply buy your way out of, and
         // two of the five endings are unreachable.
-        if (w->payload > 0 && rng_range(&w->rng, 0, 99) < 35) w->payload--;
+        if (w->payload > 0 && rng_range(&w->rng, 0, 99) < DIFF[w->diff].spoil_pct)
+            w->payload--;
         if (w->held[G_WATER] == 0 && w->held[G_FUEL] == 0 && world_cargo(w) == 0) {
             w->state = ST_DEAD; w->death = DEATH_STRIPPED; return;
         }
@@ -661,8 +700,20 @@ void world_sell(World *w, int good) {
 // ---------------------------------------------------------------- encounters
 int world_can_accept(const World *w) {
     const Event *e = &w->event;
-    if (e->pay_good < 0) return 1;
-    return w->held[e->pay_good] >= e->pay_qty;
+    if (e->pay_good >= 0 && w->held[e->pay_good] < e->pay_qty) return 0;
+
+    // There also has to be somewhere to put what is being offered. Without
+    // this the goods were quietly truncated to whatever fitted: the panel
+    // advertised a gain, the player paid the price in full, and with a full
+    // hold received nothing at all. Paying what is asked and getting less than
+    // was shown is the one thing an encounter must never do -- the whole
+    // system asks the player to take it at its word.
+    if (e->gain_good >= 0 && e->gain_qty > 0) {
+        int freed = (e->pay_good >= 0) ? e->pay_qty : 0;
+        int room  = world_cargo_cap(w) - (world_cargo(w) - freed);
+        if (room < e->gain_qty) return 0;
+    }
+    return 1;
 }
 
 static void end_event(World *w) {
@@ -843,9 +894,17 @@ static void roll_event(World *w) {
     // are worth. This is what puts the ending at stake rather than merely the
     // accounting -- without it the seed always arrives and three of the five
     // endings are unreachable.
+    //
+    // Both the chance and the price climb with depth. At a flat 45% for one or
+    // two crates the arithmetic never got there: about 0.19 demands per run at
+    // 1.5 crates each is 0.29 crates lost, against six needed, so arriving
+    // empty-handed did not occur once in 800 measured runs and the ending was
+    // decoration. Late raiders know exactly what is in the crates, and refusing
+    // them costs accordingly -- which is what makes the last sectors the ones
+    // where the run is actually decided.
     if (hold_searched && depth >= (SECTORS - 1) / 3 && w->payload > 0
-        && rng_range(&w->rng, 0, 99) < 45) {
+        && rng_range(&w->rng, 0, 99) < 45 + depth * 3) {
         e->lose_good = -2;                        // -2 means the payload itself
-        e->lose_qty  = (int8_t)rng_range(&w->rng, 1, 2);
+        e->lose_qty  = (int8_t)(rng_range(&w->rng, 1, 2) + depth / 5);
     }
 }

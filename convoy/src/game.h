@@ -43,6 +43,10 @@ typedef struct {
 } GameMemory;
 
 void game_init  (GameMemory *mem, uint32_t seed);
+// The date, as a seed. Only the platform layer is allowed to know what day it
+// is; the core just gets a number, so a daily run stays reproducible and the
+// game core keeps making no OS calls at all.
+void game_daily (GameMemory *mem, uint32_t seed);
 void game_update(GameMemory *mem, const Input *in, Framebuffer *fb);
 void game_audio (GameMemory *mem, AudioBuffer *ab);
 

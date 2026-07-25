@@ -11,6 +11,24 @@
 #define T_START        "PRESS ENTER TO START"
 #define T_HELP_HINT    "PRESS H FOR HOW TO PLAY"
 
+// Title menu. The difficulty blurbs name the failure each setting leans on,
+// so the choice is informed before the first run rather than after the third.
+#define T_M_DIFF       "DIFFICULTY"
+#define T_M_MODE       "MAP"
+#define T_M_ARROWS     "ARROWS CHOOSE"
+#define T_DIFF_EASY    "FORGIVING"
+#define T_DIFF_NORMAL  "THE ROAD"
+#define T_DIFF_HARD    "UNFORGIVING"
+#define T_DIFF_EASY_D  "TOWNS ARE CLOSE AND STORMS ARE RARE. FUEL WILL STILL KILL YOU."
+#define T_DIFF_NORM_D  "THIRST, FUEL AND RAIDERS ALL GET A TURN."
+#define T_DIFF_HARD_D  "LONG GAPS BETWEEN TOWNS, HARD WEATHER. ARRIVING WHOLE IS THE PROBLEM."
+#define T_MODE_STD     "RANDOM"
+#define T_MODE_DAILY   "TODAY'S RUN"
+#define T_MODE_STD_D   "A NEW MAP EVERY TIME."
+#define T_MODE_DAILY_D "ONE MAP A DAY. EVERYONE GETS THE SAME ONE. COMPARE SCORES."
+#define T_SCORE        "SCORE"
+#define T_SEED         "SEED"
+
 // Goods. Order matches the G_* enum in world.h and the ICON_* enum in render.h.
 #define T_WATER        "WATER"
 #define T_FUEL         "FUEL"

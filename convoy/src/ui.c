@@ -843,12 +843,47 @@ void ui_title(Framebuffer *fb, GameState *gs) {
         draw_text_c(fb, cx, 96, T_TAGLINE, 1, PALETTE[C_WARN]);
     }
 
+    // ---- the two choices before a run starts ---------------------------
+    static const char *const DIFF_NAME[DIFF_COUNT] = {
+        T_DIFF_EASY, T_DIFF_NORMAL, T_DIFF_HARD
+    };
+    static const char *const DIFF_BLURB[DIFF_COUNT] = {
+        T_DIFF_EASY_D, T_DIFF_NORM_D, T_DIFF_HARD_D
+    };
+
+    const int mx = cx - 210, mw = 420, my = fb->h - 150;
+    fill_scrim(fb, mx, my - 10, mw, 96, PALETTE[C_INK], 12);
+    draw_rect(fb, mx, my - 10, mw, 96, PALETTE[C_BORDER]);
+
+    for (int row = 0; row < 2; ++row) {
+        int ry  = my + row * 24;
+        int on  = (gs->menu_row == row);
+        const char *label = row ? T_M_MODE : T_M_DIFF;
+        const char *value = row ? (gs->daily ? T_MODE_DAILY : T_MODE_STD)
+                                : DIFF_NAME[gs->diff];
+
+        // Only the selected row gets arrows, so it is obvious which one the
+        // left and right keys are pointed at.
+        if (on) {
+            draw_glyph(fb, mx + 148, ry, G_MINUS, 1, PALETTE[C_WARN]);
+            draw_glyph(fb, mx + 262, ry, G_PLUS,  1, PALETTE[C_WARN]);
+        }
+        draw_text(fb, mx + 16, ry, label, 1, PALETTE[on ? C_BONE : C_DIM]);
+        draw_text(fb, mx + 164, ry, value, 1,
+                  PALETTE[on ? C_WARN : C_DIM]);
+    }
+
+    // One line explaining whatever the cursor is currently on.
+    draw_text_c(fb, cx, my + 56,
+                gs->menu_row ? (gs->daily ? T_MODE_DAILY_D : T_MODE_STD_D)
+                             : DIFF_BLURB[gs->diff],
+                1, PALETTE[C_DIM]);
+
     // Prompts, pulsing so they read as things to press.
-    const int py = fb->h - 78;
-    fill_scrim(fb, cx - 200, py - 8, 400, 56, PALETTE[C_INK], 11);
+    const int py = fb->h - 44;
     if ((gs->tick / 24) & 1)
         draw_text_c(fb, cx, py, T_START, 2, PALETTE[C_BONE]);
-    draw_text_c(fb, cx, py + 28, T_HELP_HINT, 1, PALETTE[C_WARN]);
+    draw_text_c(fb, cx, py + 24, T_HELP_HINT, 1, PALETTE[C_WARN]);
 }
 
 // The instructions. This exists because the game is otherwise a guessing
@@ -898,9 +933,13 @@ void ui_end(Framebuffer *fb, GameState *gs, int won) {
 
     scene_draw(fb, gs->tick, won ? SECTORS - 1 : w->sector, won ? 0 : 200,
                won ? 235 : 210, WX_CLEAR);
-    // Wash the whole scene toward triumph or toward dust.
+    // Tint the scene toward triumph or toward dust. Kept light: at a quarter
+    // coverage the green swallowed the sky, the sand and the convoy itself,
+    // and the arrival read as a rendering fault rather than as arrival. The
+    // Green Zone marker and the convoy parked beside it carry the moment; the
+    // wash only has to agree with them.
     fill_scrim(fb, 0, 0, fb->w, fb->h,
-               won ? PALETTE[C_GREEN] : PALETTE[C_INK], won ? 4 : 8);
+               won ? PALETTE[C_GREEN] : PALETTE[C_INK], won ? 2 : 8);
 
     int cx = fb->w / 2;
 
@@ -953,6 +992,19 @@ void ui_end(Framebuffer *fb, GameState *gs, int won) {
     draw_number(fb, x + text_w(T_REACHED, 1) + 8, py + 54, w->credits, 2, PALETTE[C_WARN]);
 
     draw_summary(fb, w, cx, py + 76);
+
+    // One number for the whole run, and the seed that produced it. Together
+    // these are what makes a daily run worth comparing: same map, same rules,
+    // one figure to argue about.
+    {
+        int sx = cx + 40;
+        draw_text(fb, sx, py + 40, T_SCORE, 1, PALETTE[C_DIM]);
+        draw_number(fb, sx + text_w(T_SCORE, 1) + 8, py + 36,
+                    world_score(w), 2, PALETTE[C_GOOD]);
+        draw_text(fb, sx, py + 58, T_SEED, 1, PALETTE[C_DIM]);
+        draw_number(fb, sx + text_w(T_SCORE, 1) + 8, py + 58,
+                    (int)(w->seed % 100000u), 1, PALETTE[C_DIM]);
+    }
 
     if ((gs->tick / 24) & 1)
         draw_text_c(fb, cx, py + 94, T_AGAIN, 1, PALETTE[C_BONE]);

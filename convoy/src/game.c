@@ -24,6 +24,15 @@ int audio_mood_of(GameMemory *mem) {
     return ((GameState *)mem->permanent)->audio.mood;
 }
 
+// Today's date, arriving as a number. The platform layer is the only part of
+// the program that knows what day it is; keeping it on that side means the
+// core still makes no OS calls, and a daily run stays reproducible from its
+// seed like any other.
+void game_daily(GameMemory *mem, uint32_t seed) {
+    GameState *gs = (GameState *)mem->permanent;
+    gs->daily_seed = seed ? seed : 1u;
+}
+
 // The test bot drives the real UI rather than calling the simulation directly,
 // so it has to see where the cursor is. Read-only, harness-only.
 void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
@@ -36,7 +45,7 @@ void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
 
 // ---------------------------------------------------------------- helpers
 static void restart(GameState *gs, uint32_t seed) {
-    world_init(&gs->w, seed);
+    world_init(&gs->w, seed, gs->diff);
     gs->sel = 0;
     gs->map_sel = 0;
     gs->tab = TAB_MARKET;
@@ -54,7 +63,19 @@ void game_init(GameMemory *mem, uint32_t seed) {
     gs->seed  = seed ? seed : 1u;
     gs->title = 1;
     gs->help  = 0;
+    gs->diff  = DIFF_NORMAL;
+    gs->daily = 0;
+    gs->menu_row = 0;
+    // Until the platform layer says otherwise there is no date to work from,
+    // so the daily run is simply the ordinary seed.
+    gs->daily_seed = gs->seed;
     restart(gs, gs->seed);
+    // restart() begins the opening cut scene, which is right when a run starts
+    // and wrong here: the title has not been shown yet. Left running, the
+    // opening played before the title and then again the moment the player
+    // pressed start, and any key aimed at the title menu was swallowed by it.
+    // The world is still built so the title has something behind it.
+    gs->cut.running = 0;
     audio_init(&gs->audio, gs->seed);
     mem->initialized = 1;
 }
@@ -100,12 +121,21 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     if (gs->title) {
         if (in->pressed[BTN_HELP]) {
             gs->help = 1;
+        } else if (in->pressed[BTN_UP] || in->pressed[BTN_DOWN]) {
+            gs->menu_row ^= 1;
+        } else if (in->pressed[BTN_LEFT] || in->pressed[BTN_RIGHT]) {
+            int d = in->pressed[BTN_RIGHT] ? +1 : -1;
+            if (gs->menu_row == 0)
+                gs->diff = (gs->diff + d + DIFF_COUNT) % DIFF_COUNT;
+            else
+                gs->daily ^= 1;
         } else if (in->pressed[BTN_START] || in->pressed[BTN_A]) {
             gs->title = 0;
             // Deterministic from the seed handed in at init, so a given seed
             // always produces the same run for testing. Replays from the end
-            // screen vary instead.
-            restart(gs, gs->seed);
+            // screen vary instead. A daily run ignores both and takes the
+            // date-derived seed, so everyone plays the same map today.
+            restart(gs, gs->daily ? gs->daily_seed : gs->seed);
         }
         audio_mood(&gs->audio, MOOD_TITLE);
         ui_title(fb, gs);

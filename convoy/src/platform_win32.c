@@ -130,6 +130,20 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
 
     Framebuffer fb = { g_pixels, FB_W, FB_H };
     game_init(&mem, (uint32_t)GetTickCount());
+    {
+        // Today's date as a seed, so the daily run is the same map for
+        // everyone playing on the same day. Local time rather than UTC: the
+        // day should turn over at the player's midnight.
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        uint32_t ymd = (uint32_t)st.wYear * 10000u
+                     + (uint32_t)st.wMonth * 100u + (uint32_t)st.wDay;
+        // Mixed, because consecutive dates differ by 1 and the world generator
+        // would otherwise open with near-identical maps on consecutive days.
+        uint32_t d = ymd * 2654435761u;
+        d ^= d >> 15; d *= 0x85EBCA6Bu; d ^= d >> 13;
+        game_daily(&mem, d);
+    }
     audio_open();   // failure here is survivable and deliberately ignored
 
     timeBeginPeriod(1);

@@ -308,6 +308,11 @@ It is reachable in principle -- a careless human will find it -- but by the
 standard applied to unaffordable kit and no-op upgrades, unverified content is
 unverified. Either force reachability in phase F or cut the ending.
 
+**RESOLVED in phase F.** It was not reachable in principle either: the
+arithmetic came to 0.29 crates lost per run against six needed. Payload demands
+now escalate with depth, and the ending is demonstrated with a refuse-every-
+encounter probe. See the phase F section below.
+
 ## Phase B — the audio engine
 
 | metric | before | after |
@@ -436,6 +441,103 @@ believing any number that follows.
 less often than the garage (`upg>=1` in 148 of 200). Combined with the
 encounter-EV finding above, phase F has two known balance targets rather than
 one.
+
+---
+
+## Phase E — difficulty modes and the daily seed
+
+Three settings chosen at the title, plus a daily run: one map a day, the same
+one for everybody, with a score to compare.
+
+| difficulty | skilled win (n=200) | careless (n=40) | stalls |
+|---|---:|---:|---:|
+| FORGIVING | **64%** | 0% | 0 |
+| THE ROAD  | **46%** | 0% | 0 |
+| UNFORGIVING | **25%** | 0% | 0 |
+
+Target bands were ~60 / 40-45 / ~25. All three land inside or within one
+standard error (n=200 gives about +/-3.5 points).
+
+**Difficulty leans on a different death, not on a bigger number.** The design
+claim was that the modes should fail *differently*. Measured, over 120 seeds
+each:
+
+| difficulty | THIRST | STRANDED |
+|---|---:|---:|
+| FORGIVING | 23 (61%) | 15 |
+| THE ROAD | 32 (54%) | 27 |
+| UNFORGIVING | 34 | **54 (61%)** |
+
+Easy and normal are thirst-led; hard inverts to stranded-led, because the
+settlement density drop and the steeper fuel curve bite before the water does.
+The claim holds and is now a measurement rather than an intention.
+
+The table is six numbers per row -- starting credits, water, fuel, the fuel
+price curve, storm spoilage and settlement density -- and settlement density is
+by far the strongest lever. It is resupply: 52/48/44 percent moves the win rate
+more than every other field combined.
+
+**Bug: the opening cut scene played before the title, and then again.**
+`game_init` calls `restart()` to build a world for the title screen to sit in
+front of, and `restart()` begins the opening. So the opening ran first, the
+title appeared after it, and pressing start replayed the whole thing. It had
+been there since phase A and nobody noticed because nobody had played by hand
+and the bot presses through everything. It surfaced only when the new title
+menu stopped responding -- the cut scene was eating the keys. **A modal screen
+that swallows input hides itself; the symptom shows up in whatever was supposed
+to receive that input.**
+
+**Bug: paying for goods there was no room for.** `world_can_accept` checked
+whether the player could afford an encounter but not whether the hold could
+take what was offered, and `world_accept` clamped the gain to the space
+available. With a full hold the player paid the price in full and received
+nothing, while the panel advertised the goods. Worth only about one point of
+win rate -- the bot rarely runs full -- but it is the one thing an encounter
+must never do, since the whole system asks the player to take the offer at its
+word.
+
+## Phase F — rebalance, and closing the last open item
+
+**RESOLVED: the empty-handed ending, open since phase A.** `OUT_EMPTY` had
+never occurred in 200 runs, then 800, across every difficulty. The standing
+decision was "force reachability or cut it".
+
+Cutting it was nearly the right answer, because the arithmetic said it was
+decoration. Raiders, tolls and checkpoints past sector 4 demanded the seed with
+a flat 45% chance for 1-2 crates. Encounters average 2.75 per run; roughly two
+fall past sector 4; three of the fourteen kinds search the hold. That is
+2 x (3/14) x 0.45 = **0.19 demands per run**, at 1.5 crates each: **0.29 crates
+lost per run against six needed.** No sample size would ever have reached it.
+
+Instead both the chance and the price now climb with depth -- `45 + depth * 3`
+percent, for `1..2 + depth/5` crates. Late raiders know exactly what is in the
+crates. Verified with a new probe (`-R`) that refuses every encounter, which is
+the only player who can lose the seed at all:
+
+| difficulty | EMPTY (refusing, n=200) | EMPTY (paying, n=200) |
+|---|---:|---:|
+| FORGIVING | 3 | 0 |
+| THE ROAD | 4 | 0 |
+| UNFORGIVING | 2 | 0 |
+
+All five endings are now reachable and demonstrated. Skilled win rates were
+unchanged by the change (64/46/25 before and after), because a player who pays
+raiders never loses a crate to them -- which is exactly the intended shape: the
+ending belongs to the player who refuses, and the cost is real.
+
+**A probe is not a strategy.** `-R` exists to prove content is reachable, not
+to play well; it wins less often than the ordinary bot. Keeping the two
+separate is what stops "reachable" and "sensible" being confused.
+
+**Teaching arc, re-verified now that a cut scene and a title menu exist.**
+The opening is 301 characters at 2 ticks each: **10 seconds** if never skipped,
+and any key advances it. Title -> opening -> first market is immediate (the
+starting node is a settlement), and the first encounter arrives at bot step 31.
+Well inside five minutes with room to spare.
+
+**Win-screen wash.** Arrival tinted the whole frame green at a quarter
+coverage, which swallowed the sky, the sand and the convoy -- the same mistake
+as the cold night in phase C, in the opposite colour. Cut to an eighth.
 
 ---
 

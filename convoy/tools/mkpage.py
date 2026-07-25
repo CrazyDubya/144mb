@@ -10,7 +10,7 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 107008
+BYTES_USED = 108544
 LIMIT = 1474560
 
 
@@ -25,8 +25,11 @@ STILLS = [
      "crates, and the Green Zone has soil and water and nothing to plant. You cannot "
      "sell the seed &mdash; not for fuel, not for water, not to save your own life."),
     ("title.png", "The title",
-     "Enter starts a run, H opens the instructions. The convoy drives east toward the "
-     "only green thing in the world."),
+     "Two choices before a run: how forgiving the road is, and whether to play a random "
+     "map or today's. The daily map is the same for everyone, and the run ends with a "
+     "score, so two people can argue about the same fourteen sectors. Difficulty does "
+     "not scale one number &mdash; on the easy setting thirst is what kills you, on the "
+     "hard one it is fuel."),
     ("dawn.png", "First light",
      "Every run is one day. You load the crates at dawn, and the sky is the clock: "
      "there is no timer on screen and none is needed."),
@@ -47,6 +50,12 @@ STILLS = [
      "stand with them. Encounters used to live only on encounter nodes, which meant "
      "the profitable route was the one that skipped the story &mdash; a fifth of "
      "winning runs met nobody at all. Now they find you in the market too."),
+    ("end.png", "The reckoning",
+     "Five endings, and which one you get depends on how much of the seed is still "
+     "aboard. Arriving with none of it was, for three phases, an ending nobody could "
+     "reach: the arithmetic came to 0.29 crates lost per run against six needed. "
+     "Raiders now want more the deeper you are, and it costs nothing to a player who "
+     "pays them."),
     ("ending.png", "Arrival",
      "Five endings, graded on what survived rather than on whether you arrived. "
      "Storms spoil seed and raiders take it, so reaching the Green Zone and "

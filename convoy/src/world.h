@@ -73,6 +73,11 @@ typedef enum {
     ST_MAP, ST_TRADE, ST_EVENT, ST_DEAD, ST_WON
 } WorldState;
 
+// Difficulty does not scale one number. Each setting leans on a different one
+// of the three ways a run ends -- thirst, being stranded, being stripped -- so
+// the modes fail differently rather than just more often.
+enum { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_COUNT };
+
 typedef enum {
     DEATH_NONE = 0, DEATH_THIRST, DEATH_STRANDED, DEATH_STRIPPED
 } DeathCause;
@@ -146,6 +151,8 @@ typedef struct {
     uint8_t  payload;              // slots still aboard, of PAYLOAD_SLOTS
     uint8_t  encounters;           // how many fired all run, for measurement
     uint8_t  after_event;          // state to return to; 0 (ST_MAP) unless set
+    uint8_t  diff;                 // DIFF_*, fixed for the whole run
+    uint32_t seed;                 // the seed as handed in; rng has moved on
     uint8_t  payload_lost_to;      // what took the last of it, for the ending
 
     uint8_t  upgrade[UPG_COUNT];   // fitted or not
@@ -164,7 +171,9 @@ typedef struct {
     int      job_paid; // reward banked this stop, for the UI to celebrate
 } World;
 
-void world_init  (World *w, uint32_t seed);
+void world_init  (World *w, uint32_t seed, int diff);
+// A run's final number, so two players can compare the same daily seed.
+int  world_score (const World *w);
 int  world_cargo (const World *w);
 int  world_can_travel(const World *w, int next_index);
 // Fills `out` with the node indices reachable from here, returning how many.

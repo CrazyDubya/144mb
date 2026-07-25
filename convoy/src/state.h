@@ -22,6 +22,15 @@ typedef struct {
     int        map_sel;    // index into the reachable-node list on the map
     int        tab;        // which settlement tab is showing
     int        title;      // showing the title screen rather than a run
+
+    // Title-screen choices. The daily seed comes from the platform layer,
+    // which is the only part of the program allowed to know the date; the
+    // core just receives a number, so a run stays reproducible from it.
+    int        diff;       // DIFF_*, chosen before the run starts
+    int        daily;      // 1 = play today's fixed seed
+    int        menu_row;   // which title row the cursor is on
+    uint32_t   daily_seed;
+
     uint8_t    vignette_seen[SECTORS];   // each beat fires once
     int        help;       // showing the instructions overlay
     AudioState audio;

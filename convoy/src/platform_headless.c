@@ -221,6 +221,9 @@ int main(int argc, char **argv) {
     // presses rather than by reaching into GameState, so the shot also proves
     // the tab can actually be reached -- which for a while it could not.
     int         journal_at = 0;
+    int         diff = DIFF_NORMAL;   // -D selects a difficulty for a sweep
+    int         refuse_all = 0;       // -R makes the bot decline every encounter
+    int         end_shot = 0;         // -E dumps the summary screen after the run
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -234,6 +237,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-B")) bot_mode = 1;
         else if (!strcmp(argv[i], "-F") && i + 1 < argc) bot_float = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-J") && i + 1 < argc) journal_at = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-D") && i + 1 < argc) diff = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-R")) refuse_all = 1;
+        else if (!strcmp(argv[i], "-E")) end_shot = 1;
     }
 
     GameMemory mem = {0};
@@ -248,12 +254,25 @@ int main(int argc, char **argv) {
     Input in = {0};
     int dumped = 0;
 
+    // Pick the difficulty the way a player does, by pressing left or right on
+    // the title menu. Setting the field directly would be shorter and would
+    // also stop testing whether the menu works.
+    for (int n = diff - DIFF_NORMAL; n != 0; n += (n > 0 ? -1 : 1)) {
+        int btn = (n > 0) ? BTN_RIGHT : BTN_LEFT;
+        memset(&in, 0, sizeof in);
+        in.down[btn] = in.pressed[btn] = 1;
+        game_update(&mem, &in, &fb);
+        memset(&in, 0, sizeof in);
+        game_update(&mem, &in, &fb);
+    }
+
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player
     // would, one per step, and never touches the simulation directly.
     if (bot_mode) {
         Bot bot;
         bot_init(&bot, bot_float);
+        bot.refuse_all = refuse_all;
 
         int steps = 0;
         const int LIMIT = 4000;      // generous; a run is ~60 decisions
@@ -301,7 +320,30 @@ int main(int argc, char **argv) {
             }
         }
 
+        // The run is over but the ending cut scene still owns the screen, and
+        // the bot stops before dismissing it. Press through to the summary,
+        // which is the screen that actually reports the score.
+        if (end_shot) {
+            for (int k = 0; k < 240; ++k) {
+                memset(&in, 0, sizeof in);
+                if ((k % 30) == 0) in.down[BTN_A] = in.pressed[BTN_A] = 1;
+                game_update(&mem, &in, &fb);
+            }
+            char path[512];
+            snprintf(path, sizeof path, "%s/end.png", outdir);
+            write_png(path, pixels, FB_W, FB_H);
+        }
+
         const World *w = game_world(&mem);
+        // The menu selection only reaches the World when the run starts, so
+        // this is the first point it can be checked -- and it is worth
+        // checking, because a sweep that silently ran the default difficulty
+        // would produce three identical tables and look like a balance result.
+        if (w->diff != diff) {
+            fprintf(stderr, "seed %u ran difficulty %d, wanted %d\n",
+                    seed, w->diff, diff);
+            return 2;
+        }
         {
             // What the convoy actually ended up owning, not just whether it
             // won. An option nobody takes and an option that loses money look
@@ -322,12 +364,12 @@ int main(int argc, char **argv) {
             };
             printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d "
                    "seed_left=%d outcome=%s upg=%d crew=%d met=%d regard=%d "
-                   "enc=%d steps=%d\n",
+                   "enc=%d diff=%d score=%d steps=%d\n",
                    seed,
                    w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
                    w->sector, w->day, w->credits, world_cargo(w),
                    world_payload(w), OUT_NAME[world_outcome(w)], upg, crew,
-                   met, regard, w->encounters, steps);
+                   met, regard, w->encounters, w->diff, world_score(w), steps);
         }
         return 0;
     }

@@ -408,3 +408,62 @@ after a failed rebuild and produced a full, plausible, entirely stale table.
 **A build failure must stop everything downstream of it.** Chain build and test
 with `&&`, and treat any pass that arrives suspiciously fast, or any result
 identical to the previous run, as a stale-binary report until proven otherwise.
+
+## Content that cannot be reached by arithmetic, not by luck
+
+convoy had an ending for arriving with none of the cargo the run was about. It
+never once occurred -- not in 200 runs, not in 800, on any difficulty. The
+instinct was to run more seeds.
+
+The answer came from multiplying instead. Raiders demanded the cargo past a
+certain point at a flat 45% for one or two crates; encounters average 2.75 per
+run, about two fall past that point, and three of fourteen encounter kinds
+search the hold. That is 2 x (3/14) x 0.45 = 0.19 demands per run at 1.5 crates
+each -- **0.29 crates lost per run against six needed.** No sample size reaches
+that. The ending was decoration and a thousand more runs would only have
+confirmed it more slowly.
+
+**Before sampling harder for a rare event, multiply out its rate.** If the
+expected count per run is two orders of magnitude below what the event needs,
+the sweep is not underpowered, the content is unreachable.
+
+The fix was to make the threat escalate with progress rather than stay flat, so
+late refusals cost several crates. Two things made it safe: it changed nothing
+for players who pay (verified: win rates identical before and after), and it
+was demonstrated with a dedicated probe rather than hoped for.
+
+## A probe is not a strategy
+
+Proving the ending reachable needed a player who refuses every offer. That is
+not a good player -- it wins less often than the ordinary bot -- and it was
+added as a separate switch rather than as bot behaviour.
+
+Keeping them separate matters: the ordinary bot answers "is this balanced?" and
+the probe answers "can this be reached at all?". Merging them would have made
+the balance numbers meaningless and the reachability answer unconvincing.
+**Test players should be as specialised as test cases.**
+
+## A modal screen that eats input hides itself
+
+convoy's opening cut scene ran before the title screen and again immediately
+after, because the function that builds a world for the title to sit behind
+also starts the opening. It shipped that way for three phases. Nobody noticed:
+the automated player presses through everything, and no human had played it.
+
+It surfaced only when a new title menu appeared not to respond. The cut scene
+was swallowing the keys. **The symptom of a modal screen consuming input never
+appears on the modal screen -- it appears on whatever was supposed to receive
+that input, which looks broken instead.** When a newly added control does
+nothing, suspect something upstream is still running.
+
+## Difficulty should change what kills you
+
+Three difficulty settings could have been one multiplier. Instead each one
+leans on a different failure, and the claim was checked rather than asserted:
+easy and normal are thirst-led (61% and 54% of deaths), hard inverts to
+fuel-led (61%), because settlement density drops faster than the water margin
+does.
+
+Of the six numbers per difficulty, **resupply density moved the win rate more
+than the other five combined**. Starting stock is what a player notices; how
+often they can restock is what actually decides the run.

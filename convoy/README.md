@@ -2,7 +2,7 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**107,008 bytes — 7.26% of 1,474,560.**
+**108,544 bytes — 7.36% of 1,474,560.**
 
 You run a convoy east across fourteen sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
@@ -37,11 +37,11 @@ survive.
 
 ### Measured difficulty
 
-| player | wins |
-|---|---|
-| ignores the economy | **0%** |
-| buys fuel, fixed routine | **0%** |
-| plays prices (see the bot below) | **36%** |
+| player | FORGIVING | THE ROAD | UNFORGIVING |
+|---|---|---|---|
+| ignores the economy | **0%** | **0%** | **0%** |
+| buys fuel, fixed routine | **0%** | **0%** | **0%** |
+| plays prices (see the bot below) | **64%** | **46%** | **25%** |
 
 Over 200 seeds each. The first two follow fixed key sequences and cannot react
 to a price, so they die out on the road; only the third actually trades.
@@ -128,7 +128,10 @@ was that the game was far too easy for anyone who knew what they were doing: it
 won 90% of runs on the original eight-sector route. Lengthening the journey and
 thinning out the settlements brought that to 53%, and the systems added since --
 a payload that cannot be sold, kit that is a real gamble, and people who turn up
-whether or not you routed toward them -- have brought it to 36%.
+whether or not you routed toward them -- have brought it to 46% on the middle
+setting. The three difficulties do not scale one number: easy and normal kill
+you with thirst, hard kills you with fuel, because settlements thin out faster
+than the water margin does.
 
 ## Layout
 
