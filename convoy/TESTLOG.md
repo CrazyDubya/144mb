@@ -716,6 +716,138 @@ conclusion that had been reached by arithmetic alone. That is the argument for
 this phase.
 
 
+## P2 — correctness bugs with no design content
+
+Seven fixes, all cases where the current behaviour was impossible to defend
+rather than merely unbalanced. Measured against the frozen `-A ref` control,
+which is why this phase comes before any work on the bot: it needs no competent
+agent to show that a run ended for a reason the rules do not support.
+
+| difficulty | P1 epoch zero | P2 exit | change |
+|---|---:|---:|---:|
+| FORGIVING | 68% | **72%** | +4 |
+| THE ROAD | 41% | **46%** | +5 |
+| UNFORGIVING | 25% | **27%** | +2 |
+
+n=400 each, zero stalls, `ref` and `v4` identical (the bot is untouched in this
+phase). The win rate rose because three of these bugs killed runs the rules say
+should have continued. **Recorded, not tuned back** — the balance phases come
+later and will be measured from here.
+
+### The fixes
+
+**Armour was overwritten by the thing it protects against.** The clamp on what
+refusing costs was applied inside each of the three raid-family cases, and the
+payload demand at the end of `roll_event` then overwrote `lose_good` and
+`lose_qty` wholesale. So the one fitting sold as protection gave exactly none
+from sector 4 onward — the half of the run a player buys it for. Armour and the
+bad-standing surcharge now both apply *after* the demand, and armour covers
+crates as well as cargo: one crate back is worth more than a full hold.
+
+Measured with a forced-policy A/B — same seeds, armour fitted or not,
+refuse-every-encounter on UNFORGIVING so that demands always bite, n=300:
+
+| | crates lost to demands |
+|---|---:|
+| armour off | 177 |
+| armour on | **151** |
+
+A 15% reduction, against **107 versus 107** — bit-for-bit identical — before
+the fix. Note this is deliberately not a win-rate measurement: armour protects
+the *ending*, and a crate is 500 score against a win's 1000, so its value never
+had to show up in a won/lost column and did not.
+
+**Standing was asymmetric and then discarded.** A discount required
+`pay_qty > 1` and a gain bonus required `regard > 1`, while both penalties
+required only `regard < 0`. Half the encounter table has `pay_qty` of exactly
+1, so on those kinds good standing bought nothing at all while bad standing
+always cost. And the surcharge was applied *before* the payload override that
+discards it — on precisely the three kinds the raider chief appears in, which
+are the only ones his standing affects. Gates are symmetric now, and goodwill
+can take a price to zero, the same shape as having the right crew aboard.
+
+**The economiser killed runs.** `UPG_ECON` makes every second hop cost no fuel,
+but `world_can_travel` demanded a unit in the hold regardless, and the failure
+path declared `DEATH_STRANDED`. A convoy with the economiser fitted, no fuel,
+on a free day, was killed for a hop that would have cost nothing — on the one
+fitting sold as insurance against exactly that. Both now ask
+`world_hop_costs_fuel()`.
+
+**Accepting could kill you.** `end_event` ended the run with `DEATH_STRIPPED`
+whenever the hold reached zero, including on the accept path. Several kinds pay
+in credits and cost goods, so taking the money for your last unit of cargo
+ended the run on the screen that had just shown a gain. Only a refusal can
+strip you now.
+
+**Contracts jammed permanently, and some were undeliverable.** `contract_tick`
+early-returns while a job is on the board and nothing ever cleared it, so one
+ignored offer disabled the contract system for the rest of the run. Offers now
+lapse when the convoy leaves. Separately, `by_sector` could be `SECTORS-1` —
+the Green Zone, which has no market, so `contract_tick` never runs there and
+the job could not be paid out at all. Clamped to `SECTORS-2`.
+
+Measured, normal difficulty, n=200:
+
+| | P1 | P2 |
+|---|---:|---:|
+| contracts offered per run | 1.48 | **1.89** |
+| accepted | 1.47 | 1.31 |
+| delivered | 0.63 | 0.56 |
+
+Offers up 28%, which is the expiry working. **Acceptances went down**, which is
+the finding: there are now more jobs than the bot can carry, because
+`contract_worth_taking` refuses anything that would leave under four free
+slots. Previously the board was jammed early and the question never arose. The
+delivery rate is unchanged at 43% of accepted. Both belong to P6.
+
+**Vignettes replayed for the rest of the run.** The caller tracked which
+*sector* had shown a beat, but two of the five are conditions rather than
+places: the seed being gone stays true, and storms recur. So the loss beat
+fired again at every remaining settlement — and because it is tested first, it
+suppressed the halfway and last-hop beats entirely. A convoy that lost its
+cargo saw the same three lines four times and nothing else again. Keyed by kind
+now.
+
+The loss beat was also guarded by `payload_lost_to != 0xFE`, and **`0xFE` is
+never assigned anywhere in the program**, so that test was always true.
+
+**`payload_lost_to` deleted.** Documented as "what took the last of it, for the
+ending", it was written on one of the three paths that can take a crate, stored
+a `WorldState` rather than a cause, and had exactly one reader — the dead
+sentinel above. With that gone it had none. The harness counts crate losses by
+cause properly.
+
+**Arriving through a vignette skipped the arrival.** The vignette branch
+returned before the tab reset and the travel sound, so a beat left the cursor
+on whatever tab was last used and made no noise — the two signals that say you
+have arrived somewhere. It falls through now.
+
+### Process
+
+Three mistakes worth recording, all caught rather than shipped.
+
+**I edited the frozen reference agent.** A one-line contract bound was applied
+to `bot.c` and `bot_ref.c` together by a careless `sed` over both files. The
+reference agent exists precisely so that it does not change; reverted. The
+change was harmless in this instance, which is exactly why the rule has to be
+mechanical rather than judged case by case.
+
+**I rebuilt while a sweep was running.** The sweep re-invokes the binary per
+difficulty, so it would have reported some difficulties from one build and some
+from another. The reasoning that the change was inert was almost certainly
+correct and was discarded anyway: sweeps now finish with an `md5sum -c` on the
+harness, so a straddled sweep reports itself instead of relying on memory.
+
+**A forced-policy flag that did nothing.** `-U n` fits an upgrade regardless of
+what the bot chooses, so armour can be measured with and without on the same
+seeds. The first A/B returned **107 crates against 107** — identical. The flag
+was setting the upgrade on the world `game_init` builds for the title screen to
+sit in front of, and pressing start builds the real world from scratch, zeroing
+it. This is the same shape as the map-hash bug found in P1, from the same
+cause, three days apart. **Anything the harness pokes into the world has to be
+poked after the title, not before.**
+
+
 ---
 
 ## Bugs found, and what found them

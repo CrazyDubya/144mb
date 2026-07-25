@@ -53,7 +53,7 @@ static void restart(GameState *gs, uint32_t seed) {
     gs->travel = 0;
     gs->from_sector = 0;
     gs->from_index = 0;
-    for (int i = 0; i < SECTORS; ++i) gs->vignette_seen[i] = 0;
+    for (int i = 0; i < VIG_COUNT; ++i) gs->vignette_seen[i] = 0;
     cutscene_begin(&gs->cut, &CS_OPENING, gs->tick);
 }
 
@@ -215,16 +215,19 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     if (gs->trans  > 0) gs->trans--;
     if (gs->travel > 0) gs->travel--;
 
-    // Arriving somewhere new can be worth a beat. Each fires at most once.
+    // Arriving somewhere new can be worth a beat. Each kind fires at most once.
     if (w->sector != prev_sector && w->state != ST_DEAD && w->state != ST_WON) {
-        if (!gs->vignette_seen[w->sector]) {
-            const Cutscene *v = cutscene_vignette(w);
-            if (v) {
-                gs->vignette_seen[w->sector] = 1;
-                cutscene_begin(&gs->cut, v, gs->tick);
-                cutscene_draw(fb, &gs->cut, gs->tick);
-                return;
-            }
+        int kind = -1;
+        const Cutscene *v = cutscene_vignette(w, &kind);
+        if (v && kind >= 0 && !gs->vignette_seen[kind]) {
+            gs->vignette_seen[kind] = 1;
+            cutscene_begin(&gs->cut, v, gs->tick);
+            cutscene_draw(fb, &gs->cut, gs->tick);
+            // Deliberately falls through to the arrival housekeeping below
+            // rather than returning. Returning here skipped the tab reset and
+            // the travel sound, so arriving through a vignette left the cursor
+            // on whatever tab was last used and made no noise -- the two
+            // things that tell a player they have arrived somewhere.
         }
     }
 

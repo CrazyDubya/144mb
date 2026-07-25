@@ -50,13 +50,28 @@ static const Cutscene CS_LOSS  = { VIG_LOSS,  1 };
 
 // One beat per milestone, each fired once. Interrupting a run repeatedly is
 // how a cut scene stops being a reward and starts being a toll booth.
-const Cutscene *cutscene_vignette(const World *w) {
-    if (w->payload == 0 && w->payload_lost_to != 0xFE) return &CS_LOSS;
-    if (w->sector == 1)                return &CS_FIRST;
-    if (w->sector == (SECTORS - 1) / 2) return &CS_HALF;
-    if (w->sector == SECTORS - 2)      return &CS_LAST;
-    if (w->node[w->sector][w->index].type == NODE_HAZARD) return &CS_STORM;
-    return 0;
+//
+// "Once" is per *kind*, not per sector, which is what the caller used to track.
+// Two of these are conditions rather than places: the seed being gone stays
+// true for the rest of the run, and storms recur. Keyed by sector, the loss
+// beat replayed at every remaining settlement -- and since it is tested first,
+// it also suppressed the halfway and last-hop beats entirely, so a convoy that
+// lost its cargo saw the same three lines four times and nothing else again.
+//
+// The 0xFE guard that used to sit on the loss test is gone with it: that value
+// was never assigned anywhere in the program, so the condition was always true
+// and the sentinel was decoration.
+const Cutscene *cutscene_vignette(const World *w, int *kind) {
+    int k; const Cutscene *cs;
+    if      (w->payload == 0)                 { k = VIG_LOSS_K;  cs = &CS_LOSS;  }
+    else if (w->sector == 1)                  { k = VIG_FIRST_K; cs = &CS_FIRST; }
+    else if (w->sector == (SECTORS - 1) / 2)  { k = VIG_HALF_K;  cs = &CS_HALF;  }
+    else if (w->sector == SECTORS - 2)        { k = VIG_LAST_K;  cs = &CS_LAST;  }
+    else if (w->node[w->sector][w->index].type == NODE_HAZARD)
+                                              { k = VIG_STORM_K; cs = &CS_STORM; }
+    else return 0;
+    if (kind) *kind = k;
+    return cs;
 }
 
 // ---------------------------------------------------------------- art

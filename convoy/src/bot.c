@@ -63,7 +63,7 @@ static int contract_worth_taking(const World *w) {
     const Contract *j = &w->job;
     if (j->state != CONTRACT_OFFERED) return 0;
     if (world_cargo(w) + j->qty > world_cargo_cap(w) - 4) return 0;
-    if (j->by_sector > SECTORS - 1) return 0;
+    if (j->by_sector > SECTORS - 2) return 0;
     return 1;
 }
 

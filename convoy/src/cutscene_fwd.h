@@ -7,6 +7,11 @@
 
 typedef struct Cutscene Cutscene;
 
+// Vignette kinds, so the caller can fire each at most once. Sectors were the
+// wrong key: two of these are conditions rather than places, and keyed by
+// sector the loss beat replayed at every remaining stop.
+enum { VIG_FIRST_K, VIG_HALF_K, VIG_STORM_K, VIG_LAST_K, VIG_LOSS_K, VIG_COUNT };
+
 typedef struct {
     const Cutscene *cs;
     int      index;

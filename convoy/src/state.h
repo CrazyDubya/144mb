@@ -31,7 +31,7 @@ typedef struct {
     int        menu_row;   // which title row the cursor is on
     uint32_t   daily_seed;
 
-    uint8_t    vignette_seen[SECTORS];   // each beat fires once
+    uint8_t    vignette_seen[VIG_COUNT]; // each beat fires once, by kind
     int        help;       // showing the instructions overlay
     AudioState audio;
 

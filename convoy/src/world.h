@@ -201,7 +201,12 @@ typedef struct {
     uint8_t  after_event;          // state to return to; 0 (ST_MAP) unless set
     uint8_t  diff;                 // DIFF_*, fixed for the whole run
     uint32_t seed;                 // the seed as handed in; rng has moved on
-    uint8_t  payload_lost_to;      // what took the last of it, for the ending
+    // `payload_lost_to` used to sit here, documented as "what took the last of
+    // it, for the ending". It was written on only one of the three paths that
+    // can take a crate, and what it stored was a WorldState rather than a
+    // cause. Its single reader compared it against a sentinel that was never
+    // assigned anywhere in the program, so that test was always true. Nothing
+    // reads it now; the harness counts crates lost by cause properly.
 
     uint8_t  upgrade[UPG_COUNT];   // fitted or not
     uint8_t  crew[CREW_COUNT];     // aboard or not
@@ -227,6 +232,7 @@ void world_init  (World *w, uint32_t seed, int diff);
 // A run's final number, so two players can compare the same daily seed.
 int  world_score (const World *w);
 int  world_cargo (const World *w);
+int  world_hop_costs_fuel(const World *w);
 int  world_can_travel(const World *w, int next_index);
 // Fills `out` with the node indices reachable from here, returning how many.
 // Lives here rather than in the UI because it is a fact about the route.

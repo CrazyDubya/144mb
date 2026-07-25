@@ -48,6 +48,6 @@ extern const Cutscene CS_OPENING;
 extern const Cutscene CS_ENDING[];   // indexed by Outcome
 // Short one-panel beats shown between sectors. Returns NULL when there is
 // nothing to say, which is most of the time.
-const Cutscene *cutscene_vignette(const World *w);
+const Cutscene *cutscene_vignette(const World *w, int *kind);
 
 #endif

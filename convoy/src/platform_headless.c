@@ -305,6 +305,7 @@ typedef struct {
     int   trace_hash;      // -Z: accumulate a hash of every step
     int   use_ref;         // -A ref: play with the frozen agent instead
     int   daily;           // --daily: take today's fixed map, via the menu
+    int   force_upg;       // -U n: fit upgrade n from the start, or -1
 } RunOpts;
 
 typedef struct {
@@ -379,7 +380,22 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         // to sit in front of, and pressing start builds the real one -- for an
         // ordinary run those are the same map, so hashing too early looked
         // correct and silently reported the wrong world for a daily run.
-        if (!title && !res->map) res->map = map_hash(w);
+        if (!title && !res->map) {
+            res->map = map_hash(w);
+            // Forced-policy runs. Some questions cannot be asked by watching a
+            // bot decide -- "is armour worth its price" needs runs that have it
+            // and runs that do not, over the same seeds.
+            //
+            // Applied here, on the first frame after the title, and not before:
+            // game_init builds a world for the title to sit in front of, and
+            // pressing start builds the real one from scratch. Set any earlier
+            // and world_init zeroes it, which is exactly what happened -- the
+            // first armour A/B came back 107 crates against 107.
+            if (o->force_upg >= 0 && o->force_upg < UPG_COUNT) {
+                World *mw = (World *)(uintptr_t)w;   // harness only
+                mw->upgrade[o->force_upg] = 1;
+            }
+        }
         int btn = o->use_ref ? botref_step(&ref, w, sel, map_sel, tab, title)
                              : bot_step(&bot, w, sel, map_sel, tab, title);
         if (btn < 0) break;
@@ -519,6 +535,7 @@ int main(int argc, char **argv) {
     int         exploit = 0;          // -X hunts a profitable market round trip
     int         use_ref = 0;          // -A ref plays with the frozen agent
     int         daily = 0;            // --daily plays today's fixed map
+    int         force_upg = -1;       // -U n fits an upgrade regardless of choice
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -540,6 +557,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-X")) exploit = 1;
         else if (!strcmp(argv[i], "-A") && i + 1 < argc) use_ref = !strcmp(argv[++i], "ref");
         else if (!strcmp(argv[i], "--daily")) daily = 1;
+        else if (!strcmp(argv[i], "-U") && i + 1 < argc) force_upg = atoi(argv[++i]);
     }
 
     GameMemory mem = {0};
@@ -552,7 +570,8 @@ int main(int argc, char **argv) {
     if (exploit) return exploit_probe();
 
     RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
-                    every, verbose, outdir, determinism, use_ref, daily };
+                    every, verbose, outdir, determinism, use_ref, daily,
+                    force_upg };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player

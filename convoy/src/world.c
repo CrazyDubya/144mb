@@ -493,7 +493,11 @@ static void contract_tick(World *w) {
     if (j->state != CONTRACT_NONE) return;
 
     // Only worth offering while there is road left to carry it down.
-    int hops_left = (SECTORS - 1) - w->sector;
+    // The last settlement is at SECTORS-2: the final sector is the Green Zone,
+    // which has no market, so contract_tick never runs there. A deadline of
+    // SECTORS-1 was therefore a job that could not be delivered at all, and at
+    // sector 10 half of all offers were generated that way.
+    int hops_left = (SECTORS - 2) - w->sector;
     if (hops_left < 3) return;
     // A dark town posts less work.
     if (rng_range(&w->rng_offer, 0, 99) <
@@ -584,7 +588,6 @@ static void drop_random_cargo(World *w, int units) {
             if (w->payload > 0) {
                 w->payload--;
                 INSTR(w->in.pl_random++);
-                if (w->payload == 0) w->payload_lost_to = (uint8_t)w->state;
             }
             continue;
         }
@@ -606,23 +609,34 @@ int world_reachable(const World *w, int *out) {
     return n;
 }
 
+// Whether the next hop actually burns a unit. The economiser makes every
+// second day free, and world_can_travel used to demand a unit in the hold
+// regardless -- so a convoy with the economiser fitted, no fuel, on a free
+// day was declared stranded and the run ended, on the one fitting sold as
+// insurance against exactly that.
+int world_hop_costs_fuel(const World *w) {
+    return !(w->upgrade[UPG_ECON] && (w->day % 2) == 0);
+}
+
 int world_can_travel(const World *w, int next_index) {
     if (w->sector >= SECTORS - 1) return 0;
     if (next_index < 0 || next_index >= NODES_PER) return 0;
     if (!w->node[w->sector + 1][next_index].active) return 0;
     if (!(w->node[w->sector][w->index].links & (1u << next_index))) return 0;
-    return w->held[G_FUEL] >= 1;
+    return !world_hop_costs_fuel(w) || w->held[G_FUEL] >= 1;
 }
 
 // ---------------------------------------------------------------- travel
 void world_travel(World *w, int next_index) {
     if (!world_can_travel(w, next_index)) {
         // Out of fuel with nowhere to go: the run ends here.
-        if (w->held[G_FUEL] < 1) { w->state = ST_DEAD; w->death = DEATH_STRANDED; }
+        if (world_hop_costs_fuel(w) && w->held[G_FUEL] < 1) {
+            w->state = ST_DEAD; w->death = DEATH_STRANDED;
+        }
         return;
     }
 
-    if (!(w->upgrade[UPG_ECON] && (w->day % 2) == 0)) w->held[G_FUEL]--;
+    if (world_hop_costs_fuel(w)) w->held[G_FUEL]--;
     w->day++;
 
     // The crew drink whether or not there is anything to drink, and every
@@ -633,6 +647,15 @@ void world_travel(World *w, int next_index) {
             w->state = ST_DEAD; w->death = DEATH_THIRST; return;
         }
         w->held[G_WATER] -= burn;
+    }
+
+    // An offer the convoy drove away from lapses. It used to persist forever,
+    // and since contract_tick early-returns while a job is on the board, one
+    // ignored offer disabled the contract system for the rest of the run --
+    // measured, 1.48 offers per run against 13 settlements visited.
+    if (w->job.state == CONTRACT_OFFERED) {
+        w->job.state = CONTRACT_NONE;
+        INSTR(w->in.c_expired++);
     }
 
     salvage_check(w);
@@ -775,10 +798,16 @@ int world_can_accept(const World *w) {
     return 1;
 }
 
-static void end_event(World *w) {
+// `stripped` is set only by world_decline: an empty hold ends the run, but
+// only when something was taken. Accepting used to be able to kill you --
+// several kinds pay in credits and cost goods, so taking the money for your
+// last unit of cargo ended the run on the screen that had just shown a gain.
+static void end_event(World *w, int stripped) {
     int back = w->after_event ? w->after_event : ST_MAP;
     w->after_event = 0;
-    if (world_cargo(w) == 0) { w->state = ST_DEAD; w->death = DEATH_STRIPPED; return; }
+    if (stripped && world_cargo(w) == 0) {
+        w->state = ST_DEAD; w->death = DEATH_STRIPPED; return;
+    }
     w->state = (uint8_t)back;
 }
 
@@ -797,7 +826,7 @@ void world_accept(World *w) {
         if (q > 0) w->held[e->gain_good] += q;
     }
     w->credits += e->gain_credits;
-    end_event(w);
+    end_event(w, 0);
 }
 
 void world_decline(World *w) {
@@ -821,7 +850,7 @@ void world_decline(World *w) {
             if (w->held[g] < 0) w->held[g] = 0;
         }
     }
-    end_event(w);
+    end_event(w, 1);
 }
 
 // Rolls a fresh encounter. Deeper sectors bite harder, and what the convoy
@@ -843,7 +872,6 @@ static void roll_event(World *w) {
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng_event, 2, 4) + depth / 3);
         if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
-        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
 
     case EV_WRECK:
@@ -876,7 +904,6 @@ static void roll_event(World *w) {
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
         e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         if (w->crew[CREW_GUARD]) e->pay_qty = 0;
-        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
 
     case EV_CACHE:
@@ -915,7 +942,6 @@ static void roll_event(World *w) {
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng_event, 3, 5);
         if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
-        if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) e->lose_qty--;
         break;
 
     case EV_LEAK:
@@ -939,20 +965,6 @@ static void roll_event(World *w) {
         break;
     }
 
-    // Someone who has dealt with you before charges accordingly. Good standing
-    // shaves the price; bad standing adds to it, and to what refusing costs.
-    {
-        int who = world_event_char(kind);
-        if (who != CHAR_NONE) {
-            w->met[who]++;
-            int r = w->regard[who];
-            if (r > 0 && e->pay_qty  > 1) e->pay_qty--;
-            if (r < 0 && e->pay_qty  > 0) e->pay_qty++;
-            if (r < 0 && e->lose_qty > 0) e->lose_qty++;
-            if (r > 1 && e->gain_qty > 0) e->gain_qty++;
-        }
-    }
-
     INSTR(w->in.ev_fired[kind]++);
 
     // Anyone who searches the hold past the halfway mark knows what the crates
@@ -971,5 +983,38 @@ static void roll_event(World *w) {
         && rng_range(&w->rng_event, 0, 99) < 45 + depth * 3) {
         e->lose_good = -2;                        // -2 means the payload itself
         e->lose_qty  = (int8_t)(rng_range(&w->rng_event, 1, 2) + depth / 5);
+    }
+
+    // Standing, applied after the demand above rather than before it. Bad
+    // standing used to add a unit to what refusing costs and then have that
+    // thrown away by the payload override -- on precisely the three kinds the
+    // raider chief appears in, which are the only ones his standing affects.
+    //
+    // The gates are symmetric now. They were not: a discount needed pay_qty
+    // above 1 and a bonus needed regard above 1, while both penalties needed
+    // only regard below 0. Half the table has pay_qty of exactly 1, so good
+    // standing bought nothing at all on those kinds while bad standing always
+    // cost. Goodwill can now take a price to zero, which is the same shape as
+    // what having the right crew aboard does.
+    {
+        int who = world_event_char(kind);
+        if (who != CHAR_NONE) {
+            w->met[who]++;
+            int r = w->regard[who];
+            if (r > 0 && e->pay_qty  > 0) e->pay_qty--;
+            if (r < 0 && e->pay_qty  > 0) e->pay_qty++;
+            if (r < 0 && e->lose_qty > 0) e->lose_qty++;
+            if (r > 0 && e->gain_qty > 0) e->gain_qty++;
+        }
+    }
+
+    // Armour, last. It used to be clamped inside each case and then overwritten
+    // wholesale by the payload demand above, so the one fitting sold as
+    // protection gave exactly none in the half of the run where raiders start
+    // asking for the seed -- which is the half a player buys it for. It now
+    // covers the crates too: one crate back is worth more than a full hold.
+    if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) {
+        if (e->lose_good == -2) e->lose_qty--;
+        else                    e->lose_qty = 1;
     }
 }
