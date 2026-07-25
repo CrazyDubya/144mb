@@ -612,31 +612,32 @@ static int draw_stack(Framebuffer *fb, int x, int y, int sign, int icon, int qty
 // One layout for every encounter. Top row is what accepting costs and yields,
 // bottom row is what refusing costs. Threat encounters are framed red,
 // opportunities green -- readable before any of the numbers are.
-static const char *event_title(int kind) {
+// Encounter copy, indexed by kind. Tables rather than switches: adding a kind
+// should be a row of data, not an edit in three places.
+static const char *const EV_TITLE[EV_KINDS] = {
+    T_RAIDERS, T_WRECK, T_SICK, T_BREAKDOWN, T_TRADER,
+    T_TOLL, T_CACHE, T_BRIDGE, T_RIVAL, T_PLAGUE,
+    T_CHECKPOINT, T_LEAK, T_REFUGEE, T_SIGNAL
+};
+static const char *const EV_ACCEPT[EV_KINDS] = {
+    T_RAIDERS_A, T_WRECK_A, T_SICK_A, T_BREAK_A, T_TRADER_A,
+    T_TOLL_A, T_CACHE_A, T_BRIDGE_A, T_RIVAL_A, T_PLAGUE_A,
+    T_CHECK_A, T_LEAK_A, T_REFUGEE_A, T_SIGNAL_A
+};
+static const char *const EV_DECLINE[EV_KINDS] = {
+    T_RAIDERS_B, T_WRECK_B, T_SICK_B, T_BREAK_B, T_TRADER_B,
+    T_TOLL_B, T_CACHE_B, T_BRIDGE_B, T_RIVAL_B, T_PLAGUE_B,
+    T_CHECK_B, T_LEAK_B, T_REFUGEE_B, T_SIGNAL_B
+};
+
+// Red frames a threat, green an opportunity: readable before any number is.
+static int event_is_threat(int kind) {
     switch (kind) {
-    case EV_RAID:   return T_RAIDERS;
-    case EV_WRECK:  return T_WRECK;
-    case EV_SICK:   return T_SICK;
-    case EV_BREAK:  return T_BREAKDOWN;
-    default:        return T_TRADER;
-    }
-}
-static const char *event_accept(int kind) {
-    switch (kind) {
-    case EV_RAID:   return T_RAIDERS_A;
-    case EV_WRECK:  return T_WRECK_A;
-    case EV_SICK:   return T_SICK_A;
-    case EV_BREAK:  return T_BREAK_A;
-    default:        return T_TRADER_A;
-    }
-}
-static const char *event_decline(int kind) {
-    switch (kind) {
-    case EV_RAID:   return T_RAIDERS_B;
-    case EV_WRECK:  return T_WRECK_B;
-    case EV_SICK:   return T_SICK_B;
-    case EV_BREAK:  return T_BREAK_B;
-    default:        return T_TRADER_B;
+    case EV_WRECK: case EV_CACHE: case EV_RIVAL:
+    case EV_TRADER: case EV_REFUGEE: case EV_SIGNAL:
+        return 0;
+    default:
+        return 1;
     }
 }
 
@@ -645,21 +646,21 @@ void ui_event(Framebuffer *fb, GameState *gs) {
     const Event *e = &w->event;
     const int x = 110, y = 88, pw = 420, ph = 280;
 
-    int threat = (e->kind == EV_RAID || e->kind == EV_SICK || e->kind == EV_BREAK);
+    int threat = event_is_threat(e->kind);
     uint32_t frame = threat ? PALETTE[C_BAD] : PALETTE[C_GOOD];
 
     draw_panel(fb, x, y, pw, ph);
     fill_rect(fb, x + 3, y + 3, pw - 6, 10, frame);
 
     // Name the situation. The icons show the price; only words can say why.
-    draw_text_c(fb, x + pw / 2, y + 24, event_title(e->kind), 2, PALETTE[C_BONE]);
+    draw_text_c(fb, x + pw / 2, y + 24, EV_TITLE[e->kind], 2, PALETTE[C_BONE]);
 
     int affordable = world_can_accept(w);
 
-    draw_text(fb, x + 20, y + 52, event_accept(e->kind), 1,
+    draw_text(fb, x + 20, y + 52, EV_ACCEPT[e->kind], 1,
               affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
     if (!affordable)
-        draw_text(fb, x + 20 + text_w(event_accept(e->kind), 1) + 12, y + 52,
+        draw_text(fb, x + 20 + text_w(EV_ACCEPT[e->kind], 1) + 12, y + 52,
                   T_CANNOT, 1, PALETTE[C_BAD]);
 
     // --- accept -------------------------------------------------------
@@ -684,7 +685,7 @@ void ui_event(Framebuffer *fb, GameState *gs) {
     }
 
     // --- decline ------------------------------------------------------
-    draw_text(fb, x + 20, y + 156, event_decline(e->kind), 1, PALETTE[C_DIM]);
+    draw_text(fb, x + 20, y + 156, EV_DECLINE[e->kind], 1, PALETTE[C_DIM]);
     int by = y + 170;
     fill_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_INK]);
     draw_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_DIM]);

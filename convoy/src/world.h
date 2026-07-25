@@ -34,11 +34,20 @@ typedef enum {
 // the good outcome, or refuse and take the bad one. Every one of them is an
 // economic decision, because the price is always paid in cargo.
 typedef enum {
-    EV_RAID,      // pay ammo, or they take cargo
-    EV_WRECK,     // pay fuel to detour, gain salvage
-    EV_SICK,      // pay meds, or the crew drink extra water
-    EV_BREAK,     // pay scrap to repair, or lose fuel
-    EV_TRADER,    // sell water at a premium
+    EV_RAID,       // pay ammo, or they take cargo
+    EV_WRECK,      // pay fuel to detour, gain salvage
+    EV_SICK,       // pay meds, or the crew drink extra water
+    EV_BREAK,      // pay scrap to repair, or lose fuel
+    EV_TRADER,     // sell water at a premium
+    EV_TOLL,       // pay ammo to pass, or they help themselves
+    EV_CACHE,      // dig it out with fuel, or leave it
+    EV_BRIDGE,     // pay fuel for the detour, or bake a day in the sun
+    EV_RIVAL,      // swap cargo with another convoy
+    EV_PLAGUE,     // pay meds, or lose water to a sick crew
+    EV_CHECKPOINT, // pay ammo as a bribe, or they confiscate
+    EV_LEAK,       // pay scrap to patch, or bleed fuel
+    EV_REFUGEE,    // pay water, and they pay you for it
+    EV_SIGNAL,     // pay fuel to chase a tip-off, gain credits
     EV_KINDS
 } EventKind;
 

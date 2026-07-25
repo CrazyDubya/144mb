@@ -203,6 +203,36 @@ The general rule this is an instance of: **an ability that triggers on a rare
 event cannot pay for a cost that recurs every day.** Either broaden what it
 applies to, or charge for it per use rather than per day.
 
+## Phase 3 — fourteen encounter kinds
+
+| change | skilled | notes |
+|---|---:|---|
+| 5 kinds -> 14, generic bot evaluation | **53%** | n=200, 0 crashes, 0 stalls |
+
+Death causes: **17 STRANDED / 11 THIRST**, i.e. 61/39. The monotone 87/13 the
+game started with is gone; runs now end in more than one way.
+
+**The bot no longer knows what an encounter is.** It reads pay/gain/lose and
+their quantities, values them against what the convoy currently needs, and
+takes the better side. All fourteen kinds resolve through one function, so a
+fifteenth needs no bot change -- which matters, because a mechanic the bot
+cannot judge is a mechanic nobody can measure.
+
+One deliberate distortion in that valuation: fuel and water are worth **3x**
+their price when stock is below the reserve. A flat price model will happily
+trade away the thing that is about to kill you.
+
+### Correction: more encounter kinds did NOT rescue crew
+
+Phase 2 logged the expectation that tripling encounter variety would make
+specialist crew worth hiring. **That was wrong, and backwards.** Encounters are
+still ~30% of nodes, so spreading them across 14 kinds instead of 5 means any
+one kind fires *less* often, not more. Each crew member covers about two kinds
+-- roughly 0.6 triggers per run against a keep of ~169 credits of water.
+
+Crew are still net-negative. The fix has to be broader coverage or a lower
+keep, not more content. Carried into phase 4.
+
 ---
 
 ## Bugs found, and what found them

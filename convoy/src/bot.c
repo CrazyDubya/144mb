@@ -275,6 +275,22 @@ static int decide_map(const World *w, int map_sel) {
 }
 
 // ---------------------------------------------------------------- event
+// Roughly what a unit of each good is worth to the convoy right now. Survival
+// stock is worth more than its price when the tank or the tanks are low, which
+// is what stops the bot trading away the thing that is about to kill it.
+static int good_value(const World *w, int g) {
+    static const int BASE[GOODS_COUNT] = { 13, 22, 25, 40, 6 };
+    int v = BASE[g];
+    int keep[GOODS_COUNT];
+    reserves(w, keep);
+    if ((g == G_FUEL || g == G_WATER) && w->held[g] <= keep[g]) v *= 3;
+    return v;
+}
+
+// Encounters are evaluated generically, from the numbers in the Event rather
+// than from its kind. Fourteen kinds and counting all resolve through this, so
+// adding a fifteenth needs no change here at all -- which is the whole point,
+// since a mechanic the bot cannot judge is a mechanic nobody can measure.
 static int decide_event(const World *w) {
     const Event *e = &w->event;
     if (!world_can_accept(w)) return BTN_B;
@@ -282,27 +298,32 @@ static int decide_event(const World *w) {
     int keep[GOODS_COUNT];
     reserves(w, keep);
 
-    // Refuse if paying would cut into what is needed to finish the route.
-    if (e->pay_good >= 0) {
+    // Refuse anything that would eat into what is needed to finish the route,
+    // however good the deal looks on paper.
+    if (e->pay_good >= 0 && e->pay_qty > 0) {
         int after = w->held[e->pay_good] - e->pay_qty;
         if ((e->pay_good == G_FUEL || e->pay_good == G_WATER)
             && after < keep[e->pay_good])
             return BTN_B;
     }
 
-    switch (e->kind) {
-    case EV_RAID:
-        // Losing cargo is losing health. Fight while there is ammo to spare.
-        return (w->held[G_AMMO] >= e->pay_qty) ? BTN_A : BTN_B;
-    case EV_WRECK:
-        return (w->held[G_FUEL] > keep[G_FUEL]) ? BTN_A : BTN_B;
-    case EV_TRADER:
-        return (w->held[G_WATER] - e->pay_qty >= keep[G_WATER]) ? BTN_A : BTN_B;
-    case EV_SICK:
-    case EV_BREAK:
-    default:
-        return BTN_A;   // paying the stated price beats the stated consequence
+    int cost = 0;
+    if (e->pay_good >= 0) cost = e->pay_qty * good_value(w, e->pay_good);
+
+    int benefit = e->gain_credits;
+    if (e->gain_good >= 0) benefit += e->gain_qty * good_value(w, e->gain_good);
+
+    // Refusing has a price too: either a named good or a bite out of the hold.
+    if (e->lose_qty > 0) {
+        if (e->lose_good >= 0) benefit += e->lose_qty * good_value(w, e->lose_good);
+        else                   benefit += e->lose_qty * 18;   // average cargo
     }
+
+    // Losing the last of the hold ends the run, so treat that as unaffordable
+    // rather than merely expensive.
+    if (e->lose_good < 0 && e->lose_qty >= world_cargo(w)) return BTN_A;
+
+    return benefit > cost ? BTN_A : BTN_B;
 }
 
 // ---------------------------------------------------------------- driver

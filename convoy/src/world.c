@@ -574,7 +574,10 @@ void world_decline(World *w) {
     end_event(w);
 }
 
-// Rolls a fresh encounter. Deeper sectors bite harder.
+// Rolls a fresh encounter. Deeper sectors bite harder, and what the convoy
+// carries changes the price: a guard settles a raid, a mechanic patches a leak
+// out of his own kit. This is where crew stop being a line item and start
+// being a reason the run went differently.
 static void roll_event(World *w) {
     Event *e = &w->event;
     for (int i = 0; i < (int)sizeof *e; ++i) ((uint8_t *)e)[i] = 0;
@@ -588,31 +591,92 @@ static void roll_event(World *w) {
     case EV_RAID:
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng, 2, 4) + depth / 3);
-        // A guard makes the fight cheaper; plate means they get less when
-        // they do get in.
-        if (w->crew[CREW_GUARD]) e->pay_qty = 0;   // they handle it
-        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;   // plate holds
+        if (w->crew[CREW_GUARD]) e->pay_qty = 0;
+        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
+
     case EV_WRECK:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
         e->gain_good = G_SCRAP; e->gain_qty = (int8_t)rng_range(&w->rng, 3, 6);
-        e->lose_qty = 0;                       // walking away is free
+        e->lose_qty = 0;
         break;
+
     case EV_SICK:
         e->pay_good = G_MEDS;  e->pay_qty = 1;
         e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
-        // A medic treats it out of their own bag.
         if (w->crew[CREW_MEDIC]) e->pay_qty = 0;
         break;
+
     case EV_BREAK:
         e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->lose_good = G_FUEL;  e->lose_qty = 2;
-        // A mechanic makes do with less.
-        if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;   // they carry their own kit
+        if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;
         break;
-    default: // EV_TRADER -- an opportunity rather than a threat
+
+    case EV_TRADER:
         e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->gain_credits = (int16_t)(rng_range(&w->rng, 30, 60) + depth * 8);
+        e->lose_qty = 0;
+        break;
+
+    case EV_TOLL:
+        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
+        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        if (w->crew[CREW_GUARD]) e->pay_qty = 0;
+        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
+        break;
+
+    case EV_CACHE:
+        e->pay_good = G_FUEL;  e->pay_qty = 1;
+        e->gain_good = (int8_t)(rng_range(&w->rng, 0, 1) ? G_AMMO : G_MEDS);
+        e->gain_qty  = (int8_t)rng_range(&w->rng, 2, 4);
+        e->lose_qty  = 0;
+        break;
+
+    case EV_BRIDGE:
+        e->pay_good = G_FUEL;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
+        e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 4);
+        if (w->crew[CREW_SCOUT]) e->pay_qty = 1;      // knows a ford
+        break;
+
+    case EV_RIVAL: {
+        // A straight swap. Both sides think they are winning.
+        int give = rng_range(&w->rng, 0, GOODS_COUNT - 1);
+        int take = (give + 1 + rng_range(&w->rng, 0, GOODS_COUNT - 2)) % GOODS_COUNT;
+        e->pay_good  = (int8_t)give; e->pay_qty  = (int8_t)rng_range(&w->rng, 2, 4);
+        e->gain_good = (int8_t)take; e->gain_qty = (int8_t)rng_range(&w->rng, 2, 4);
+        if (w->crew[CREW_TRADER]) e->gain_qty++;      // drives a bargain
+        e->lose_qty = 0;
+        break;
+    }
+
+    case EV_PLAGUE:
+        e->pay_good = G_MEDS;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
+        e->lose_good = G_WATER; e->lose_qty = (int8_t)(3 + depth / 4);
+        if (w->crew[CREW_MEDIC]) e->pay_qty = 0;
+        break;
+
+    case EV_CHECKPOINT:
+        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
+        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng, 3, 5);
+        if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) e->lose_qty--;
+        break;
+
+    case EV_LEAK:
+        e->pay_good = G_SCRAP; e->pay_qty = 1;
+        e->lose_good = G_FUEL;  e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;
+        break;
+
+    case EV_REFUGEE:
+        e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
+        e->gain_credits = (int16_t)(rng_range(&w->rng, 20, 45) + depth * 5);
+        e->lose_qty = 0;
+        break;
+
+    default: // EV_SIGNAL
+        e->pay_good = G_FUEL;  e->pay_qty = 1;
+        e->gain_credits = (int16_t)(rng_range(&w->rng, 35, 80) + depth * 6);
         e->lose_qty = 0;
         break;
     }
