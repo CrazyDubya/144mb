@@ -296,3 +296,26 @@ Guards, in order of preference:
 The same applies to any generated artefact -- if a build, a config or a
 migration "had no effect", check that it was actually applied before drawing
 conclusions about what it means.
+
+## Report what the agent did, not just whether it won
+
+Four separate problems in convoy hid behind a healthy win rate:
+
+- upgrades priced beyond anything a run ever banks, so never bought
+- two upgrades whose effects were arithmetically zero
+- crew whose keep exceeded anything they saved
+- kit that was bought and *lost* runs
+
+Every one of these produced clean sweeps. Zero crashes, zero stalls, win rate
+in band. The game was fine; a third of its systems were furniture.
+
+The cheapest fix is to make the harness print what the run ended up owning:
+
+    BOT seed=16 WON sector=13 day=14 credits=18 cargo=6 upg=2 crew=1 steps=134
+
+Two extra integers. With them, "nobody ever buys this" and "buying this loses"
+are visible at a glance instead of requiring a bespoke investigation each time.
+
+The general rule: **an option nobody takes and an option that loses are
+indistinguishable in an outcome metric.** If a system can be engaged with,
+instrument the engagement, not just the result.

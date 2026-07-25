@@ -284,10 +284,19 @@ int main(int argc, char **argv) {
         }
 
         const World *w = game_world(&mem);
-        printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d steps=%d\n",
-               seed,
-               w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
-               w->sector, w->day, w->credits, world_cargo(w), steps);
+        {
+            // What the convoy actually ended up owning, not just whether it
+            // won. An option nobody takes and an option that loses money look
+            // identical in a win-rate column.
+            int upg = 0, crew = 0;
+            for (int i = 0; i < UPG_COUNT; ++i)  upg  += w->upgrade[i] ? 1 : 0;
+            for (int i = 0; i < CREW_COUNT; ++i) crew += w->crew[i] ? 1 : 0;
+            printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d "
+                   "upg=%d crew=%d steps=%d\n",
+                   seed,
+                   w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
+                   w->sector, w->day, w->credits, world_cargo(w), upg, crew, steps);
+        }
         return 0;
     }
 

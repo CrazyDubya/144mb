@@ -181,7 +181,16 @@ int world_crew_count(const World *w) {
 // third day, which is worth something whoever is aboard.
 int world_water_burn_on(const World *w, int day) {
     if (w->upgrade[UPG_TANKS] && (day % 2) == 0) return 0;
-    return 1 + world_crew_count(w);
+
+    // The driver drinks every day; the crew ration and drink on alternate
+    // ones. At a full daily rate their keep came to ~169 credits of water over
+    // a run, which no specialist ability could repay -- every hire was
+    // net-negative and the correct play was to travel alone.
+    int burn = 1;
+    if ((day % 2) == 1) burn += world_crew_count(w);
+    // A medic runs the water discipline as well as the medicine.
+    if (w->crew[CREW_MEDIC] && burn > 1) burn--;
+    return burn;
 }
 
 int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
@@ -234,11 +243,31 @@ int world_upg_price(const World *w, int upg, int salvaged) {
     return p < 8 ? 8 : p;
 }
 
-int world_crew_price(const World *w, int crew) {
+// Crew are priced the same way kit is: off what they can still return, net of
+// what they will drink. A flat base price left them unaffordable exactly when
+// they were worth having, which is the same trap kit fell into.
+int world_crew_payback(const World *w, int crew) {
     int hops = (SECTORS - 1) - w->sector;
-    int scale = 60 + hops * 4;               // falls as the road shortens
-    if (scale > 100) scale = 100;
-    return CREW_BASE[crew] * scale / 100;
+    if (hops < 1) return 0;
+
+    int gross;
+    switch (crew) {
+    case CREW_MECHANIC: gross = hops * 3 / 5 * 26; break;  // breaks, leaks, bridges
+    case CREW_GUARD:    gross = hops * 3 / 5 * 45; break;  // raids, tolls, checkpoints
+    case CREW_MEDIC:    gross = hops * 3 / 5 * 30; break;  // sickness, plague, refugees
+    case CREW_SCOUT:    gross = hops * 3 / 5 * 28; break;  // storms, bridges, caches
+    default:            gross = hops * 12;         break;  // trader: every sale
+    }
+    int keep = hops * WATER_WORTH / 2;        // alternate-day rations
+    if (crew == CREW_MEDIC)    keep /= 2;     // runs the water discipline too
+    if (w->upgrade[UPG_TANKS]) keep /= 2;
+    int net = gross - keep;
+    return net < 0 ? 0 : net;
+}
+
+int world_crew_price(const World *w, int crew) {
+    int p = world_crew_payback(w, crew) * SOUND_PCT / 100;
+    return p < 10 ? 10 : p;
 }
 
 void world_road_ahead(const World *w, int *storms, int *encounters) {
@@ -591,13 +620,14 @@ static void roll_event(World *w) {
     case EV_RAID:
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng, 2, 4) + depth / 3);
-        if (w->crew[CREW_GUARD]) e->pay_qty = 0;
+        if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
         if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
 
     case EV_WRECK:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
         e->gain_good = G_SCRAP; e->gain_qty = (int8_t)rng_range(&w->rng, 3, 6);
+        if (w->crew[CREW_MECHANIC]) e->gain_qty += 2;   // knows what is worth taking
         e->lose_qty = 0;
         break;
 
@@ -616,6 +646,7 @@ static void roll_event(World *w) {
     case EV_TRADER:
         e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->gain_credits = (int16_t)(rng_range(&w->rng, 30, 60) + depth * 8);
+        if (w->crew[CREW_TRADER]) e->gain_credits += 35;
         e->lose_qty = 0;
         break;
 
@@ -630,13 +661,15 @@ static void roll_event(World *w) {
         e->pay_good = G_FUEL;  e->pay_qty = 1;
         e->gain_good = (int8_t)(rng_range(&w->rng, 0, 1) ? G_AMMO : G_MEDS);
         e->gain_qty  = (int8_t)rng_range(&w->rng, 2, 4);
+        if (w->crew[CREW_SCOUT]) e->gain_qty += 2;      // knows where to dig
         e->lose_qty  = 0;
         break;
 
     case EV_BRIDGE:
         e->pay_good = G_FUEL;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
         e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 4);
-        if (w->crew[CREW_SCOUT]) e->pay_qty = 1;      // knows a ford
+        if (w->crew[CREW_SCOUT])    e->pay_qty = 0;    // knows a ford
+        if (w->crew[CREW_MECHANIC]) e->lose_qty /= 2;  // rigs a crossing
         break;
 
     case EV_RIVAL: {
@@ -659,6 +692,7 @@ static void roll_event(World *w) {
     case EV_CHECKPOINT:
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng, 3, 5);
+        if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
         if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) e->lose_qty--;
         break;
 
@@ -671,12 +705,14 @@ static void roll_event(World *w) {
     case EV_REFUGEE:
         e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
         e->gain_credits = (int16_t)(rng_range(&w->rng, 20, 45) + depth * 5);
+        if (w->crew[CREW_MEDIC]) e->gain_credits += 30;  // tends them as they pass
         e->lose_qty = 0;
         break;
 
     default: // EV_SIGNAL
         e->pay_good = G_FUEL;  e->pay_qty = 1;
         e->gain_credits = (int16_t)(rng_range(&w->rng, 35, 80) + depth * 6);
+        if (w->crew[CREW_TRADER]) e->gain_credits += 40;  // knows what a tip is worth
         e->lose_qty = 0;
         break;
     }

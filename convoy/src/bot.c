@@ -88,17 +88,23 @@ static int upgrade_payback(int u, int hops) {
 
 // Crew drink every day they are aboard, so their keep comes straight out of
 // whatever they save.
+// Each hand now covers a category of trouble rather than one encounter kind,
+// which is roughly three of the fourteen, and drinks on alternate days rather
+// than every day. Both halves of that were needed: at one kind and a full
+// ration, every hire was net-negative and travelling alone was correct.
 static int crew_payback(const World *w, int k, int hops) {
     int gross;
     switch (k) {
-    case CREW_MECHANIC: gross = hops * 3 / 5 * 12; break;
-    case CREW_GUARD:    gross = hops * 3 / 5 * 50; break;
-    case CREW_MEDIC:    gross = hops * 3 / 5 * 40; break;
-    case CREW_SCOUT:    gross = hops * 2 / 5 * 30; break;
-    case CREW_TRADER:   gross = hops * 9;          break;
+    case CREW_MECHANIC: gross = hops * 3 / 5 * 26; break;  // breaks, leaks, bridges
+    case CREW_GUARD:    gross = hops * 3 / 5 * 45; break;  // raids, tolls, checkpoints
+    case CREW_MEDIC:    gross = hops * 3 / 5 * 30; break;  // sickness, plague, refugees
+    case CREW_SCOUT:    gross = hops * 3 / 5 * 28; break;  // storms, bridges, caches
+    case CREW_TRADER:   gross = hops * 12;         break;  // every sale, plus tip-offs
     default:            gross = 0;
     }
-    int keep = hops * WATER_WORTH;
+    // Alternate-day rations, and a medic pays part of their own keep.
+    int keep = hops * WATER_WORTH / 2;
+    if (k == CREW_MEDIC)       keep /= 2;
     if (w->upgrade[UPG_TANKS]) keep /= 2;
     return gross - keep;
 }
@@ -128,7 +134,7 @@ static int crew_worth_hiring(const World *w) {
     int hops = SECTORS_LAST - w->sector;
     if (hops < 5) return 0;
     int price = world_crew_price(w, k);
-    if (w->credits - price < 190) return 0;
+    if (w->credits - price < 100) return 0;
     if (w->held[G_WATER] < 6) return 0;          // cannot feed them yet
     return crew_payback(w, k, hops) > price;
 }

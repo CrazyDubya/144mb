@@ -2,9 +2,9 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**82,944 bytes — 5.62% of 1,474,560.**
+**94,208 bytes — 6.39% of 1,474,560.**
 
-You run a convoy east across ten sectors toward the Green Zone. You will not
+You run a convoy east across fourteen sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
 alive.
 

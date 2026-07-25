@@ -233,6 +233,47 @@ one kind fires *less* often, not more. Each crew member covers about two kinds
 Crew are still net-negative. The fix has to be broader coverage or a lower
 keep, not more content. Carried into phase 4.
 
+## Phase 4 — crew economics, final balance
+
+| change | skilled | engagement |
+|---|---:|---|
+| crew broadened + alternate-day rations | 53% | crew still never hired |
+| crew priced off payback, as kit already was | **42%** | 201 fittings, 47 crew / 200 runs |
+
+Final: **42% skilled, 0 crashes, 0 stalls, sanitizers clean, n=200.**
+Deaths **19 stranded / 15 thirst** — a 56/44 split against the 87/13 monotone
+this work started from.
+
+### What actually fixed crew
+
+Two changes, and the second was the one that mattered.
+
+Broadening coverage (each hand now handles a category of trouble -- raids,
+tolls and checkpoints for a guard -- rather than one encounter kind) and
+halving their keep to alternate-day rations took every crew member from
+net-negative to net-positive on paper: the table that read -79 to -19 now reads
++72 to +231.
+
+The bot still never hired one. Crew were priced off a flat base while kit was
+priced off payback, so they were unaffordable exactly when they were worth
+having -- the identical trap kit had already been pulled out of in phase 2A.
+Pricing them the same way fixed it in one change.
+
+**A fix that works on paper and changes nothing in play means the constraint is
+somewhere else.** Look at what the agent can afford, not only at what the thing
+is worth.
+
+### The instrumentation that should have existed from the start
+
+The harness now reports what a run ended up owning:
+
+    BOT seed=16 WON sector=13 day=14 credits=18 cargo=6 upg=2 crew=1 steps=134
+
+Two extra integers. Four separate problems this session -- unaffordable kit,
+two no-op upgrades, unaffordable crew, and kit that lost runs when bought --
+all hid behind clean sweeps and a healthy win rate. An option nobody takes and
+an option that loses are indistinguishable in an outcome metric.
+
 ---
 
 ## Bugs found, and what found them

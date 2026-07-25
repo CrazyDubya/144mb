@@ -156,6 +156,7 @@ int  world_upg_price (const World *w, int upg, int salvaged);
 // What a fitting can still return over the hops that remain. Price is derived
 // from this, so an offer that cannot repay itself is never made.
 int  world_upg_payback(const World *w, int upg);
+int  world_crew_payback(const World *w, int crew);
 // What the road east still holds, for deciding whether kit is worth it.
 void world_road_ahead (const World *w, int *storms, int *encounters);
 int  world_crew_price(const World *w, int crew);
