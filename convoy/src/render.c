@@ -469,8 +469,11 @@ int draw_key(Framebuffer *fb, int x, int y, int glyph, int scale) {
     return w;
 }
 
+// Up means this market charges more than the player has seen elsewhere, which
+// is where you want to be selling; down means cheap, which is where you buy.
+// Colour follows opportunity, not direction.
 void draw_trend(Framebuffer *fb, int x, int y, int dir, int scale) {
-    if (dir > 0)      draw_glyph(fb, x, y, G_UP,    scale, PALETTE[C_GOOD]);
-    else if (dir < 0) draw_glyph(fb, x, y, G_DOWN,  scale, PALETTE[C_BAD]);
+    if (dir > 0)      draw_glyph(fb, x, y, G_UP,    scale, PALETTE[C_WARN]);
+    else if (dir < 0) draw_glyph(fb, x, y, G_DOWN,  scale, PALETTE[C_GOOD]);
     else              draw_glyph(fb, x, y, G_MINUS, scale, PALETTE[C_DIM]);
 }

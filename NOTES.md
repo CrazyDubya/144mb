@@ -169,3 +169,41 @@ Sweep loops re-invoke the binary per seed, so a rebuild halfway through swaps
 the thing being measured. One run here reported 63% from a sample that was part
 old-bot and part new-bot, which is worse than no number at all because it looks
 like a result. Finish the sweep, then rebuild.
+
+## A market that moves on your trades needs a spread
+
+convoy's markets remember: buying nudges a price up, selling knocks it down.
+That mechanic shipped in v1 and was quietly broken the whole time. Buying bumps
+the price about 10%, and you can then sell *into your own bump* at the raised
+price. Buy at 20, the price becomes 22, sell for 22. Repeat forever.
+
+Nobody noticed because no human would grind a stall a thousand times. The test
+bot did it by accident the moment settlement archetypes made speciality goods
+cheap enough for its buy rule to fire, and reported 4,141 credits at sector 0 on
+day 1.
+
+The fix is the one real markets use: a **bid-ask spread**. A stall pays less
+than it charges — here 80% — so the round trip is always a loss and the
+mechanic still works for its actual purpose, which is punishing you for dumping
+forty units into one town.
+
+**Any economy where the player's own trades move prices needs this check.** Ask
+directly: can I buy and immediately resell at a profit? If yes, there is an
+infinite money loop in the game whether or not anyone has found it.
+
+## Overlapping buy and sell thresholds oscillate
+
+A related trap, this one in the bot rather than the game. A rule that buys below
+86% of average and a rule that sells above 74% of average both fire on the same
+good at the same stall, so the agent buys and resells the same unit forever. The
+thresholds look well separated until the spread and integer rounding are applied.
+
+Tuning the numbers apart is a patch that will break again the next time either
+rule moves. The structural fix is to make the states disjoint instead: record
+what was bought at this stop and refuse to sell it here. Then no combination of
+thresholds can oscillate.
+
+Both stalls were caught only because the harness caps a run at 4,000 steps and
+reports STALLED rather than hanging. Give any autonomous agent a step budget and
+a distinct "made no progress" outcome -- an infinite loop that reports nothing
+looks exactly like a slow test.

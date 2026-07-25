@@ -11,6 +11,14 @@ const char *const GOOD_NAME[5] = { T_WATER, T_FUEL, T_AMMO, T_MEDS, T_SCRAP };
 const char *const GOOD_USE[5]  = {
     T_USE_WATER, T_USE_FUEL, T_USE_AMMO, T_USE_MEDS, T_USE_SCRAP
 };
+const char *const ARCH_NAME[6] = {
+    T_ARCH_WELL, T_ARCH_REFINERY, T_ARCH_ARMOURY,
+    T_ARCH_CLINIC, T_ARCH_SCRAPYARD, T_ARCH_GENERAL
+};
+const char *const ARCH_DESC[6] = {
+    T_ARCH_WELL_D, T_ARCH_REFINERY_D, T_ARCH_ARMOURY_D,
+    T_ARCH_CLINIC_D, T_ARCH_SCRAPYARD_D, T_ARCH_GENERAL_D
+};
 
 // Only the market tab has rows today; the others land in phases 1 and 2.
 int ui_tab_rows(const GameState *gs, int tab) {
@@ -170,9 +178,17 @@ void ui_map(Framebuffer *fb, GameState *gs) {
                     fill_rect(fb, x + 6, y + 10, 10, 2, PALETTE[C_INK]);
                     fill_rect(fb, x + 4, y + 14, 12, 2, PALETTE[C_INK]);
                 } else {
-                    // Settlement: a roofline.
-                    fill_rect(fb, x + 5, y + 10, 10, 6, PALETTE[C_INK]);
-                    fill_rect(fb, x + 7, y + 6,   6, 4, PALETTE[C_INK]);
+                    // Settlement: a roofline, and for a specialist the good it
+                    // deals in, so the map reads as an economy rather than a
+                    // row of identical shops.
+                    int spec = world_arch_good(nd->archetype);
+                    if (spec >= 0) {
+                        fill_rect(fb, x + 2, y + 2, 16, 16, PALETTE[C_INK]);
+                        draw_icon(fb, x + 2, y + 2, spec, 1);
+                    } else {
+                        fill_rect(fb, x + 5, y + 10, 10, 6, PALETTE[C_INK]);
+                        fill_rect(fb, x + 7, y + 6,   6, 4, PALETTE[C_INK]);
+                    }
                 }
             }
 
@@ -247,15 +263,16 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     const int x = 26, y = 58, pw = 420, rowh = 32;
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
-    draw_panel(fb, x, y, pw, 34 + (GOODS_COUNT + 1) * rowh);
+    draw_panel(fb, x, y, pw, 50 + (GOODS_COUNT + 1) * rowh);
 
-    draw_text(fb, x + 12, y + 10, T_MARKET, 2, PALETTE[C_BONE]);
+    draw_text(fb, x + 12, y + 10, ARCH_NAME[nd->archetype], 2, PALETTE[C_BONE]);
+    draw_text(fb, x + 12, y + 30, ARCH_DESC[nd->archetype], 1, PALETTE[C_DIM]);
     // Column headings, so a bare number is never left to be guessed at.
     draw_text(fb, x + 150, y + 14, T_PRICE, 1, PALETTE[C_DIM]);
     draw_text(fb, x + pw - 20 - text_w(T_HELD, 1), y + 14, T_HELD, 1, PALETTE[C_DIM]);
 
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        int ry = y + 32 + g * rowh;
+        int ry = y + 48 + g * rowh;
         if (g == gs->sel) {
             // Dark fill, not the mid-brown border colour: the row carries
             // small text and needs the contrast underneath it.
@@ -266,6 +283,8 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
         draw_text(fb, x + 34, ry + 5, GOOD_NAME[g], 1,
                   g == gs->sel ? PALETTE[C_BONE] : PALETTE[C_DIM]);
         draw_number(fb, x + 150, ry + 3, nd->price[g], 2, PALETTE[C_BONE]);
+        // Cheap or dear against every price this player has seen.
+        draw_trend(fb, x + 186, ry + 3, world_price_bias(w, g), 2);
 
         // On the selected row, the two trade actions appear inline and named.
         if (g == gs->sel) {
@@ -273,7 +292,10 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
             kx += draw_key(fb, kx, ry - 1, G_KEY_Z, 2) + 4;
             kx += draw_text(fb, kx, ry + 5, T_BUY, 1, PALETTE[C_BONE]) + 12;
             kx += draw_key(fb, kx, ry - 1, G_X, 2) + 4;
-            draw_text(fb, kx, ry + 5, T_SELL, 1, PALETTE[C_BONE]);
+            kx += draw_text(fb, kx, ry + 5, T_SELL, 1, PALETTE[C_BONE]) + 6;
+            // A stall pays less than it charges. Hiding that behind the listed
+            // price would make every sale a small unpleasant surprise.
+            draw_number(fb, kx, ry + 5, world_sell_price(w, g), 1, PALETTE[C_WARN]);
         }
 
         // Held quantity, right side.
@@ -284,7 +306,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     // Departing the market: its own row, reading as "leave, onward".
     {
-        int dy = y + 32 + GOODS_COUNT * rowh;
+        int dy = y + 48 + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
         int dx = x + 10;
         dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
@@ -295,7 +317,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     // What the selected good is actually for -- the single most useful line
     // on the screen for a player who has never seen it before.
     {
-        int ty = y + 42 + (GOODS_COUNT + 1) * rowh;
+        int ty = y + 58 + (GOODS_COUNT + 1) * rowh;
         int tw = text_w(GOOD_USE[gs->sel], 1);
         fill_scrim(fb, x + 6, ty - 4, tw + 16, 18, PALETTE[C_INK], 13);
         draw_text(fb, x + 14, ty, GOOD_USE[gs->sel], 1, PALETTE[C_WARN]);
@@ -303,7 +325,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     // Cargo hold below, the run's health bar.
     const int cell = 20, cols = 15;
-    int cy = y + 62 + (GOODS_COUNT + 1) * rowh;
+    int cy = y + 78 + (GOODS_COUNT + 1) * rowh;
     draw_panel(fb, x, cy, cols * cell + 12, 2 * cell + 12);
     int slot = 0;
     for (int g = 0; g < GOODS_COUNT; ++g) {
@@ -501,26 +523,28 @@ void ui_help(Framebuffer *fb, GameState *gs) {
     int cx = fb->w / 2;
     draw_text_c(fb, cx, y + 16, T_HELP_TITLE, 3, PALETTE[C_BONE]);
 
-    const char *lines[9] = {
-        T_HELP_1, T_HELP_2, T_HELP_3, T_HELP_4, T_HELP_5,
-        T_HELP_6, T_HELP_7, T_HELP_8, T_HELP_9
+    const char *lines[15] = {
+        T_HELP_1, T_HELP_2, T_HELP_3, T_HELP_4, T_HELP_5, T_HELP_6,
+        T_HELP_10, T_HELP_11, T_HELP_12, T_HELP_13, T_HELP_14, T_HELP_15,
+        T_HELP_7, T_HELP_8, T_HELP_9
     };
-    int ly = y + 56;
-    for (int i = 0; i < 9; ++i) {
-        // The two lines that state the core rule are lit; the rest is body.
-        uint32_t c = (i == 6 || i == 7 || i == 8) ? PALETTE[C_WARN] : PALETTE[C_BONE];
+    int ly = y + 44;
+    for (int i = 0; i < 15; ++i) {
+        // The closing lines state the core rule, so they are lit; the rest
+        // is body copy.
+        uint32_t c = (i >= 12) ? PALETTE[C_WARN] : PALETTE[C_BONE];
         draw_text(fb, x + 24, ly, lines[i], 1, c);
-        ly += 15;
-        if (i == 2 || i == 5) ly += 8;
+        ly += 14;
+        if (i == 2 || i == 5 || i == 11) ly += 6;
     }
 
     // The five goods, each with what it is actually for.
-    ly += 10;
+    ly += 8;
     for (int g = 0; g < GOODS_COUNT; ++g) {
         draw_icon(fb, x + 24, ly - 4, g, 1);
         draw_text(fb, x + 48, ly, GOOD_NAME[g], 1, PALETTE[C_BONE]);
         draw_text(fb, x + 124, ly, GOOD_USE[g], 1, PALETTE[C_DIM]);
-        ly += 20;
+        ly += 17;
     }
 
     draw_text_c(fb, cx, y + ph - 46, T_HELP_KEYS, 1, PALETTE[C_BONE]);

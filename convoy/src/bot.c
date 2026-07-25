@@ -65,13 +65,36 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
     // 1. Sell surplus into a market that is paying above what we have seen
     //    elsewhere. Never sell below the survival reserve.
+    int local_spec = world_arch_good(nd->archetype);
+
     for (int g = 0; g < GOODS_COUNT; ++g) {
         int surplus = w->held[g] - keep[g];
         if (surplus <= 0) continue;
-        int avg = avg_price(b, g);
-        int good_price = avg == 0 || nd->price[g] * 100 >= avg * 108;
-        // Scrap is dead weight; dump it wherever it is not actively insulting.
-        if (g == G_SCRAP) good_price = avg == 0 || nd->price[g] * 100 >= avg * 85;
+
+        // Never sell a thing where it is made. They have plenty, they pay
+        // badly, and selling into the same stall that just sold it to you is
+        // how the bot ended up oscillating a market forever.
+        if (g == local_spec) continue;
+        if (b->bought_here[g]) continue;   // no round-tripping our own purchase
+
+        // Judge a sale on what the stall actually pays, not on what it asks.
+        int pays = world_sell_price(w, g);
+        int good_price;
+
+        if (b->seen[g] >= 2) {
+            int avg = avg_price(b, g);
+            good_price = pays * 100 >= avg * 94;
+            // A place that cannot make a thing pays well for it. That is the
+            // whole trade route, so sell into it even if the average disagrees.
+            if (world_price_bias(w, g) > 0) good_price = 1;
+            // Scrap is dead weight; dump it wherever it is not insulting.
+            if (g == G_SCRAP) good_price = pays * 100 >= avg * 74;
+        } else {
+            // With nothing to compare against, holding beats guessing --
+            // except for scrap, which is never worth the slot.
+            good_price = (g == G_SCRAP);
+        }
+
         if (good_price) return step_to(sel, g, BTN_B);
     }
 
@@ -82,23 +105,44 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
-    if (room && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL])
-        return step_to(sel, G_FUEL, BTN_A);
+    if (room && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL]) {
+        int act = step_to(sel, G_FUEL, BTN_A);
+        if (act == BTN_A) b->bought_here[G_FUEL] = 1;
+        return act;
+    }
 
     // 3. Then water.
-    if (room && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER])
-        return step_to(sel, G_WATER, BTN_A);
+    if (room && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER]) {
+        int act = step_to(sel, G_WATER, BTN_A);
+        if (act == BTN_A) b->bought_here[G_WATER] = 1;
+        return act;
+    }
 
     // 4. Speculate: buy anything unusually cheap, if there is room and money to
     //    spare, to sell further east. This is the part a fixed script cannot do.
-    if (room && cargo < CARGO_CAP - 2 && hops > 1) {
+    if (room && cargo < CARGO_CAP - 6 && hops > 1) {
+        int spec = local_spec;
         for (int g = 0; g < GOODS_COUNT; ++g) {
-            int avg = avg_price(b, g);
-            if (avg == 0 || b->seen[g] < 2) continue;
             if (g == G_FUEL || g == G_WATER) continue;   // survival stock, handled above
-            int cheap = nd->price[g] * 100 <= avg * 72;
+
+            // A settlement's own speciality is cheap here by construction, so
+            // it is worth loading even before enough markets have been seen to
+            // form an average. This is the route the archetypes exist to
+            // create: buy where a thing is made, sell where it is not.
+            int cheap = (g == spec);
+            if (!cheap && world_price_bias(w, g) < 0) cheap = 1;
+            if (!cheap) {
+                int avg = avg_price(b, g);
+                if (avg == 0 || b->seen[g] < 2) continue;
+                cheap = nd->price[g] * 100 <= avg * 80;
+            }
+
             int affordable = w->credits - nd->price[g] >= b->float_credits;
-            if (cheap && affordable) return step_to(sel, g, BTN_A);
+            if (cheap && affordable) {
+                int act = step_to(sel, g, BTN_A);
+                if (act == BTN_A) b->bought_here[g] = 1;
+                return act;
+            }
         }
     }
 
@@ -109,7 +153,19 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 static int score_node(const World *w, const Node *nd) {
     switch (nd->type) {
     case NODE_GREEN:  return 1000;
-    case NODE_SETTLE: return 30;
+    case NODE_SETTLE: {
+        // A settlement is worth more when it specialises in something the
+        // convoy is actually short of. A refinery matters when the tank is
+        // low and is just another shop when it is not.
+        int keep[GOODS_COUNT];
+        reserves(w, keep);
+        int score = 30;
+        int spec = world_arch_good(nd->archetype);
+        if (spec == G_FUEL  && w->held[G_FUEL]  <= keep[G_FUEL])  score += 26;
+        if (spec == G_WATER && w->held[G_WATER] <= keep[G_WATER]) score += 26;
+        if (spec == G_AMMO  && w->held[G_AMMO]  < 2)              score += 10;
+        return score;
+    }
     case NODE_EMPTY:  return 10;
     case NODE_EVENT:  return 6;
     case NODE_HAZARD:
@@ -170,10 +226,19 @@ static int decide_event(const World *w) {
 void bot_init(Bot *b, int float_credits) {
     memset(b, 0, sizeof *b);
     b->float_credits = float_credits;
+    b->at_sector = -1;
+    b->at_index  = -1;
 }
 
 int bot_step(Bot *b, const World *w, int sel, int map_sel, int title) {
     if (title) return BTN_START;
+
+    // New stop: forget what was bought at the last one.
+    if (w->sector != b->at_sector || w->index != b->at_index) {
+        b->at_sector = w->sector;
+        b->at_index  = w->index;
+        for (int g = 0; g < GOODS_COUNT; ++g) b->bought_here[g] = 0;
+    }
 
     observe(b, w);
 

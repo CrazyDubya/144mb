@@ -1,7 +1,32 @@
 #include "world.h"
 
 // Nominal value of each good before local supply and demand distort it.
-static const int BASE_PRICE[GOODS_COUNT] = { 12, 20, 25, 40, 6 };
+static const int BASE_PRICE[GOODS_COUNT] = { 12, 17, 25, 40, 6 };
+
+// Percentage shift each settlement type applies to each good. A place is cheap
+// in what it makes and dear in what it must import -- and since one price
+// serves for both buying and selling, "dear" also means "they pay well here",
+// which is the whole basis of a trade route.
+static const int8_t ARCH_MOD[ARCH_COUNT][GOODS_COUNT] = {
+    /*                water  fuel  ammo  meds  scrap */
+    /* WELL      */ {  -48,  +38,    0,   +5,  +12 },
+    /* REFINERY  */ {  +34,  -48,   +8,    0,  -12 },
+    /* ARMOURY   */ {  +18,  +12,  -48,  +22,   +5 },
+    /* CLINIC    */ {   +8,  +18,  +24,  -48,    0 },
+    /* SCRAPYARD */ {  +24,  +10,   +6,  +18,  -48 },
+    /* GENERAL   */ {    0,    0,    0,    0,    0 },
+};
+
+int world_arch_good(int archetype) {
+    switch (archetype) {
+    case ARCH_WELL:      return G_WATER;
+    case ARCH_REFINERY:  return G_FUEL;
+    case ARCH_ARMOURY:   return G_AMMO;
+    case ARCH_CLINIC:    return G_MEDS;
+    case ARCH_SCRAPYARD: return G_SCRAP;
+    default:             return -1;
+    }
+}
 
 // ---------------------------------------------------------------- rng
 static uint32_t rng_next(uint32_t *s) {
@@ -14,16 +39,19 @@ static int rng_range(uint32_t *s, int lo, int hi) {
 }
 
 static void roll_event(World *w);
+static void observe_market(World *w);
 
 // ---------------------------------------------------------------- setup
 static void price_node(World *w, Node *n, int sector) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        // A wide spread is what makes arbitrage worth the cargo space.
-        int pct = rng_range(&w->rng, 40, 195);
+        // Local noise is deliberately narrower than it used to be: the
+        // archetype should be the loudest signal in a price, not the dice.
+        int pct = rng_range(&w->rng, 72, 132);
         int p = BASE_PRICE[g] * pct / 100;
+        p = p * (100 + ARCH_MOD[n->archetype][g]) / 100;
         // Fuel gets dearer the further east you go, so the run gets harder to
         // afford exactly as it gets harder to survive.
-        if (g == G_FUEL) p = p * (100 + sector * 4) / 100;
+        if (g == G_FUEL) p = p * (100 + sector * 2) / 100;
         n->price[g] = (int16_t)(p < 1 ? 1 : p);
     }
 }
@@ -51,6 +79,15 @@ void world_init(World *w, uint32_t seed) {
                 nd->type = (uint8_t)(r < 46 ? NODE_SETTLE :
                                      r < 76 ? NODE_EVENT  :
                                      r < 92 ? NODE_HAZARD : NODE_EMPTY);
+            }
+            // A general trading post shows up often enough to be the baseline
+            // the specialists are read against.
+            if (nd->type == NODE_SETTLE) {
+                int r = rng_range(&w->rng, 0, 99);
+                nd->archetype = (uint8_t)(r < 26 ? ARCH_GENERAL
+                                                 : rng_range(&w->rng, 0, ARCH_COUNT - 2));
+            } else {
+                nd->archetype = ARCH_GENERAL;
             }
             price_node(w, nd, s);
         }
@@ -84,6 +121,26 @@ void world_init(World *w, uint32_t seed) {
     w->held[G_SCRAP] = 2;
     w->day   = 1;
     w->state = ST_TRADE;   // the starting node is a settlement
+    observe_market(w);
+}
+
+// Records the prices on offer here. Called on arrival, once per settlement.
+static void observe_market(World *w) {
+    const Node *nd = &w->node[w->sector][w->index];
+    if (nd->type != NODE_SETTLE) return;
+    for (int g = 0; g < GOODS_COUNT; ++g) {
+        w->seen_sum[g] += nd->price[g];
+        w->seen_n[g]++;
+    }
+}
+
+int world_price_bias(const World *w, int good) {
+    if (w->seen_n[good] < 2) return 0;          // no basis for a comparison yet
+    int avg = (int)(w->seen_sum[good] / w->seen_n[good]);
+    int p   = w->node[w->sector][w->index].price[good];
+    if (p * 100 <= avg * 86)  return -1;
+    if (p * 100 >= avg * 114) return +1;
+    return 0;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -153,7 +210,7 @@ void world_travel(World *w, int next_index) {
 
     switch (nd->type) {
     case NODE_GREEN:  w->state = ST_WON;   break;
-    case NODE_SETTLE: w->state = ST_TRADE; break;
+    case NODE_SETTLE: w->state = ST_TRADE; observe_market(w); break;
     case NODE_EVENT:  w->state = ST_EVENT; roll_event(w); break;
     default:          w->state = ST_MAP;   break;
     }
@@ -171,7 +228,18 @@ void world_buy(World *w, int good) {
 
     w->credits -= p;
     w->held[good]++;
-    nd->price[good] = (int16_t)(p + p / 10 + 1);
+    nd->price[good] = (int16_t)(p + p / 16 + 1);
+}
+
+// A 20% spread between what a stall charges and what it pays. Real markets
+// have one for the same reason this needs one: otherwise the round trip is
+// free money.
+#define SELL_NUM 4
+#define SELL_DEN 5
+
+int world_sell_price(const World *w, int good) {
+    int p = w->node[w->sector][w->index].price[good] * SELL_NUM / SELL_DEN;
+    return p < 1 ? 1 : p;
 }
 
 void world_sell(World *w, int good) {
@@ -180,7 +248,7 @@ void world_sell(World *w, int good) {
     if (w->held[good] < 1) return;
 
     int p = nd->price[good];
-    w->credits += p;
+    w->credits += world_sell_price(w, good);
     w->held[good]--;
     int np = p - p / 8 - 1;
     nd->price[good] = (int16_t)(np < 1 ? 1 : np);
