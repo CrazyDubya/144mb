@@ -10,7 +10,7 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 72192
+BYTES_USED = 78336
 LIMIT = 1474560
 
 
@@ -20,28 +20,32 @@ def uri(path, mime):
 
 
 STILLS = [
-    ("step_0000.png", "The market",
-     "Five goods, each a price and a held quantity. The selected row shows its two "
-     "actions inline &mdash; buy and sell &mdash; so nothing needs explaining. Water is "
-     "cheap here at 7; further out it will not be."),
-    ("step_0006.png", "The route",
-     "Eight sectors, one way, no going back. Bone squares are markets, rust squares "
-     "with a cross are encounters, the green square is the goal. The highlighted hop "
-     "shows what it costs: one fuel."),
-    ("step_0011.png", "An encounter",
-     "Every encounter is one shape with different numbers in it. Pay the top price, "
-     "or take the bottom consequence. The red bar means threat; opportunities are "
-     "framed green. No sentence is involved."),
-    ("step_0020.png", "The Green Zone",
-     "Day eight. Arrived with two fuel, eight cargo, seventy-nine credits &mdash; and "
-     "zero water. One more hop would have killed the crew."),
+    ("title.png", "The title",
+     "The convoy drives east toward the only green thing in the world. The four "
+     "controls are shown rather than described &mdash; there is nothing here to read, "
+     "in any language."),
+    ("map.png", "The route",
+     "Ten sectors, one way, no going back. Rooflines are markets, crossed badges are "
+     "encounters, stacked bars are storms that cost an extra fuel and water. The green "
+     "block is nine hops away."),
+    ("trade.png", "The market",
+     "Five goods, each with a price and a held quantity. The selected row carries its "
+     "own two actions. Sell here and this market's price stays depressed for the rest "
+     "of the run &mdash; routes burn out behind you."),
+    ("event.png", "An encounter",
+     "One shape with different numbers in it: pay the price on the top row, or take "
+     "the consequence on the bottom. Red frames a threat, green an opportunity. Every "
+     "quantity carries an explicit sign, because an icon without one is ambiguous."),
+    ("win.png", "Arrival",
+     "Day ten, twenty-two credits, six crates &mdash; and no fuel at all. The Green "
+     "Zone was reached on the last drop."),
 ]
 
 FACTS = [
-    ("22", "colours in the entire game"),
-    ("0", "audio samples &mdash; all synthesis"),
+    ("35", "colours in the whole game"),
+    ("0", "bytes of stored art or audio"),
     ("0", "words of text on screen"),
-    ("0", "crashes across 200 seeds"),
+    ("53%", "win rate for skilled play"),
 ]
 
 
@@ -246,15 +250,16 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
 
   <h2>One complete run</h2>
   <p>
-    Twenty-one decisions, eight days, one seed. The convoy starts at a market,
-    buys fuel it cannot reach the end without, and pushes east through raiders
-    and breakdowns toward the Green Zone.
+    Fifty decisions, ten days, one seed &mdash; played by the test bot rather than
+    a fixed script, so every trade here is a response to an actual price. It starts
+    at a market, buys fuel it cannot finish without, and pushes east through raiders
+    and breakdowns to the Green Zone.
   </p>
   <div class="run">
     <img src="%(gif)s" alt="Animated playthrough of Convoy" />
     <p class="cap">
-      Seed 16, played start to finish. The game is turn-based, so this is one
-      frame per decision rather than a video &mdash; roughly what three to five
+      Seed 16, start to finish, every third decision. The game is turn-based, so
+      this is one frame per move rather than a video &mdash; roughly what five
       minutes at the keyboard looks like.
     </p>
   </div>
@@ -307,10 +312,13 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
           <td>Dumped water into one market, traced every sale</td>
           <td class="n yes">15&rarr;6</td></tr>
       <tr><td>The economy is not optional</td>
-          <td>Two bots, 60 seeds each, one buying fuel and one not</td>
-          <td class="n yes">38%% vs 0%%</td></tr>
+          <td>A bot that ignores prices, 200 seeds</td>
+          <td class="n yes">0%% win</td></tr>
+      <tr><td>Skill is rewarded</td>
+          <td>A price-aware bot playing the real UI, 200 seeds</td>
+          <td class="n yes">53%% win</td></tr>
       <tr><td>No crashes</td>
-          <td>200 seeds played to completion</td>
+          <td>300 seeds played to the end by the bot</td>
           <td class="n yes">0</td></tr>
       <tr><td>Music is audible and correct</td>
           <td>Per-step RMS against the sequencer table</td>
@@ -324,8 +332,8 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
       <tr><td>Survives a machine with no sound card</td>
           <td>The CI runner has none; the game started anyway</td>
           <td class="n yes">verified</td></tr>
-      <tr><td>Balanced, and finished</td>
-          <td>Win and lose screens are still placeholder</td>
+      <tr><td>Played by a human</td>
+          <td>Nobody has actually sat down with it yet</td>
           <td class="n no">not yet</td></tr>
     </table>
   </div>
