@@ -2,7 +2,7 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**78,336 bytes — 5.31% of 1,474,560.**
+**82,944 bytes — 5.62% of 1,474,560.**
 
 You run a convoy east across ten sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
@@ -48,18 +48,24 @@ to a price, so they die out on the road; only the third actually trades.
 
 ## Controls
 
-Nothing on screen is written in any language — meaning is carried by icon,
-colour, sign and numerals. There is no alphabetic font in the build.
-
 | key | does |
 |---|---|
 | ↑ ↓ | select |
 | Z | buy · accept · travel |
 | X | sell · refuse |
 | ↵ | depart · restart |
+| H | how to play |
+| Esc | quit |
 
-Keycaps appear inline next to whatever they act on, so the game needs no
-instructions.
+Keycaps appear inline beside whatever they act on, and every one is labelled.
+
+An earlier version shipped with no text at all, on the theory that pure
+iconography reads the same in every language. It did not survive contact with
+the screenshots: nothing told you the droplet was *water* rather than coolant,
+that the number beside it was a *price* rather than a count, or that
+`−meds×1 / −water×2` was a choice between paying and suffering. That is not
+minimalism, it is a puzzle wrapped around the game. Icons still carry the
+meaning at a glance; the words are there so the glance is not a guess.
 
 ## Building
 

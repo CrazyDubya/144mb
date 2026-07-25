@@ -7,6 +7,12 @@
 #include "world.h"
 #include "audio.h"
 #include "scene.h"
+#include "text.h"
+
+const char *const GOOD_NAME[5] = { T_WATER, T_FUEL, T_AMMO, T_MEDS, T_SCRAP };
+const char *const GOOD_USE[5]  = {
+    T_USE_WATER, T_USE_FUEL, T_USE_AMMO, T_USE_MEDS, T_USE_SCRAP
+};
 
 typedef struct {
     World      w;
@@ -15,6 +21,7 @@ typedef struct {
     int        sel;        // selected good on the trade screen
     int        map_sel;    // index into the reachable-node list on the map
     int        title;      // showing the title screen rather than a run
+    int        help;       // showing the instructions overlay
     AudioState audio;
 } GameState;
 
@@ -62,29 +69,37 @@ void game_init(GameMemory *mem, uint32_t seed) {
 
 // ---------------------------------------------------------------- hud
 static void draw_hud(Framebuffer *fb, const World *w) {
-    draw_panel(fb, 0, 0, fb->w, 30);
+    draw_panel(fb, 0, 0, fb->w, 34);
 
     int x = 8;
-    // Water and fuel are the two that kill you; they lead.
-    draw_icon(fb, x, 7, ICON_WATER, 1); x += 20;
-    x += draw_number(fb, x, 11, w->held[G_WATER], 2,
-                     w->held[G_WATER] <= 2 ? PALETTE[C_BAD] : PALETTE[C_BONE]) + 12;
-    draw_icon(fb, x, 7, ICON_FUEL, 1); x += 20;
-    x += draw_number(fb, x, 11, w->held[G_FUEL], 2,
-                     w->held[G_FUEL] <= 2 ? PALETTE[C_BAD] : PALETTE[C_BONE]) + 20;
+    // Water and fuel are the two that kill you; they lead, and both are named
+    // so the icon never has to carry the meaning alone.
+    draw_icon(fb, x, 9, ICON_WATER, 1); x += 20;
+    x += draw_number(fb, x, 13, w->held[G_WATER], 2,
+                     w->held[G_WATER] <= 2 ? PALETTE[C_BAD] : PALETTE[C_BONE]) + 4;
+    x += draw_text(fb, x, 15, T_WATER, 1, PALETTE[C_DIM]) + 14;
+
+    draw_icon(fb, x, 9, ICON_FUEL, 1); x += 20;
+    x += draw_number(fb, x, 13, w->held[G_FUEL], 2,
+                     w->held[G_FUEL] <= 2 ? PALETTE[C_BAD] : PALETTE[C_BONE]) + 4;
+    x += draw_text(fb, x, 15, T_FUEL, 1, PALETTE[C_DIM]) + 18;
 
     // Cargo occupancy: held / capacity.
-    x += draw_number(fb, x, 11, world_cargo(w), 2, PALETTE[C_DIM]);
-    draw_glyph(fb, x, 11, G_SLASH, 2, PALETTE[C_DIM]); x += glyph_w(2);
-    x += draw_number(fb, x, 11, CARGO_CAP, 2, PALETTE[C_DIM]) + 20;
+    x += draw_text(fb, x, 15, T_HOLD, 1, PALETTE[C_DIM]) + 6;
+    x += draw_number(fb, x, 13, world_cargo(w), 2, PALETTE[C_BONE]);
+    draw_glyph(fb, x, 13, G_SLASH, 2, PALETTE[C_DIM]); x += glyph_w(2);
+    x += draw_number(fb, x, 13, CARGO_CAP, 2, PALETTE[C_DIM]);
 
-    // Credits, right-aligned.
+    // Credits, right-aligned, then the day just left of it.
     int cw = number_w(w->credits, 2);
-    draw_number(fb, fb->w - 12 - cw, 11, w->credits, 2, PALETTE[C_WARN]);
+    draw_number(fb, fb->w - 10 - cw, 13, w->credits, 2, PALETTE[C_WARN]);
+    int lw = text_w(T_CREDITS, 1);
+    draw_text(fb, fb->w - 16 - cw - lw, 15, T_CREDITS, 1, PALETTE[C_DIM]);
 
-    // Day counter, just left of credits.
     int dw = number_w(w->day, 2);
-    draw_number(fb, fb->w - 40 - cw - dw, 11, w->day, 2, PALETTE[C_DIM]);
+    int right = fb->w - 26 - cw - lw;
+    draw_number(fb, right - dw, 13, w->day, 2, PALETTE[C_BONE]);
+    draw_text(fb, right - dw - text_w(T_DAY, 1) - 6, 15, T_DAY, 1, PALETTE[C_DIM]);
 }
 
 // ---------------------------------------------------------------- map
@@ -109,6 +124,16 @@ static uint32_t node_colour(int type) {
     case NODE_HAZARD: return PALETTE[C_WARN];
     case NODE_GREEN:  return PALETTE[C_GREEN];
     default:          return PALETTE[C_DIM];
+    }
+}
+
+static const char *node_name(int type) {
+    switch (type) {
+    case NODE_SETTLE: return T_SETTLEMENT;
+    case NODE_EVENT:  return T_ENCOUNTER;
+    case NODE_HAZARD: return T_STORM;
+    case NODE_GREEN:  return T_GREEN_ZONE;
+    default:          return T_EMPTY_ROAD;
     }
 }
 
@@ -197,14 +222,37 @@ static void draw_map(Framebuffer *fb, GameState *gs) {
         draw_glyph(fb, (cx + nx) / 2 - 6, (cy + ny) / 2 - 20, G_MINUS, 1, PALETTE[C_WARN]);
         draw_icon(fb, (cx + nx) / 2 + 2, (cy + ny) / 2 - 24, ICON_FUEL, 1);
         draw_number(fb, (cx + nx) / 2 + 20, (cy + ny) / 2 - 20, 1, 1, PALETTE[C_WARN]);
-        draw_key(fb, nx + 2, ny + 34, G_KEY_Z, 2);
+        // Name the destination and price the hop, in a strip along the bottom
+        // where it cannot collide with the route.
+        const Node *dest = &w->node[w->sector + 1][m];
+        const char *label = node_name(dest->type);
+        int by = fb->h - 54;
+        draw_panel(fb, 20, by, fb->w - 40, 42);
+
+        int tx = 34;
+        tx += draw_key(fb, tx, by + 10, G_KEY_Z, 2) + 8;
+        tx += draw_text(fb, tx, by + 16, T_TRAVEL, 1, PALETTE[C_BONE]) + 14;
+        tx += draw_text(fb, tx, by + 16, label, 1,
+                        dest->type == NODE_GREEN  ? PALETTE[C_GOOD] :
+                        dest->type == NODE_HAZARD ? PALETTE[C_WARN] :
+                        dest->type == NODE_EVENT  ? PALETTE[C_BAD]  : PALETTE[C_DIM]);
+
+        // Cost of the hop, right-aligned.
+        int rx = fb->w - 40 - 60;
+        rx += draw_text(fb, rx, by + 16, T_COST, 1, PALETTE[C_DIM]) + 8;
+        draw_glyph(fb, rx, by + 14, G_MINUS, 1, PALETTE[C_WARN]);
+        draw_icon(fb, rx + 8, by + 10, ICON_FUEL, 1);
+        draw_number(fb, rx + 28, by + 14, dest->type == NODE_HAZARD ? 2 : 1, 1,
+                    PALETTE[C_WARN]);
 
         // Up/down move the selection when there is a choice to make.
         if (ncand > 1) {
-            draw_glyph(fb, cx + 44, cy - 4,  G_UP,   2, PALETTE[C_DIM]);
-            draw_glyph(fb, cx + 44, cy + 18, G_DOWN, 2, PALETTE[C_DIM]);
+            draw_glyph(fb, cx + 44, cy - 4,  G_UP,   2, PALETTE[C_BONE]);
+            draw_glyph(fb, cx + 44, cy + 18, G_DOWN, 2, PALETTE[C_BONE]);
         }
     }
+
+    draw_text_c(fb, fb->w / 2, 44, T_ROUTE, 1, PALETTE[C_BONE]);
 }
 
 // ---------------------------------------------------------------- trade
@@ -212,49 +260,66 @@ static void draw_trade(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
     Node *nd = &w->node[w->sector][w->index];
 
-    const int x = 40, y = 70, pw = 300, rowh = 34;
+    const int x = 26, y = 58, pw = 420, rowh = 32;
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
-    draw_panel(fb, x, y, pw, 14 + (GOODS_COUNT + 1) * rowh);
+    draw_panel(fb, x, y, pw, 34 + (GOODS_COUNT + 1) * rowh);
+
+    draw_text(fb, x + 12, y + 10, T_MARKET, 2, PALETTE[C_BONE]);
+    // Column headings, so a bare number is never left to be guessed at.
+    draw_text(fb, x + 150, y + 14, T_PRICE, 1, PALETTE[C_DIM]);
+    draw_text(fb, x + pw - 20 - text_w(T_HELD, 1), y + 14, T_HELD, 1, PALETTE[C_DIM]);
 
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        int ry = y + 10 + g * rowh;
+        int ry = y + 32 + g * rowh;
         if (g == gs->sel) {
-            fill_rect(fb, x + 4, ry - 4, pw - 8, rowh - 2, PALETTE[C_BORDER]);
+            // Dark fill, not the mid-brown border colour: the row carries
+            // small text and needs the contrast underneath it.
+            fill_rect(fb, x + 4, ry - 4, pw - 8, rowh - 2, PALETTE[C_ROAD]);
             draw_rect(fb, x + 4, ry - 4, pw - 8, rowh - 2, PALETTE[C_BONE]);
         }
-        draw_icon(fb, x + 10, ry + 2, g, 1);
-        draw_number(fb, x + 40, ry + 6, nd->price[g], 2, PALETTE[C_BONE]);
+        draw_icon(fb, x + 10, ry + 1, g, 1);
+        draw_text(fb, x + 34, ry + 5, GOOD_NAME[g], 1,
+                  g == gs->sel ? PALETTE[C_BONE] : PALETTE[C_DIM]);
+        draw_number(fb, x + 150, ry + 3, nd->price[g], 2, PALETTE[C_BONE]);
 
-        // On the selected row, the two trade actions appear inline.
+        // On the selected row, the two trade actions appear inline and named.
         if (g == gs->sel) {
-            int kx = x + 118;
-            kx += draw_key(fb, kx, ry + 2, G_KEY_Z, 2) + 2;
-            draw_glyph(fb, kx, ry + 8, G_PLUS, 2, PALETTE[C_GOOD]);
-            kx += glyph_w(2) + 14;
-            kx += draw_key(fb, kx, ry + 2, G_X, 2) + 2;
-            draw_glyph(fb, kx, ry + 8, G_MINUS, 2, PALETTE[C_BAD]);
+            int kx = x + 210;
+            kx += draw_key(fb, kx, ry - 1, G_KEY_Z, 2) + 4;
+            kx += draw_text(fb, kx, ry + 5, T_BUY, 1, PALETTE[C_BONE]) + 12;
+            kx += draw_key(fb, kx, ry - 1, G_X, 2) + 4;
+            draw_text(fb, kx, ry + 5, T_SELL, 1, PALETTE[C_BONE]);
         }
 
         // Held quantity, right side.
         int qw = number_w(w->held[g], 2);
-        draw_number(fb, x + pw - 20 - qw, ry + 6, w->held[g], 2,
-                    w->held[g] ? PALETTE[C_DIM] : PALETTE[C_PANEL]);
+        draw_number(fb, x + pw - 20 - qw, ry + 3, w->held[g], 2,
+                    w->held[g] ? PALETTE[C_BONE] : PALETTE[C_BORDER]);
     }
 
     // Departing the market: its own row, reading as "leave, onward".
     {
-        int dy = y + 10 + GOODS_COUNT * rowh;
+        int dy = y + 32 + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
         int dx = x + 10;
-        dx += draw_key(fb, dx, dy + 2, G_ENTER, 2) + 10;
-        draw_glyph(fb, dx, dy + 8, G_RIGHT, 2, PALETTE[C_BONE]);
-        draw_icon(fb, dx + 26, dy + 2, ICON_FUEL, 1);
+        dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
+        dx += draw_text(fb, dx, dy + 5, T_DEPART, 1, PALETTE[C_BONE]) + 10;
+        draw_glyph(fb, dx, dy + 3, G_RIGHT, 2, PALETTE[C_DIM]);
+    }
+
+    // What the selected good is actually for -- the single most useful line
+    // on the screen for a player who has never seen it before.
+    {
+        int ty = y + 42 + (GOODS_COUNT + 1) * rowh;
+        int tw = text_w(GOOD_USE[gs->sel], 1);
+        fill_scrim(fb, x + 6, ty - 4, tw + 16, 18, PALETTE[C_INK], 13);
+        draw_text(fb, x + 14, ty, GOOD_USE[gs->sel], 1, PALETTE[C_WARN]);
     }
 
     // Cargo hold below, the run's health bar.
     const int cell = 20, cols = 15;
-    int cy = y + 20 + (GOODS_COUNT + 1) * rowh;
+    int cy = y + 62 + (GOODS_COUNT + 1) * rowh;
     draw_panel(fb, x, cy, cols * cell + 12, 2 * cell + 12);
     int slot = 0;
     for (int g = 0; g < GOODS_COUNT; ++g) {
@@ -293,10 +358,38 @@ static int draw_stack(Framebuffer *fb, int x, int y, int sign, int icon, int qty
 // One layout for every encounter. Top row is what accepting costs and yields,
 // bottom row is what refusing costs. Threat encounters are framed red,
 // opportunities green -- readable before any of the numbers are.
+static const char *event_title(int kind) {
+    switch (kind) {
+    case EV_RAID:   return T_RAIDERS;
+    case EV_WRECK:  return T_WRECK;
+    case EV_SICK:   return T_SICK;
+    case EV_BREAK:  return T_BREAKDOWN;
+    default:        return T_TRADER;
+    }
+}
+static const char *event_accept(int kind) {
+    switch (kind) {
+    case EV_RAID:   return T_RAIDERS_A;
+    case EV_WRECK:  return T_WRECK_A;
+    case EV_SICK:   return T_SICK_A;
+    case EV_BREAK:  return T_BREAK_A;
+    default:        return T_TRADER_A;
+    }
+}
+static const char *event_decline(int kind) {
+    switch (kind) {
+    case EV_RAID:   return T_RAIDERS_B;
+    case EV_WRECK:  return T_WRECK_B;
+    case EV_SICK:   return T_SICK_B;
+    case EV_BREAK:  return T_BREAK_B;
+    default:        return T_TRADER_B;
+    }
+}
+
 static void draw_event(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
     const Event *e = &w->event;
-    const int x = 140, y = 96, pw = 360, ph = 250;
+    const int x = 110, y = 88, pw = 420, ph = 280;
 
     int threat = (e->kind == EV_RAID || e->kind == EV_SICK || e->kind == EV_BREAK);
     uint32_t frame = threat ? PALETTE[C_BAD] : PALETTE[C_GOOD];
@@ -304,10 +397,19 @@ static void draw_event(Framebuffer *fb, GameState *gs) {
     draw_panel(fb, x, y, pw, ph);
     fill_rect(fb, x + 3, y + 3, pw - 6, 10, frame);
 
+    // Name the situation. The icons show the price; only words can say why.
+    draw_text_c(fb, x + pw / 2, y + 24, event_title(e->kind), 2, PALETTE[C_BONE]);
+
     int affordable = world_can_accept(w);
 
+    draw_text(fb, x + 20, y + 52, event_accept(e->kind), 1,
+              affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
+    if (!affordable)
+        draw_text(fb, x + 20 + text_w(event_accept(e->kind), 1) + 12, y + 52,
+                  T_CANNOT, 1, PALETTE[C_BAD]);
+
     // --- accept -------------------------------------------------------
-    int ay = y + 34;
+    int ay = y + 66;
     fill_rect(fb, x + 10, ay - 6, pw - 20, 74, PALETTE[C_INK]);
     draw_rect(fb, x + 10, ay - 6, pw - 20, 74, affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
 
@@ -328,7 +430,8 @@ static void draw_event(Framebuffer *fb, GameState *gs) {
     }
 
     // --- decline ------------------------------------------------------
-    int by = y + 138;
+    draw_text(fb, x + 20, y + 156, event_decline(e->kind), 1, PALETTE[C_DIM]);
+    int by = y + 170;
     fill_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_INK]);
     draw_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_DIM]);
 
@@ -383,31 +486,63 @@ static void draw_title(Framebuffer *fb, GameState *gs) {
     fill_rect(fb, gx + 10, gy + 14, 20, 4, PALETTE[C_BONE]);
     fill_rect(fb, gx + 13, gy + 22, 14, 4, PALETTE[C_BONE]);
 
-    // Controls, shown rather than described.
-    const int py = fb->h - 96;
-    draw_panel(fb, fb->w / 2 - 190, py, 380, 60);
-
-    int x = fb->w / 2 - 172;
-    draw_glyph(fb, x, py + 24, G_UP,   2, PALETTE[C_DIM]);
-    draw_glyph(fb, x + 14, py + 24, G_DOWN, 2, PALETTE[C_DIM]);
-    x += 44;
-
-    x += draw_key(fb, x, py + 18, G_KEY_Z, 2) + 6;
-    draw_glyph(fb, x, py + 24, G_PLUS, 2, PALETTE[C_GOOD]);
-    x += glyph_w(2) + 26;
-
-    x += draw_key(fb, x, py + 18, G_X, 2) + 6;
-    draw_glyph(fb, x, py + 24, G_MINUS, 2, PALETTE[C_BAD]);
-    x += glyph_w(2) + 26;
-
-    x += draw_key(fb, x, py + 18, G_ENTER, 2) + 6;
-    draw_glyph(fb, x, py + 24, G_RIGHT, 2, PALETTE[C_BONE]);
-
-    // Start prompt, pulsing so it reads as the thing to press.
-    if ((gs->tick / 24) & 1) {
-        int kx = fb->w / 2 - key_w(3) / 2;
-        draw_key(fb, kx, py - 52, G_ENTER, 3);
+    // Wordmark and tagline.
+    int cx = fb->w / 2;
+    draw_text_c(fb, cx, 44, T_TITLE, 6, PALETTE[C_INK]);
+    draw_text_c(fb, cx - 3, 41, T_TITLE, 6, PALETTE[C_BONE]);
+    {
+        // The sun sits directly behind this line, so it needs its own ground.
+        int tw = text_w(T_TAGLINE, 1);
+        fill_scrim(fb, cx - tw / 2 - 10, 92, tw + 20, 18, PALETTE[C_INK], 13);
+        draw_text_c(fb, cx, 96, T_TAGLINE, 1, PALETTE[C_WARN]);
     }
+
+    // Prompts, pulsing so they read as things to press.
+    const int py = fb->h - 78;
+    fill_scrim(fb, cx - 200, py - 8, 400, 56, PALETTE[C_INK], 11);
+    if ((gs->tick / 24) & 1)
+        draw_text_c(fb, cx, py, T_START, 2, PALETTE[C_BONE]);
+    draw_text_c(fb, cx, py + 28, T_HELP_HINT, 1, PALETTE[C_WARN]);
+}
+
+// The instructions. This exists because the game is otherwise a guessing
+// game: icons can show a price but they cannot explain why cargo is health.
+static void draw_help(Framebuffer *fb, GameState *gs) {
+    scene_draw(fb, gs->tick, 3, 40);
+    fill_scrim(fb, 0, 0, fb->w, fb->h, PALETTE[C_INK], 12);
+
+    const int x = 40, y = 30, pw = fb->w - 80, ph = fb->h - 60;
+    draw_panel(fb, x, y, pw, ph);
+
+    int cx = fb->w / 2;
+    draw_text_c(fb, cx, y + 16, T_HELP_TITLE, 3, PALETTE[C_BONE]);
+
+    const char *lines[9] = {
+        T_HELP_1, T_HELP_2, T_HELP_3, T_HELP_4, T_HELP_5,
+        T_HELP_6, T_HELP_7, T_HELP_8, T_HELP_9
+    };
+    int ly = y + 56;
+    for (int i = 0; i < 9; ++i) {
+        // The two lines that state the core rule are lit; the rest is body.
+        uint32_t c = (i == 6 || i == 7 || i == 8) ? PALETTE[C_WARN] : PALETTE[C_BONE];
+        draw_text(fb, x + 24, ly, lines[i], 1, c);
+        ly += 15;
+        if (i == 2 || i == 5) ly += 8;
+    }
+
+    // The five goods, each with what it is actually for.
+    ly += 10;
+    for (int g = 0; g < GOODS_COUNT; ++g) {
+        draw_icon(fb, x + 24, ly - 4, g, 1);
+        draw_text(fb, x + 48, ly, GOOD_NAME[g], 1, PALETTE[C_BONE]);
+        draw_text(fb, x + 124, ly, GOOD_USE[g], 1, PALETTE[C_DIM]);
+        ly += 20;
+    }
+
+    draw_text_c(fb, cx, y + ph - 46, T_HELP_KEYS, 1, PALETTE[C_BONE]);
+    draw_text_c(fb, cx, y + ph - 30, T_HELP_KEYS2, 1, PALETTE[C_DIM]);
+    if ((gs->tick / 24) & 1)
+        draw_text_c(fb, cx, y + ph - 14, T_BACK, 1, PALETTE[C_WARN]);
 }
 
 static void draw_end(Framebuffer *fb, GameState *gs, int won) {
@@ -454,15 +589,24 @@ static void draw_end(Framebuffer *fb, GameState *gs, int won) {
         fill_rect(fb, bx + 10, by + 18, 12, 3, PALETTE[C_BONE]);
     }
 
-    // Day reached and credits banked: the score.
-    int x = cx - 40;
-    x += draw_number(fb, x, py + 26, w->day, 3, PALETTE[C_BONE]) + 28;
-    draw_number(fb, x, py + 26, w->credits, 3, PALETTE[C_WARN]);
+    // What happened, in words. The icon says which resource; only this says why.
+    const char *verdict = won ? T_ARRIVED :
+        (w->death == DEATH_THIRST   ? T_DIED_THIRST :
+         w->death == DEATH_STRANDED ? T_DIED_FUEL   : T_DIED_STRIP);
+    draw_text_c(fb, cx + 24, py + 20, verdict, 1,
+                won ? PALETTE[C_GOOD] : PALETTE[C_BAD]);
 
-    draw_summary(fb, w, cx, py + 66);
+    // Day reached and credits banked: the score.
+    int x = cx - 44;
+    draw_text(fb, x, py + 40, T_REACHED, 1, PALETTE[C_DIM]);
+    draw_number(fb, x + text_w(T_REACHED, 1) + 8, py + 36, w->day, 2, PALETTE[C_BONE]);
+    draw_text(fb, x, py + 58, T_BANKED, 1, PALETTE[C_DIM]);
+    draw_number(fb, x + text_w(T_REACHED, 1) + 8, py + 54, w->credits, 2, PALETTE[C_WARN]);
+
+    draw_summary(fb, w, cx, py + 76);
 
     if ((gs->tick / 24) & 1)
-        draw_key(fb, cx - key_w(2) / 2, py + 88, G_ENTER, 2);
+        draw_text_c(fb, cx, py + 94, T_AGAIN, 1, PALETTE[C_BONE]);
 }
 
 // ---------------------------------------------------------------- update
@@ -471,8 +615,17 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     World *w = &gs->w;
     gs->tick++;
 
+    if (gs->help) {
+        for (int i = 0; i < BTN_COUNT; ++i)
+            if (in->pressed[i]) { gs->help = 0; break; }
+        draw_help(fb, gs);
+        return;
+    }
+
     if (gs->title) {
-        if (in->pressed[BTN_START] || in->pressed[BTN_A]) {
+        if (in->pressed[BTN_HELP]) {
+            gs->help = 1;
+        } else if (in->pressed[BTN_START] || in->pressed[BTN_A]) {
             gs->title = 0;
             // Deterministic from the seed handed in at init, so a given seed
             // always produces the same run for testing. Replays from the end
@@ -482,6 +635,9 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         draw_title(fb, gs);
         return;
     }
+
+    // Help is reachable at any time, not just from the title.
+    if (in->pressed[BTN_HELP]) { gs->help = 1; draw_help(fb, gs); return; }
 
     // Snapshot enough to tell whether an action actually did anything, so
     // sounds only fire on real state changes rather than on every keypress.

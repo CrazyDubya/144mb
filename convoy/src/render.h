@@ -29,6 +29,9 @@ enum {
     G_0, G_1, G_2, G_3, G_4, G_5, G_6, G_7, G_8, G_9,
     G_MINUS, G_PLUS, G_UP, G_DOWN, G_X, G_SLASH, G_DOT,
     G_KEY_Z, G_ENTER, G_RIGHT,
+    G_A, G_B, G_C, G_D, G_E, G_F, G_G, G_H, G_I, G_J, G_K, G_L, G_M,
+    G_N, G_O, G_P, G_Q, G_R, G_S, G_T, G_U, G_V, G_W, G_Y, G_Z,
+    G_COLON, G_COMMA, G_EXCL, G_QUES, G_APOS, G_PCT, G_LETTER_X,
     G_COUNT
 };
 
@@ -68,6 +71,13 @@ int  glyph_w    (int scale);
 // Returns the width drawn, so callers can lay out rows without measuring twice.
 int  draw_number(Framebuffer *fb, int x, int y, int value, int scale, uint32_t rgb);
 int  number_w   (int value, int scale);
+
+// Text. Uppercase-only 5x7, which is both period-correct and a third of the
+// glyphs a mixed-case face would need. Lowercase input is folded up.
+int  draw_text  (Framebuffer *fb, int x, int y, const char *s, int scale, uint32_t rgb);
+int  text_w     (const char *s, int scale);
+// Centred on cx. Returns the left edge used.
+int  draw_text_c(Framebuffer *fb, int cx, int y, const char *s, int scale, uint32_t rgb);
 
 void draw_icon  (Framebuffer *fb, int x, int y, int icon, int scale);
 // Draws a keycap containing a glyph. Returns its width.

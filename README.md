@@ -32,7 +32,7 @@ entertainment value — in that order.
 
 | game | status | size | % of disk |
 |---|---|---|---|
-| [convoy](convoy/) | v1 complete | 78,336 | 5.31% |
+| [convoy](convoy/) | v1 complete | 82,944 | 5.62% |
 
 ## Building
 

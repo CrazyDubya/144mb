@@ -117,3 +117,24 @@ brought competent play to 53% and careless play to 0%, which is the shape a
 roguelike wants.
 
 Balance against the bot, not against the script.
+
+## Do not mistake "no text" for "universally readable"
+
+convoy originally shipped with no alphabetic font at all, reasoning that icons,
+colours and Arabic numerals read identically to a Korean judge and an English
+one. That reasoning is sound and the conclusion was still wrong.
+
+Read your own screenshots as a stranger would. Nothing said the droplet was
+*water* rather than coolant, that the number beside it was a *price* rather than
+a quantity, or that `−meds×1 / −water×2` was a choice between paying a cost and
+taking a consequence. The result was not elegant minimalism — it was a puzzle
+wrapped around the actual game, solvable only by dying repeatedly.
+
+Judging weights entertainment value. A confused judge scores badly no matter how
+principled the constraint was.
+
+Keep the icons — they carry meaning at a glance, and they survive translation.
+Add words so the glance is not a guess: name every good, label every column,
+title every encounter, and ship a **how to play** screen. An uppercase-only 5x7
+Latin font is 32 glyphs and about 300 bytes. Put every string in one header so a
+translation is a data swap rather than a hunt through the drawing code.

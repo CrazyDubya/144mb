@@ -198,6 +198,7 @@ static int button_for(char c) {
     case 'a': return BTN_A;
     case 'b': return BTN_B;
     case 's': return BTN_START;
+    case 'h': return BTN_HELP;
     default:  return -1;   // '.' or anything else idles a tick
     }
 }

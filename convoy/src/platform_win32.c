@@ -83,7 +83,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 static void read_input(Input *in) {
     static uint8_t prev[BTN_COUNT];
     static const int vk[BTN_COUNT] = {
-        VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', VK_RETURN
+        VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', VK_RETURN, 'H'
     };
     for (int i = 0; i < BTN_COUNT; ++i) {
         uint8_t d = (GetAsyncKeyState(vk[i]) & 0x8000) ? 1 : 0;
