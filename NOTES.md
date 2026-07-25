@@ -138,3 +138,34 @@ Add words so the glance is not a guess: name every good, label every column,
 title every encounter, and ship a **how to play** screen. An uppercase-only 5x7
 Latin font is 32 glyphs and about 300 bytes. Put every string in one header so a
 translation is a data swap rather than a hunt through the drawing code.
+
+## Provisioning depth is a hidden design constraint
+
+Lengthening convoy's route from 9 hops to 13 broke it in a way no size or
+balance number would have shown. The test bot stocked fuel and water for the
+whole remaining journey — a sensible-looking rule — which at the start of a
+13-hop route came to 29 units against a 30-slot hold. The hold filled with
+consumables, leaving no room to trade and no way to earn, and the bot then
+pressed BUY forever against a full hold.
+
+Two lessons, one design and one mechanical:
+
+- **The hold size and the route length are the same number.** If a player can
+  carry the entire journey's consumables at once, resupply stops mattering and
+  the economy is decoration. If they cannot carry any surplus, there is no
+  trade. The interesting band is narrow and you have to check you are in it.
+- **Any agent that walks a cursor to press a button must check the button will
+  do something.** A no-op purchase looks identical to a pending one, and the
+  loop never terminates. Guard on affordability *and* capacity before
+  navigating, not after arriving.
+
+The fix in both cases is to provision to the next few markets rather than to the
+end of the road, which is also how the game reads better: you resupply as you
+go.
+
+## Never rebuild while a background sweep is running
+
+Sweep loops re-invoke the binary per seed, so a rebuild halfway through swaps
+the thing being measured. One run here reported 63% from a sample that was part
+old-bot and part new-bot, which is worse than no number at all because it looks
+like a result. Finish the sweep, then rebuild.

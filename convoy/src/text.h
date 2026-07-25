@@ -91,7 +91,34 @@
 #define T_HELP_KEYS2   "ENTER DEPART / CONFIRM    ESC QUIT"
 #define T_BACK         "PRESS ANY KEY TO GO BACK"
 
+// Settlement tabs
+#define T_TAB_MARKET    "MARKET"
+#define T_TAB_GARAGE    "GARAGE"
+#define T_TAB_CREW      "CREW"
+#define T_TAB_CONTRACTS "CONTRACTS"
+
+// Settlement archetypes. Each makes its own good cheap and the rest dearer, so
+// the map reads as an economic landscape rather than a row of identical shops.
+#define T_ARCH_WELL     "WELL"
+#define T_ARCH_REFINERY "REFINERY"
+#define T_ARCH_ARMOURY  "ARMOURY"
+#define T_ARCH_CLINIC   "CLINIC"
+#define T_ARCH_SCRAPYARD "SCRAPYARD"
+#define T_ARCH_GENERAL  "TRADING POST"
+
+#define T_ARCH_WELL_D      "DEEP WATER. THEY SELL IT CHEAP"
+#define T_ARCH_REFINERY_D  "THEY CRACK FUEL HERE"
+#define T_ARCH_ARMOURY_D   "GUNS AND BRASS, NOTHING ELSE"
+#define T_ARCH_CLINIC_D    "MEDICINE, AND QUESTIONS ABOUT IT"
+#define T_ARCH_SCRAPYARD_D "PICKED-OVER METAL, PILED HIGH"
+#define T_ARCH_GENERAL_D   "A LITTLE OF EVERYTHING, CHEAP AT NOTHING"
+
+#define T_CHEAP_HERE    "CHEAP HERE"
+#define T_DEAR_HERE     "THEY PAY WELL HERE"
+
 extern const char *const GOOD_NAME[5];
 extern const char *const GOOD_USE[5];
+extern const char *const ARCH_NAME[6];
+extern const char *const ARCH_DESC[6];
 
 #endif

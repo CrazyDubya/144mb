@@ -14,13 +14,20 @@
 
 #define SECTORS_LAST (SECTORS - 1)
 
-// How much of each good the bot refuses to sell, given how far is left to go.
+// How far ahead the convoy provisions. Stocking for the entire remaining route
+// is not a strategy, it is a deadlock: on a 13-hop route that is 29 units of
+// fuel and water against a 30-slot hold, leaving no room to trade and no way to
+// pay for anything. You provision to the next few markets and re-supply.
+#define PLAN_AHEAD 5
+
+// How much of each good the bot refuses to sell.
 static void reserves(const World *w, int *keep) {
     int hops = SECTORS_LAST - w->sector;
     if (hops < 0) hops = 0;
+    int span = hops < PLAN_AHEAD ? hops : PLAN_AHEAD;
 
-    keep[G_FUEL]  = hops + 1;      // +1 for a storm eating one
-    keep[G_WATER] = hops + 2;
+    keep[G_FUEL]  = span + 1;      // +1 for a storm eating one
+    keep[G_WATER] = span + 2;
     keep[G_AMMO]  = 2;             // enough to refuse one raid
     keep[G_MEDS]  = 1;
     keep[G_SCRAP] = 0;             // pure trade good
@@ -68,18 +75,23 @@ static int decide_trade(Bot *b, const World *w, int sel) {
         if (good_price) return step_to(sel, g, BTN_B);
     }
 
+    // A purchase is only worth walking the cursor to if it can actually
+    // happen. Without the room check the bot presses BUY at a full hold
+    // forever, which is exactly how the 13-hop route deadlocked it.
+    int room = cargo < CARGO_CAP;
+
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
-    if (w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL])
+    if (room && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL])
         return step_to(sel, G_FUEL, BTN_A);
 
     // 3. Then water.
-    if (w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER])
+    if (room && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER])
         return step_to(sel, G_WATER, BTN_A);
 
     // 4. Speculate: buy anything unusually cheap, if there is room and money to
     //    spare, to sell further east. This is the part a fixed script cannot do.
-    if (cargo < CARGO_CAP - 2 && hops > 1) {
+    if (room && cargo < CARGO_CAP - 2 && hops > 1) {
         for (int g = 0; g < GOODS_COUNT; ++g) {
             int avg = avg_price(b, g);
             if (avg == 0 || b->seen[g] < 2) continue;

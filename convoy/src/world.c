@@ -23,7 +23,7 @@ static void price_node(World *w, Node *n, int sector) {
         int p = BASE_PRICE[g] * pct / 100;
         // Fuel gets dearer the further east you go, so the run gets harder to
         // afford exactly as it gets harder to survive.
-        if (g == G_FUEL) p = p * (100 + sector * 5) / 100;
+        if (g == G_FUEL) p = p * (100 + sector * 4) / 100;
         n->price[g] = (int16_t)(p < 1 ? 1 : p);
     }
 }
@@ -48,8 +48,8 @@ void world_init(World *w, uint32_t seed) {
             else if (s == SECTORS - 1)      nd->type = NODE_GREEN;
             else {
                 int r = rng_range(&w->rng, 0, 99);
-                nd->type = (uint8_t)(r < 34 ? NODE_SETTLE :
-                                     r < 72 ? NODE_EVENT  :
+                nd->type = (uint8_t)(r < 46 ? NODE_SETTLE :
+                                     r < 76 ? NODE_EVENT  :
                                      r < 92 ? NODE_HAZARD : NODE_EMPTY);
             }
             price_node(w, nd, s);
@@ -76,9 +76,9 @@ void world_init(World *w, uint32_t seed) {
     w->node[0][0].visited = 1;
     // Deliberately lean: enough to start trading, not enough to simply buy
     // your way east without ever selling at a profit.
-    w->credits = 110;
-    w->held[G_WATER] = 8;
-    w->held[G_FUEL]  = 5;
+    w->credits = 150;
+    w->held[G_WATER] = 9;
+    w->held[G_FUEL]  = 6;
     w->held[G_AMMO]  = 4;
     w->held[G_MEDS]  = 1;
     w->held[G_SCRAP] = 2;
@@ -103,6 +103,15 @@ static void drop_random_cargo(World *w, int units) {
             if (w->held[g] > 0) { w->held[g]--; break; }
         }
     }
+}
+
+int world_reachable(const World *w, int *out) {
+    int n = 0;
+    if (w->sector >= SECTORS - 1) return 0;
+    uint8_t links = w->node[w->sector][w->index].links;
+    for (int m = 0; m < NODES_PER; ++m)
+        if ((links & (1u << m)) && w->node[w->sector + 1][m].active) out[n++] = m;
+    return n;
 }
 
 int world_can_travel(const World *w, int next_index) {

@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#define SECTORS      10
+#define SECTORS      14
 #define NODES_PER    4
 #define GOODS_COUNT  5
 #define CARGO_CAP    30
@@ -75,6 +75,9 @@ typedef struct {
 void world_init  (World *w, uint32_t seed);
 int  world_cargo (const World *w);
 int  world_can_travel(const World *w, int next_index);
+// Fills `out` with the node indices reachable from here, returning how many.
+// Lives here rather than in the UI because it is a fact about the route.
+int  world_reachable (const World *w, int *out);
 void world_travel(World *w, int next_index);
 void world_buy   (World *w, int good);
 void world_sell  (World *w, int good);
