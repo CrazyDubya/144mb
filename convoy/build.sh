@@ -40,9 +40,13 @@ if [ -z "${ONLY_WIN:-}" ]; then
     echo "== native headless harness =="
     mkdir -p "$ROOT/out"
     # shellcheck disable=SC2086
-    "$ZIG" cc -O1 -g $WARN \
+    # -DCONVOY_INSTRUMENT compiles the measurement counters into World. They
+    # are deliberately absent from the Windows target: the contest binary
+    # should not carry its own test rig, and keeping them out means the shipped
+    # exe is byte-identical whether or not the harness is instrumented.
+    "$ZIG" cc -O1 -g $WARN -DCONVOY_INSTRUMENT \
         -o "$ROOT/build/convoy_headless" \
-        "$ROOT/src/platform_headless.c" "$ROOT/src/bot.c" "${SRC[@]}"
+        "$ROOT/src/platform_headless.c" "$ROOT/src/bot.c" "$ROOT/src/bot_ref.c" "${SRC[@]}"
 fi
 
 BYTES=$(stat -c%s "$ROOT/build/convoy.exe" 2>/dev/null || stat -f%z "$ROOT/build/convoy.exe")

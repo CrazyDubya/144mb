@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>   // offsetof, for the determinism hash
 
 // ---------------------------------------------------------------- png
 static uint32_t crc_table[256];
@@ -122,11 +123,13 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
 }
 
 #include "bot.h"
+#include "bot_ref.h"
 #include "state.h"   // TAB_* for the journal screenshot flag
 
 const World *game_world(GameMemory *mem);
 int          audio_mood_of(GameMemory *mem);
 void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title);
+void         game_daily(GameMemory *mem, uint32_t seed);
 
 // Renders the synth to a WAV and reports level statistics. There is no way to
 // listen to anything on this machine, so the check is numeric: non-silent,
@@ -205,6 +208,293 @@ static int button_for(char c) {
     }
 }
 
+
+// ---------------------------------------------------------------- hashing
+// FNV-1a. Used to answer two questions the eye cannot: did this seed generate
+// the same route as before, and did this run replay identically.
+static uint32_t fnv(const void *p, size_t n, uint32_t h) {
+    const uint8_t *b = (const uint8_t *)p;
+    for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 16777619u; }
+    return h;
+}
+
+#ifdef CONVOY_INSTRUMENT
+#define WORLD_CORE offsetof(World, in)
+#else
+#define WORLD_CORE sizeof(World)
+#endif
+
+// The route as generated -- layout, links and archetypes, but not prices,
+// which move as soon as anyone trades. This is the number that proves the
+// point of splitting the generator into separate streams: edit an encounter
+// table and every map hash must stay exactly where it was.
+static uint32_t map_hash(const World *w) {
+    uint32_t h = 2166136261u;
+    for (int s = 0; s < SECTORS; ++s)
+        for (int n = 0; n < NODES_PER; ++n) {
+            const Node *nd = &w->node[s][n];
+            uint8_t f[4] = { nd->active, nd->type, nd->links, nd->archetype };
+            h = fnv(f, sizeof f, h);
+        }
+    return h;
+}
+
+// Everything the simulation actually is, excluding the measurement block --
+// counters are a product of the run, not part of it, and hashing them would
+// make the determinism check partly tautological.
+static uint32_t state_hash(const World *w) {
+    return fnv(w, WORLD_CORE, 2166136261u);
+}
+
+// ---------------------------------------------------------------- exploit
+// Can the convoy buy a unit and immediately sell it back for a profit?
+//
+// This shipped once already: buying nudged the local price up and you could
+// sell into your own nudge, and a bot found 4,141 credits at sector 0 on day
+// one. A 20% bid-ask spread fixed it, but the margin is thinner than it looks
+// -- with the trader aboard the spread narrows to 10%, and the round trip
+// comes to 0.9*(p + p/16 + 1) - p, which is positive below about p=21 in
+// exact arithmetic. Only integer truncation saves it, and water and scrap
+// both sit inside that window.
+//
+// So this is not a historical check. It is the guard rail for any future
+// change to either side of the spread, and it runs over the whole crew and
+// upgrade cross-product because the trader's discount is what moves it.
+static int exploit_probe(void) {
+    int worst = -9999, worst_p = 0, worst_trader = 0;
+    for (int trader = 0; trader < 2; ++trader) {
+        for (int g = 0; g < GOODS_COUNT; ++g) {
+            for (int p = 1; p <= 200; ++p) {
+                World w;
+                world_init(&w, 1234u, DIFF_NORMAL);
+                w.crew[CREW_TRADER] = (uint8_t)trader;
+                Node *nd = &w.node[w.sector][w.index];
+                nd->type = NODE_SETTLE;
+                nd->price[g] = (int16_t)p;
+
+                // Buy one, then sell it straight back at the same stall.
+                int before = w.credits = 10000;
+                int held   = w.held[g];
+                world_buy(&w, g);
+                if (w.held[g] != held + 1) continue;   // could not buy; not a trade
+                world_sell(&w, g);
+
+                int net = w.credits - before;
+                if (net > worst) { worst = net; worst_p = p; worst_trader = trader; }
+            }
+        }
+    }
+    // Strictly positive is the failure. Break-even happens at a list price of
+    // 1, where the sell clamp floors the take at 1 credit -- you end with the
+    // same credits and the same goods, and the buy nudges the price up so the
+    // next cycle loses. Nothing is farmed, so nothing is wrong.
+    if (worst > 0) {
+        fprintf(stderr, "EXPLOIT: round trip nets %+d at price %d%s\n",
+                worst, worst_p, worst_trader ? " with the trader aboard" : "");
+        return 1;
+    }
+    printf("EXPLOIT clean: best round trip nets %+d (price %d%s)\n",
+           worst, worst_p, worst_trader ? ", trader aboard" : "");
+    return 0;
+}
+
+// ---------------------------------------------------------------- one run
+typedef struct {
+    int   bot_float, refuse_all, journal_at, end_shot, every, verbose;
+    const char *outdir;
+    int   trace_hash;      // -Z: accumulate a hash of every step
+    int   use_ref;         // -A ref: play with the frozen agent instead
+    int   daily;           // --daily: take today's fixed map, via the menu
+} RunOpts;
+
+typedef struct {
+    uint32_t seed, map, trace;
+    int      steps, journal_tab;
+    World    w;            // the whole thing, copied at the end
+} RunResult;
+
+// Plays one seed to completion. Extracted from main so a sweep can run many
+// seeds in a single process: every documented sweep used to be a shell loop
+// re-invoking the binary per seed, which is exactly how a sweep ends up
+// straddling a rebuild and reporting half of one build and half of another.
+static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
+                   uint32_t seed, int diff, const RunOpts *o, RunResult *res) {
+    // A fresh arena per seed. game_init assigns individual fields and never
+    // clears GameState, so without this the transition timer, cut-scene state
+    // and audio phase would carry over from the previous run and the sweep
+    // would quietly disagree with a shell loop.
+    memset(mem->permanent, 0, sizeof(GameState));
+    mem->initialized = 0;
+    game_init(mem, seed);
+
+    Input in = {0};
+    memset(res, 0, sizeof *res);
+    res->seed = seed;
+    res->journal_tab = -1;
+    res->trace = 2166136261u;
+
+    // The daily run had no coverage at all: nothing in the harness ever called
+    // game_daily or touched the title's second row, so both the date-derived
+    // seed and the branch that chooses it were shipped untested.
+    if (o->daily) {
+        game_daily(mem, seed * 2654435761u);
+        const int keys[] = { BTN_DOWN, BTN_RIGHT, BTN_UP };
+        for (int k = 0; k < 3; ++k) {
+            memset(&in, 0, sizeof in);
+            in.down[keys[k]] = in.pressed[keys[k]] = 1;
+            game_update(mem, &in, fb);
+            memset(&in, 0, sizeof in);
+            game_update(mem, &in, fb);
+        }
+    }
+
+    // Pick the difficulty the way a player does, by pressing left or right on
+    // the title menu. Setting the field directly would be shorter and would
+    // also stop testing whether the menu works.
+    for (int n = diff - DIFF_NORMAL; n != 0; n += (n > 0 ? -1 : 1)) {
+        int btn = (n > 0) ? BTN_RIGHT : BTN_LEFT;
+        memset(&in, 0, sizeof in);
+        in.down[btn] = in.pressed[btn] = 1;
+        game_update(mem, &in, fb);
+        memset(&in, 0, sizeof in);
+        game_update(mem, &in, fb);
+    }
+
+    // Two agents, one loop. The reference agent is the frozen v4-entry bot:
+    // when the working bot is edited, running both over the same seeds says
+    // whether a moved number came from the game or from the observer.
+    Bot bot; BotRef ref;
+    bot_init(&bot, o->bot_float);       bot.refuse_all = o->refuse_all;
+    botref_init(&ref, o->bot_float);    ref.refuse_all = o->refuse_all;
+
+    int steps = 0;
+    const int LIMIT = 4000;      // generous; a run is ~60 decisions
+    while (steps++ < LIMIT) {
+        const World *w = game_world(mem);
+        if (w->state == ST_DEAD || w->state == ST_WON) break;
+
+        int sel = 0, map_sel = 0, tab = 0, title = 0;
+        game_ui(mem, &sel, &map_sel, &tab, &title);
+        // Only once the title is gone. game_init builds a world for the title
+        // to sit in front of, and pressing start builds the real one -- for an
+        // ordinary run those are the same map, so hashing too early looked
+        // correct and silently reported the wrong world for a daily run.
+        if (!title && !res->map) res->map = map_hash(w);
+        int btn = o->use_ref ? botref_step(&ref, w, sel, map_sel, tab, title)
+                             : bot_step(&bot, w, sel, map_sel, tab, title);
+        if (btn < 0) break;
+
+        memset(&in, 0, sizeof in);
+        in.down[btn] = in.pressed[btn] = 1;
+        game_update(mem, &in, fb);
+        memset(&in, 0, sizeof in);
+        game_update(mem, &in, fb);
+
+        if (o->trace_hash) res->trace = fnv(&res->trace, 0, state_hash(game_world(mem)));
+
+        if (o->journal_at && steps == o->journal_at && w->state == ST_TRADE) {
+            for (int k = 0; k < TAB_COUNT; ++k) {
+                int t = 0;
+                game_ui(mem, NULL, NULL, &t, NULL);
+                if (t == TAB_JOURNAL) break;
+                memset(&in, 0, sizeof in);
+                in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
+                game_update(mem, &in, fb);
+                memset(&in, 0, sizeof in);
+                game_update(mem, &in, fb);
+            }
+            game_ui(mem, NULL, NULL, &res->journal_tab, NULL);
+            char path[512];
+            snprintf(path, sizeof path, "%s/journal.png", o->outdir);
+            write_png(path, pixels, FB_W, FB_H);
+        }
+
+        if (o->verbose) trace(steps, '*', game_world(mem));
+        if (o->every > 0 && (steps % o->every) == 0) {
+            char path[512];
+            snprintf(path, sizeof path, "%s/bot_%04d.png", o->outdir, steps);
+            write_png(path, pixels, FB_W, FB_H);
+        }
+    }
+
+    // The run is over but the ending cut scene still owns the screen, and the
+    // bot stops before dismissing it. Press through to the summary, which is
+    // the screen that actually reports the score.
+    if (o->end_shot) {
+        for (int k = 0; k < 240; ++k) {
+            memset(&in, 0, sizeof in);
+            if ((k % 30) == 0) in.down[BTN_A] = in.pressed[BTN_A] = 1;
+            game_update(mem, &in, fb);
+        }
+        char path[512];
+        snprintf(path, sizeof path, "%s/end.png", o->outdir);
+        write_png(path, pixels, FB_W, FB_H);
+    }
+
+    res->steps = steps;
+    res->w = *game_world(mem);
+
+    // The menu selection only reaches the World when the run starts, so this
+    // is the first point it can be checked -- and it is worth checking,
+    // because a sweep that silently ran the default difficulty would produce
+    // three identical tables and look like a balance result.
+    if (res->w.diff != diff) {
+        fprintf(stderr, "seed %u ran difficulty %d, wanted %d\n",
+                seed, res->w.diff, diff);
+        return 0;
+    }
+    return 1;
+}
+
+static const char *const OUT_NAME[] = {
+    "DEAD", "EMPTY", "PARTIAL", "INTACT", "EXEMPLARY"
+};
+
+// One line per run, key=value so it can be parsed without counting columns.
+// The previous positional format had grown to sixteen fields and every
+// consumer -- the docs included -- was already out of date with it.
+static void print_run(const RunResult *r) {
+    const World *w = &r->w;
+    int upg = 0, crew = 0;
+    for (int i = 0; i < UPG_COUNT; ++i)  upg  += w->upgrade[i] ? 1 : 0;
+    for (int i = 0; i < CREW_COUNT; ++i) crew += w->crew[i] ? 1 : 0;
+    int met = 0, regard = 0;
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        met    += w->met[i] ? 1 : 0;
+        regard += w->regard[i];
+    }
+    printf("BOT seed=%u result=%s death=%s sector=%d day=%d credits=%d "
+           "cargo=%d seed_left=%d outcome=%s upg=%d crew=%d met=%d regard=%d "
+           "enc=%d diff=%d score=%d steps=%d map=%08x",
+           r->seed,
+           w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
+           DEATH_NAME[w->death],
+           w->sector, w->day, w->credits, world_cargo(w), world_payload(w),
+           OUT_NAME[world_outcome(w)], upg, crew, met, regard,
+           w->encounters, w->diff, world_score(w), r->steps, r->map);
+#ifdef CONVOY_INSTRUMENT
+    const Metrics *m = &w->in;
+    long ev_fired = 0, ev_acc = 0, ev_forced = 0;
+    for (int k = 0; k < EV_KINDS; ++k) {
+        ev_fired  += m->ev_fired[k];
+        ev_acc    += m->ev_accepted[k];
+        ev_forced += m->ev_forced[k];
+    }
+    printf(" acc=%ld forced=%ld c_off=%u c_acc=%u c_done=%u"
+           " pl_storm=%u pl_dem=%u pl_rand=%u"
+           " bought=%u sold=%u cr_in=%d cr_out=%d headline=%d stack=%u"
+           " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u",
+           ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
+           m->pl_storm, m->pl_demand, m->pl_random,
+           m->units_bought, m->units_sold, m->credits_in, m->credits_out,
+           m->sold_headline, m->biggest_stack,
+           m->cargo_samples ? (int)(m->cargo_sum * 100u / m->cargo_samples) : 0,
+           m->peak_cargo, m->min_water, m->min_fuel, m->days_thin);
+    (void)ev_fired;
+#endif
+    printf("\n");
+}
+
 // ---------------------------------------------------------------- harness
 int main(int argc, char **argv) {
     int      ticks    = 120;
@@ -224,6 +514,11 @@ int main(int argc, char **argv) {
     int         diff = DIFF_NORMAL;   // -D selects a difficulty for a sweep
     int         refuse_all = 0;       // -R makes the bot decline every encounter
     int         end_shot = 0;         // -E dumps the summary screen after the run
+    int         sweep_n = 0;          // -N runs seeds 1..N in this one process
+    int         determinism = 0;      // -Z replays each seed and compares
+    int         exploit = 0;          // -X hunts a profitable market round trip
+    int         use_ref = 0;          // -A ref plays with the frozen agent
+    int         daily = 0;            // --daily plays today's fixed map
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -240,6 +535,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-D") && i + 1 < argc) diff = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-R")) refuse_all = 1;
         else if (!strcmp(argv[i], "-E")) end_shot = 1;
+        else if (!strcmp(argv[i], "-N") && i + 1 < argc) sweep_n = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-Z")) determinism = 1;
+        else if (!strcmp(argv[i], "-X")) exploit = 1;
+        else if (!strcmp(argv[i], "-A") && i + 1 < argc) use_ref = !strcmp(argv[++i], "ref");
+        else if (!strcmp(argv[i], "--daily")) daily = 1;
     }
 
     GameMemory mem = {0};
@@ -249,130 +549,77 @@ int main(int argc, char **argv) {
     uint32_t *pixels = (uint32_t *)calloc((size_t)FB_W * FB_H, sizeof(uint32_t));
     Framebuffer fb = { pixels, FB_W, FB_H };
 
-    game_init(&mem, seed);
+    if (exploit) return exploit_probe();
 
-    Input in = {0};
-    int dumped = 0;
-
-    // Pick the difficulty the way a player does, by pressing left or right on
-    // the title menu. Setting the field directly would be shorter and would
-    // also stop testing whether the menu works.
-    for (int n = diff - DIFF_NORMAL; n != 0; n += (n > 0 ? -1 : 1)) {
-        int btn = (n > 0) ? BTN_RIGHT : BTN_LEFT;
-        memset(&in, 0, sizeof in);
-        in.down[btn] = in.pressed[btn] = 1;
-        game_update(&mem, &in, &fb);
-        memset(&in, 0, sizeof in);
-        game_update(&mem, &in, &fb);
-    }
+    RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
+                    every, verbose, outdir, determinism, use_ref, daily };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player
     // would, one per step, and never touches the simulation directly.
-    if (bot_mode) {
-        Bot bot;
-        bot_init(&bot, bot_float);
-        bot.refuse_all = refuse_all;
+    if (bot_mode || sweep_n > 0) {
+        int lo = 1, hi = sweep_n;
+        if (sweep_n <= 0) { lo = (int)seed; hi = (int)seed; }
 
-        int steps = 0;
-        const int LIMIT = 4000;      // generous; a run is ~60 decisions
-        while (steps++ < LIMIT) {
-            const World *w = game_world(&mem);
-            if (w->state == ST_DEAD || w->state == ST_WON) break;
+        int won = 0, dead = 0, stalled = 0, runs = 0;
+        for (int sd = lo; sd <= hi; ++sd) {
+            RunResult r;
+            if (!run_one(&mem, &fb, pixels, (uint32_t)sd, diff, &opt, &r)) return 2;
 
-            int sel = 0, map_sel = 0, tab = 0, title = 0;
-            game_ui(&mem, &sel, &map_sel, &tab, &title);
-            int btn = bot_step(&bot, w, sel, map_sel, tab, title);
-            if (btn < 0) break;
-
-            memset(&in, 0, sizeof in);
-            in.down[btn] = in.pressed[btn] = 1;
-            game_update(&mem, &in, &fb);
-            memset(&in, 0, sizeof in);
-            game_update(&mem, &in, &fb);
-
-            if (journal_at && steps == journal_at && w->state == ST_TRADE) {
-                for (int k = 0; k < TAB_COUNT; ++k) {
-                    int t = 0;
-                    game_ui(&mem, NULL, NULL, &t, NULL);
-                    if (t == TAB_JOURNAL) break;
-                    memset(&in, 0, sizeof in);
-                    in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
-                    game_update(&mem, &in, &fb);
-                    memset(&in, 0, sizeof in);
-                    game_update(&mem, &in, &fb);
+            if (determinism) {
+                // Same seed, same everything: a second run must produce an
+                // identical step-by-step hash. This catches uninitialised
+                // reads and state leaking between seeds, neither of which a
+                // win-rate sweep would ever show.
+                RunResult again;
+                if (!run_one(&mem, &fb, pixels, (uint32_t)sd, diff, &opt, &again)) return 2;
+                if (again.trace != r.trace || again.map != r.map) {
+                    fprintf(stderr, "NOT DETERMINISTIC: seed %d "
+                            "trace %08x vs %08x, map %08x vs %08x\n",
+                            sd, r.trace, again.trace, r.map, again.map);
+                    return 3;
                 }
-                int t = 0;
-                game_ui(&mem, NULL, NULL, &t, NULL);
-                char path[512];
-                snprintf(path, sizeof path, "%s/journal.png", outdir);
-                write_png(path, pixels, FB_W, FB_H);
-                printf("journal shot at step %d, tab=%d (want %d)\n",
-                       steps, t, TAB_JOURNAL);
             }
 
-            if (verbose) trace(steps, '*', game_world(&mem));
-            if (every > 0 && (steps % every) == 0) {
-                char path[512];
-                snprintf(path, sizeof path, "%s/bot_%04d.png", outdir, steps);
-                write_png(path, pixels, FB_W, FB_H);
-                ++dumped;
+            if (journal_at && r.journal_tab != TAB_JOURNAL) {
+                fprintf(stderr, "journal unreachable on seed %d: tab=%d wanted %d\n",
+                        sd, r.journal_tab, TAB_JOURNAL);
+                return 4;
             }
+
+            print_run(&r);
+            ++runs;
+            if      (r.w.state == ST_WON)  ++won;
+            else if (r.w.state == ST_DEAD) ++dead;
+            else                           ++stalled;
         }
 
-        // The run is over but the ending cut scene still owns the screen, and
-        // the bot stops before dismissing it. Press through to the summary,
-        // which is the screen that actually reports the score.
-        if (end_shot) {
-            for (int k = 0; k < 240; ++k) {
-                memset(&in, 0, sizeof in);
-                if ((k % 30) == 0) in.down[BTN_A] = in.pressed[BTN_A] = 1;
-                game_update(&mem, &in, &fb);
-            }
+        if (sweep_n > 0) {
+            printf("SWEEP n=%d diff=%d won=%d dead=%d stalled=%d win_pct=%d\n",
+                   runs, diff, won, dead, stalled, runs ? won * 100 / runs : 0);
+        }
+        // A stall is always a bug, never a balance result, so it fails the run
+        // rather than quietly appearing in a column.
+        if (stalled) {
+            fprintf(stderr, "%d run(s) stalled\n", stalled);
+            return 5;
+        }
+        if (wav_secs > 0) {
+            // Audio used to be unreachable in bot mode: the bot branch
+            // returned before the wav path, so the only way to render sound
+            // was a hand-written key script -- and a previous debugging
+            // session was lost to exactly that blind spot.
             char path[512];
-            snprintf(path, sizeof path, "%s/end.png", outdir);
-            write_png(path, pixels, FB_W, FB_H);
-        }
-
-        const World *w = game_world(&mem);
-        // The menu selection only reaches the World when the run starts, so
-        // this is the first point it can be checked -- and it is worth
-        // checking, because a sweep that silently ran the default difficulty
-        // would produce three identical tables and look like a balance result.
-        if (w->diff != diff) {
-            fprintf(stderr, "seed %u ran difficulty %d, wanted %d\n",
-                    seed, w->diff, diff);
-            return 2;
-        }
-        {
-            // What the convoy actually ended up owning, not just whether it
-            // won. An option nobody takes and an option that loses money look
-            // identical in a win-rate column.
-            int upg = 0, crew = 0;
-            for (int i = 0; i < UPG_COUNT; ++i)  upg  += w->upgrade[i] ? 1 : 0;
-            for (int i = 0; i < CREW_COUNT; ++i) crew += w->crew[i] ? 1 : 0;
-            // How many of the five were met at all, and which way the run left
-            // them feeling. If met stays near zero the characters are writing
-            // nobody reads; if regard never moves, the choices are not landing.
-            int met = 0, regard = 0;
-            for (int i = 0; i < CHAR_COUNT; ++i) {
-                met    += w->met[i] ? 1 : 0;
-                regard += w->regard[i];
-            }
-            static const char *const OUT_NAME[] = {
-                "DEAD", "EMPTY", "PARTIAL", "INTACT", "EXEMPLARY"
-            };
-            printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d "
-                   "seed_left=%d outcome=%s upg=%d crew=%d met=%d regard=%d "
-                   "enc=%d diff=%d score=%d steps=%d\n",
-                   seed,
-                   w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
-                   w->sector, w->day, w->credits, world_cargo(w),
-                   world_payload(w), OUT_NAME[world_outcome(w)], upg, crew,
-                   met, regard, w->encounters, w->diff, world_score(w), steps);
+            snprintf(path, sizeof path, "%s/bot.wav", outdir);
+            write_wav(path, &mem, wav_secs);
         }
         return 0;
     }
+
+    game_init(&mem, seed);
+
+    Input in = {0};
+    int dumped = 0;
 
     // Dismiss the title screen so scripts describe the run itself.
     if (skip_title) {

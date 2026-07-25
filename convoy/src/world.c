@@ -38,6 +38,16 @@ static int rng_range(uint32_t *s, int lo, int hi) {
     return lo + (int)(rng_next(s) % (uint32_t)(hi - lo + 1));
 }
 
+// Scatters a seed so that the three streams started from one number are not
+// visibly related to each other, and neither are consecutive seeds. An
+// xorshift state of 0 is a fixed point, so never hand one out.
+static uint32_t mix32(uint32_t x) {
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x ? x : 1u;
+}
+
 static void roll_event(World *w);
 static void observe_market(World *w);
 static void contract_tick(World *w);
@@ -78,7 +88,7 @@ static void price_node(World *w, Node *n, int sector) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
         // Local noise is deliberately narrower than it used to be: the
         // archetype should be the loudest signal in a price, not the dice.
-        int pct = rng_range(&w->rng, 72, 132);
+        int pct = rng_range(&w->rng_map, 72, 132);
         int p = BASE_PRICE[g] * pct / 100;
         p = p * (100 + ARCH_MOD[n->archetype][g]) / 100;
         // Fuel gets dearer the further east you go, so the run gets harder to
@@ -90,8 +100,13 @@ static void price_node(World *w, Node *n, int sector) {
 
 void world_init(World *w, uint32_t seed, int diff) {
     for (int i = 0; i < (int)sizeof *w; ++i) ((uint8_t *)w)[i] = 0;
-    w->rng  = seed ? seed : 1u;
-    w->seed = w->rng;
+    w->seed = seed ? seed : 1u;
+    // Decorrelated rather than offset: consecutive seeds differ by one, and an
+    // xorshift started one apart produces visibly related first draws, so
+    // seeds 1 and 2 would open with similar maps and similar first encounters.
+    w->rng_map   = mix32(w->seed ^ 0x9E3779B9u);
+    w->rng_offer = mix32(w->seed ^ 0x85EBCA6Bu);
+    w->rng_event = mix32(w->seed ^ 0xC2B2AE35u);
     w->diff = (uint8_t)(diff < 0 ? 0 : (diff >= DIFF_COUNT ? DIFF_COUNT - 1 : diff));
     const DiffRule *D = &DIFF[w->diff];
 
@@ -99,7 +114,7 @@ void world_init(World *w, uint32_t seed, int diff) {
         int count;
         if (s == 0)                count = 1;              // the convoy starts alone
         else if (s == SECTORS - 1) count = 1;              // everything converges on the goal
-        else                       count = rng_range(&w->rng, 2, NODES_PER);
+        else                       count = rng_range(&w->rng_map, 2, NODES_PER);
 
         // Active nodes always occupy indices 0..count-1, which guarantees the
         // |n - m| <= 1 link rule below can never strand a node.
@@ -113,7 +128,7 @@ void world_init(World *w, uint32_t seed, int diff) {
                 // Settlements are resupply, so their density is the single
                 // biggest lever on survival; storms are the only threat to the
                 // seed that cannot be bought off.
-                int r = rng_range(&w->rng, 0, 99);
+                int r = rng_range(&w->rng_map, 0, 99);
                 int settle = D->settle_pct, storm = D->storm_pct;
                 nd->type = (uint8_t)(r < settle              ? NODE_SETTLE :
                                      r < settle + 30         ? NODE_EVENT  :
@@ -123,9 +138,9 @@ void world_init(World *w, uint32_t seed, int diff) {
             // A general trading post shows up often enough to be the baseline
             // the specialists are read against.
             if (nd->type == NODE_SETTLE) {
-                int r = rng_range(&w->rng, 0, 99);
+                int r = rng_range(&w->rng_map, 0, 99);
                 nd->archetype = (uint8_t)(r < 26 ? ARCH_GENERAL
-                                                 : rng_range(&w->rng, 0, ARCH_COUNT - 2));
+                                                 : rng_range(&w->rng_map, 0, ARCH_COUNT - 2));
             } else {
                 nd->archetype = ARCH_GENERAL;
             }
@@ -164,6 +179,9 @@ void world_init(World *w, uint32_t seed, int diff) {
     w->offer_upg  = 0xFF;
     w->offer_crew = 0xFF;
     w->kit_failed = -1;
+    // Minima track downwards, so they have to start above anything reachable;
+    // zeroed by the memset they would report "0 water" for every run.
+    INSTR(w->in.min_water = 255; w->in.min_fuel = 255);
     w->state = ST_TRADE;   // the starting node is a settlement
     observe_market(w);
     contract_tick(w);
@@ -347,7 +365,7 @@ static void salvage_check(World *w) {
     w->kit_failed = -1;
     for (int u = 0; u < UPG_COUNT; ++u) {
         if (!w->upgrade[u] || !w->upg_salvaged[u]) continue;
-        if (rng_range(&w->rng, 0, 99) < 4) {
+        if (rng_range(&w->rng_offer, 0, 99) < 4) {
             w->upgrade[u] = 0;
             w->upg_salvaged[u] = 0;
             w->kit_failed = (int8_t)u;
@@ -424,23 +442,23 @@ static void roll_offers(World *w) {
         // Guaranteed early: kit has to appear while there is road left for it
         // to matter on, so the first three sectors always stock something.
         int chance = (w->sector <= 2) ? 100 : (night ? 30 : 55);
-        if (n && rng_range(&w->rng, 0, 99) < chance) {
-            int pick = rng_range(&w->rng, 0, total - 1);
+        if (n && rng_range(&w->rng_offer, 0, 99) < chance) {
+            int pick = rng_range(&w->rng_offer, 0, total - 1);
             for (int i = 0; i < n; ++i) {
                 pick -= weight[i];
                 if (pick < 0) { w->offer_upg = (uint8_t)avail[i]; break; }
             }
             if (w->offer_upg >= UPG_COUNT) w->offer_upg = (uint8_t)avail[n - 1];
             // Roughly half of what is on a forecourt out here is salvage.
-            w->offer_salvaged = (uint8_t)(rng_range(&w->rng, 0, 99) < 50);
+            w->offer_salvaged = (uint8_t)(rng_range(&w->rng_offer, 0, 99) < 50);
         }
     }
 
     if (hops >= 5) {
         int n = 0;
         for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
-        if (n && rng_range(&w->rng, 0, 99) < (night ? 20 : 40))
-            w->offer_crew = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
+        if (n && rng_range(&w->rng_offer, 0, 99) < (night ? 20 : 40))
+            w->offer_crew = (uint8_t)avail[rng_range(&w->rng_offer, 0, n - 1)];
     }
 }
 
@@ -451,7 +469,9 @@ int world_committed(const World *w, int good) {
 }
 
 void world_contract_accept(World *w) {
-    if (w->job.state == CONTRACT_OFFERED) w->job.state = CONTRACT_TAKEN;
+    if (w->job.state != CONTRACT_OFFERED) return;
+    w->job.state = CONTRACT_TAKEN;
+    INSTR(w->in.c_accepted++);
 }
 
 // Called on arrival at a settlement: pay out a delivery if it can be made,
@@ -467,6 +487,7 @@ static void contract_tick(World *w) {
         w->credits      += j->reward;
         w->job_paid      = j->reward;
         j->state = CONTRACT_NONE;
+        INSTR(w->in.c_completed++);
     }
 
     if (j->state != CONTRACT_NONE) return;
@@ -475,16 +496,17 @@ static void contract_tick(World *w) {
     int hops_left = (SECTORS - 1) - w->sector;
     if (hops_left < 3) return;
     // A dark town posts less work.
-    if (rng_range(&w->rng, 0, 99) <
+    if (rng_range(&w->rng_offer, 0, 99) <
         (((w->sector * 255 / (SECTORS - 1)) > 170) ? 72 : 55)) return;
 
-    int good = rng_range(&w->rng, 0, GOODS_COUNT - 1);
-    int qty  = rng_range(&w->rng, 2, 5);
-    int dist = rng_range(&w->rng, 2, hops_left < 6 ? hops_left : 6);
+    int good = rng_range(&w->rng_offer, 0, GOODS_COUNT - 1);
+    int qty  = rng_range(&w->rng_offer, 2, 5);
+    int dist = rng_range(&w->rng_offer, 2, hops_left < 6 ? hops_left : 6);
 
     j->good      = (uint8_t)good;
     j->qty       = (uint8_t)qty;
     j->by_sector = (uint8_t)(w->sector + dist);
+    INSTR(w->in.c_offered++);
     // Worth roughly double the cargo's value over a long haul. The first
     // pass paid 3.4x, which handed a starting convoy 408 credits against 150
     // of starting capital and made the rest of the economy irrelevant.
@@ -561,12 +583,13 @@ static void drop_random_cargo(World *w, int units) {
         if (tradeable == 0) {
             if (w->payload > 0) {
                 w->payload--;
+                INSTR(w->in.pl_random++);
                 if (w->payload == 0) w->payload_lost_to = (uint8_t)w->state;
             }
             continue;
         }
         // Walk from a random start so losses spread across goods.
-        int start = rng_range(&w->rng, 0, GOODS_COUNT - 1);
+        int start = rng_range(&w->rng_event, 0, GOODS_COUNT - 1);
         for (int k = 0; k < GOODS_COUNT; ++k) {
             int g = (start + k) % GOODS_COUNT;
             if (w->held[g] > 0) { w->held[g]--; break; }
@@ -614,6 +637,19 @@ void world_travel(World *w, int next_index) {
 
     salvage_check(w);
 
+    // Sampled once per hop rather than per keypress, so the mean is over the
+    // journey and not over how long the convoy stood in each market.
+    INSTR({
+        int c = world_cargo(w);
+        w->in.cargo_sum += (uint32_t)c;
+        w->in.cargo_samples++;
+        if (c > w->in.peak_cargo) w->in.peak_cargo = (uint16_t)c;
+        if (w->held[G_WATER] < w->in.min_water) w->in.min_water = (uint8_t)w->held[G_WATER];
+        if (w->held[G_FUEL]  < w->in.min_fuel)  w->in.min_fuel  = (uint8_t)w->held[G_FUEL];
+        if (w->held[G_WATER] <= 2 || w->held[G_FUEL] <= 2) w->in.days_thin++;
+        w->in.stack_here = 0;
+    });
+
     w->sector++;
     w->index = next_index;
     Node *nd = &w->node[w->sector][w->index];
@@ -630,8 +666,10 @@ void world_travel(World *w, int next_index) {
         // competent convoy always arrives intact, because every other risk to
         // the payload is an encounter you can simply buy your way out of, and
         // two of the five endings are unreachable.
-        if (w->payload > 0 && rng_range(&w->rng, 0, 99) < DIFF[w->diff].spoil_pct)
+        if (w->payload > 0 && rng_range(&w->rng_event, 0, 99) < DIFF[w->diff].spoil_pct) {
             w->payload--;
+            INSTR(w->in.pl_storm++);
+        }
         if (w->held[G_WATER] == 0 && w->held[G_FUEL] == 0 && world_cargo(w) == 0) {
             w->state = ST_DEAD; w->death = DEATH_STRIPPED; return;
         }
@@ -647,7 +685,7 @@ void world_travel(World *w, int next_index) {
         // so a measured run saw 1.76 encounters across fourteen sectors and
         // most of the cast never appeared at all. Meeting people where the
         // people are costs the player nothing to opt into.
-        if (rng_range(&w->rng, 0, 99) < 14) {
+        if (rng_range(&w->rng_event, 0, 99) < 14) {
             w->after_event = ST_TRADE;
             w->state = ST_EVENT; roll_event(w);
             // Raids happen on the road; deals happen in town. Re-rolling a
@@ -680,6 +718,7 @@ void world_buy(World *w, int good) {
 
     w->credits -= p;
     w->held[good]++;
+    INSTR(w->in.units_bought++; w->in.credits_out += p);
     nd->price[good] = (int16_t)(p + p / 16 + 1);
 }
 
@@ -704,8 +743,15 @@ void world_sell(World *w, int good) {
     if (w->held[good] - world_committed(w, good) < 1) return;
 
     int p = nd->price[good];
-    w->credits += world_sell_price(w, good);
+    int take = world_sell_price(w, good);
+    w->credits += take;
     w->held[good]--;
+    // Both numbers, because they are not the same one. The list price is what
+    // the screen shows; the take is what a stack actually realises once the
+    // price has been walked down by the sale itself.
+    INSTR(w->in.units_sold++; w->in.credits_in += take; w->in.sold_headline += p;
+          if (++w->in.stack_here > w->in.biggest_stack)
+              w->in.biggest_stack = w->in.stack_here);
     int np = p - p / 8 - 1;
     nd->price[good] = (int16_t)(np < 1 ? 1 : np);
 }
@@ -739,6 +785,7 @@ static void end_event(World *w) {
 void world_accept(World *w) {
     if (w->state != ST_EVENT) return;
     if (!world_can_accept(w)) return;   // can't afford it; must decline
+    INSTR(w->in.ev_accepted[w->event.kind]++);
     regard_shift(w, w->event.kind, 1);
 
     Event *e = &w->event;
@@ -755,6 +802,9 @@ void world_accept(World *w) {
 
 void world_decline(World *w) {
     if (w->state != ST_EVENT) return;
+    // A refusal the player chose and a refusal the game forced are the same
+    // keypress and mean opposite things.
+    INSTR(if (!world_can_accept(w)) w->in.ev_forced[w->event.kind]++);
     regard_shift(w, w->event.kind, 0);
     Event *e = &w->event;
 
@@ -762,7 +812,7 @@ void world_decline(World *w) {
         if (e->lose_good == -2) {
             // Straight off the payload, whatever else is aboard.
             int take = e->lose_qty;
-            while (take-- > 0 && w->payload > 0) w->payload--;
+            while (take-- > 0 && w->payload > 0) { w->payload--; INSTR(w->in.pl_demand++); }
         } else if (e->lose_good < 0) {
             drop_random_cargo(w, e->lose_qty);
         } else {
@@ -784,106 +834,106 @@ static void roll_event(World *w) {
     e->pay_good = e->gain_good = e->lose_good = -1;
 
     int depth = w->sector;
-    int kind  = rng_range(&w->rng, 0, EV_KINDS - 1);
+    int kind  = rng_range(&w->rng_event, 0, EV_KINDS - 1);
     e->kind = (uint8_t)kind;
     int hold_searched = (kind == EV_RAID || kind == EV_TOLL || kind == EV_CHECKPOINT);
 
     switch (kind) {
     case EV_RAID:
-        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
-        e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng, 2, 4) + depth / 3);
+        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
+        e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng_event, 2, 4) + depth / 3);
         if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
         if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
 
     case EV_WRECK:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_good = G_SCRAP; e->gain_qty = (int8_t)rng_range(&w->rng, 3, 6);
+        e->gain_good = G_SCRAP; e->gain_qty = (int8_t)rng_range(&w->rng_event, 3, 6);
         if (w->crew[CREW_MECHANIC]) e->gain_qty += 2;   // knows what is worth taking
         e->lose_qty = 0;
         break;
 
     case EV_SICK:
         e->pay_good = G_MEDS;  e->pay_qty = 1;
-        e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         if (w->crew[CREW_MEDIC]) e->pay_qty = 0;
         break;
 
     case EV_BREAK:
-        e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         e->lose_good = G_FUEL;  e->lose_qty = 2;
         if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;
         break;
 
     case EV_TRADER:
-        e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
-        e->gain_credits = (int16_t)(rng_range(&w->rng, 30, 60) + depth * 8);
+        e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
+        e->gain_credits = (int16_t)(rng_range(&w->rng_event, 30, 60) + depth * 8);
         if (w->crew[CREW_TRADER]) e->gain_credits += 35;
         e->lose_qty = 0;
         break;
 
     case EV_TOLL:
-        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
-        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
+        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         if (w->crew[CREW_GUARD]) e->pay_qty = 0;
         if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;
         break;
 
     case EV_CACHE:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_good = (int8_t)(rng_range(&w->rng, 0, 1) ? G_AMMO : G_MEDS);
-        e->gain_qty  = (int8_t)rng_range(&w->rng, 2, 4);
+        e->gain_good = (int8_t)(rng_range(&w->rng_event, 0, 1) ? G_AMMO : G_MEDS);
+        e->gain_qty  = (int8_t)rng_range(&w->rng_event, 2, 4);
         if (w->crew[CREW_SCOUT]) e->gain_qty += 2;      // knows where to dig
         e->lose_qty  = 0;
         break;
 
     case EV_BRIDGE:
-        e->pay_good = G_FUEL;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
-        e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 4);
+        e->pay_good = G_FUEL;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
+        e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng_event, 2, 4);
         if (w->crew[CREW_SCOUT])    e->pay_qty = 0;    // knows a ford
         if (w->crew[CREW_MECHANIC]) e->lose_qty /= 2;  // rigs a crossing
         break;
 
     case EV_RIVAL: {
         // A straight swap. Both sides think they are winning.
-        int give = rng_range(&w->rng, 0, GOODS_COUNT - 1);
-        int take = (give + 1 + rng_range(&w->rng, 0, GOODS_COUNT - 2)) % GOODS_COUNT;
-        e->pay_good  = (int8_t)give; e->pay_qty  = (int8_t)rng_range(&w->rng, 2, 4);
-        e->gain_good = (int8_t)take; e->gain_qty = (int8_t)rng_range(&w->rng, 2, 4);
+        int give = rng_range(&w->rng_event, 0, GOODS_COUNT - 1);
+        int take = (give + 1 + rng_range(&w->rng_event, 0, GOODS_COUNT - 2)) % GOODS_COUNT;
+        e->pay_good  = (int8_t)give; e->pay_qty  = (int8_t)rng_range(&w->rng_event, 2, 4);
+        e->gain_good = (int8_t)take; e->gain_qty = (int8_t)rng_range(&w->rng_event, 2, 4);
         if (w->crew[CREW_TRADER]) e->gain_qty++;      // drives a bargain
         e->lose_qty = 0;
         break;
     }
 
     case EV_PLAGUE:
-        e->pay_good = G_MEDS;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 2);
+        e->pay_good = G_MEDS;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
         e->lose_good = G_WATER; e->lose_qty = (int8_t)(3 + depth / 4);
         if (w->crew[CREW_MEDIC]) e->pay_qty = 0;
         break;
 
     case EV_CHECKPOINT:
-        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
-        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng, 3, 5);
+        e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 3);
+        e->lose_good = -1;     e->lose_qty = (int8_t)rng_range(&w->rng_event, 3, 5);
         if (w->crew[CREW_GUARD]) { e->pay_qty = 0; e->lose_qty /= 2; }
         if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) e->lose_qty--;
         break;
 
     case EV_LEAK:
         e->pay_good = G_SCRAP; e->pay_qty = 1;
-        e->lose_good = G_FUEL;  e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        e->lose_good = G_FUEL;  e->lose_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
         if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;
         break;
 
     case EV_REFUGEE:
-        e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 1, 3);
-        e->gain_credits = (int16_t)(rng_range(&w->rng, 20, 45) + depth * 5);
+        e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 3);
+        e->gain_credits = (int16_t)(rng_range(&w->rng_event, 20, 45) + depth * 5);
         if (w->crew[CREW_MEDIC]) e->gain_credits += 30;  // tends them as they pass
         e->lose_qty = 0;
         break;
 
     default: // EV_SIGNAL
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_credits = (int16_t)(rng_range(&w->rng, 35, 80) + depth * 6);
+        e->gain_credits = (int16_t)(rng_range(&w->rng_event, 35, 80) + depth * 6);
         if (w->crew[CREW_TRADER]) e->gain_credits += 40;  // knows what a tip is worth
         e->lose_qty = 0;
         break;
@@ -903,6 +953,8 @@ static void roll_event(World *w) {
         }
     }
 
+    INSTR(w->in.ev_fired[kind]++);
+
     // Anyone who searches the hold past the halfway mark knows what the crates
     // are worth. This is what puts the ending at stake rather than merely the
     // accounting -- without it the seed always arrives and three of the five
@@ -916,8 +968,8 @@ static void roll_event(World *w) {
     // them costs accordingly -- which is what makes the last sectors the ones
     // where the run is actually decided.
     if (hold_searched && depth >= (SECTORS - 1) / 3 && w->payload > 0
-        && rng_range(&w->rng, 0, 99) < 45 + depth * 3) {
+        && rng_range(&w->rng_event, 0, 99) < 45 + depth * 3) {
         e->lose_good = -2;                        // -2 means the payload itself
-        e->lose_qty  = (int8_t)(rng_range(&w->rng, 1, 2) + depth / 5);
+        e->lose_qty  = (int8_t)(rng_range(&w->rng_event, 1, 2) + depth / 5);
     }
 }

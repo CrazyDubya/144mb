@@ -126,8 +126,56 @@ enum { UPG_HOLD, UPG_ECON, UPG_ARMOUR, UPG_TANKS, UPG_COUNT };
 // daily water burn, so hiring is a running cost rather than a straight upgrade.
 enum { CREW_MECHANIC, CREW_GUARD, CREW_MEDIC, CREW_SCOUT, CREW_TRADER, CREW_COUNT };
 
+// Measurement counters, compiled into the headless harness only. They exist
+// because outcomes alone cannot tell you why: a kind nobody accepts because it
+// is a bad deal and a kind nobody *can* accept read identically in a win-rate
+// column, and an option never offered looks exactly like an option refused.
+//
+// Kept out of the shipped executable entirely -- the contest target should not
+// carry the cost of its own test rig, and the exe stays byte-identical whether
+// or not the harness is instrumented.
+#ifdef CONVOY_INSTRUMENT
 typedef struct {
-    uint32_t rng;
+    uint16_t ev_fired[EV_KINDS];    // times each encounter kind came up
+    uint16_t ev_accepted[EV_KINDS]; // ...and was paid
+    uint16_t ev_forced[EV_KINDS];   // ...and could not be paid, so was refused
+
+    uint16_t c_offered, c_accepted, c_completed, c_expired;
+
+    uint16_t pl_storm, pl_demand, pl_random;   // crates lost, by cause
+
+    uint32_t units_bought, units_sold;
+    int32_t  credits_in, credits_out;
+    int32_t  sold_headline;   // list value of everything sold, before the take
+    uint16_t biggest_stack;   // most units offloaded at one settlement
+    uint16_t stack_here;      // running count at the current stop
+
+    uint32_t cargo_sum;       // for a time-weighted mean occupancy
+    uint16_t cargo_samples;
+    uint16_t peak_cargo;
+
+    uint8_t  min_water, min_fuel;
+    uint16_t days_thin;       // days ending with water or fuel at 2 or less
+} Metrics;
+#define INSTR(stmt) do { stmt; } while (0)
+#else
+#define INSTR(stmt) do { } while (0)
+#endif
+
+typedef struct {
+    // Three independent streams, not one. Everything used to draw from a
+    // single generator, which meant adding one die roll to an encounter table
+    // reshuffled every later market offer and contract for that seed -- so a
+    // seed stopped being the same run the moment any table was edited, and
+    // paired before/after comparison was impossible. Worse, salvaged kit rolls
+    // for failure only when it is fitted, so the convoy's own purchase moved
+    // the stream and re-rolled its own encounters.
+    //
+    // Splitting them means the map is a function of the seed alone and stays
+    // fixed while the tables are tuned.
+    uint32_t rng_map;      // route layout and prices: world_init only
+    uint32_t rng_offer;    // market offers, contracts, salvage failure
+    uint32_t rng_event;    // encounters, storm spoilage, random cargo loss
     Node     node[SECTORS][NODES_PER];
 
     int sector, index;          // where the convoy is
@@ -169,6 +217,10 @@ typedef struct {
     Event    event;
     Contract job;      // one at a time: two would just be arithmetic
     int      job_paid; // reward banked this stop, for the UI to celebrate
+
+#ifdef CONVOY_INSTRUMENT
+    Metrics in;
+#endif
 } World;
 
 void world_init  (World *w, uint32_t seed, int diff);

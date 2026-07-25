@@ -541,6 +541,183 @@ as the cold night in phase C, in the opposite colour. Cut to an eighth.
 
 ---
 
+# v4 — the refinement cycle
+
+**Everything above this line is void as a current measurement.** It stays as a
+record of what was tried and what was learned, but no number from v1 to v3 can
+be compared with anything below it, for three independent reasons:
+
+1. The generator was one RNG stream. Map layout, market offers, contracts,
+   encounters and salvage failure all drew from it, so editing any table
+   reshuffled every later roll and a seed stopped being the same run. Paired
+   before/after comparison was never valid. Split in P1 into `rng_map`,
+   `rng_offer` and `rng_event`.
+2. The bot sampled prices once per *keypress* rather than once per arrival, so
+   its running average was weighted by how long it stood in each shop — and
+   the weighting was a function of how much it traded. Fixed in P3.
+3. The bot's hire test was `crew_payback(...) > price` where `price` is defined
+   as `payback * 45 / 100`. That is `p > 0.45p` — true for any positive
+   payback. There was no economic filter on crew at all. Fixed in P3.
+
+The v3 headline of 64% / 46% / 25% is not recoverable and is not a target to
+return to.
+
+## P0 — make the build able to fail
+
+CI built every game with `ONLY_WIN=1`, which skips the harness. **`src/bot.c`
+and `src/platform_headless.c` were never compiled by CI at any point in three
+releases.** The entire measurement layer could have been deleted and every run
+would still have gone green. A Linux job now builds them, runs the sanitizers,
+and plays 20 seeds on each difficulty, failing on a stall or on a difficulty
+that never wins.
+
+`-Werror` added. Warnings had been on since the first commit and accumulated
+anyway: an unused duplicate of `world_upg_payback` in `bot.c`, two dead price
+tables (`UPG_BASE`, `CREW_BASE`) that nothing had read since pricing became a
+function of payback — **and that two separate audits mistook for live data** —
+a dead audio pattern, a misleading indentation, and an enum-compare in an array
+bound.
+
+The gate was verified by introducing a warning and confirming the build failed.
+A gate that has never been seen to fire is not known to work.
+
+`tools/sync.sh` added. The development tree and the shipped tree are separate
+copies with no link; the only thing keeping them in step was remembering to
+copy by hand, and nothing would have reported a drift, because every sweep runs
+against the tree that does not ship.
+
+Exit check: **BOT lines for seeds 1..50 byte-identical before and after.**
+
+## P1 — the harness becomes an instrument
+
+No game rules changed. Everything here is measurement.
+
+### The RNG split, and the proof it works
+
+The invariant to establish was: *editing an encounter table must leave every
+map exactly where it was.* Tested by inserting one extra `rng_range` draw into
+the `EV_RAID` case, rebuilding, and comparing map hashes across 100 seeds on
+each difficulty:
+
+| difficulty | maps after an encounter-table edit |
+|---|---|
+| FORGIVING | unchanged |
+| THE ROAD | unchanged |
+| UNFORGIVING | unchanged |
+
+while the win rate moved (75 → 74 of 200), which is the encounter stream doing
+its job. Before the split, the same edit would have moved every map.
+
+**The first attempt at this test proved nothing.** The scripted insert missed
+its anchor, the assertion fired, and the comparison ran against an unmodified
+binary — reporting "maps unchanged" for a probe that was never there. This is
+the same silent-edit failure already recorded twice in this log. The rule holds
+and needs restating: *grep for the probe before believing the result of the
+probe.*
+
+### New harness capabilities
+
+| flag | question it answers |
+|---|---|
+| `-N n` | run seeds 1..n **in one process** |
+| `-A ref\|v4` | play with the frozen v4-entry agent, or the working one |
+| `-Z` | replay every seed and compare a step-by-step state hash |
+| `-X` | is there a profitable buy-then-sell round trip anywhere? |
+| `--daily` | drive the daily map through the title menu |
+
+`-N` removes a whole class of invalid result structurally: every sweep in this
+log until now was a shell loop re-invoking the binary per seed, which is
+exactly how a sweep straddles a rebuild and reports half of one build and half
+of another. A sweep is now one process and cannot.
+
+Acceptance test for `-N`: 50 seeds in-process must be **byte-identical** to 50
+shell-loop invocations. They are. `game_init` assigns fields individually and
+never clears `GameState`, so the arena is zeroed per seed — without that the
+transition timer, cut-scene state and audio phase carry over.
+
+`-Z` clean on 100 seeds × 3 difficulties. `-X` clean: the best round trip nets
+**+0** at a list price of 1, where the sell clamp floors the take — you end
+with the same credits and the same goods and the buy nudges the price up, so
+nothing is farmed. Strictly positive is the failure condition.
+
+**Bug found while adding `--daily`: the map hash was being taken from the wrong
+world.** `game_init` builds a world for the title screen to sit in front of,
+and pressing start builds the real one. Hashing on the first step captured the
+title's placeholder. For an ordinary run the two are generated from the same
+seed and are identical, so it looked correct — but every `-D 0` and `-D 2` hash
+was reporting the *normal-difficulty* map, and a daily run reported the
+non-daily one. Found only because the daily map came back identical to the
+standard map when it had no reason to.
+
+### Engagement counters — first readings (n=150, THE ROAD)
+
+Compiled into the harness only, via `-DCONVOY_INSTRUMENT`. The Windows binary
+is **byte-identical md5 with and without them**: the contest target does not
+carry its own test rig.
+
+| measurement | reading |
+|---|---:|
+| encounters per run | 2.76 |
+| accepted | 0.85 |
+| **forced declines** | **0.57** |
+| contracts offered | 1.48 |
+| contracts accepted | 1.47 |
+| **contracts delivered** | **0.63** |
+| crates lost — storm / demand / random | 0.08 / 0.15 / 0.00 |
+| realised ÷ headline on sales | **78.7%** |
+| biggest stack sold at one market | 2.6 units |
+| hold occupancy — mean / peak | **69% / 94%** |
+| min water / min fuel reached | 1.3 / 1.2 |
+| deaths — thirst / stranded | 48 / 44 |
+
+### Epoch zero — the baseline every later phase is measured against
+
+n=400 per difficulty, in one process, both agents. The reference agent is a
+byte-for-byte copy of the working bot today, so identical columns are the
+expected result and a divergence would mean the copy was not faithful.
+
+| difficulty | frozen `-A ref` | working `-A v4` | stalls |
+|---|---:|---:|---:|
+| FORGIVING | 68% (275/400) | 68% (275/400) | 0 |
+| THE ROAD | 41% (167/400) | 41% (167/400) | 0 |
+| UNFORGIVING | 25% (102/400) | 25% (102/400) | 0 |
+
+At n=400 the standard error is 2.5 points, so differences below ~5 points
+between independent sweeps are not differences. Paired comparison on the same
+seed set resolves considerably finer, and is the default from here.
+
+These are **not** comparable to v3's 64/46/25: the generator was re-seeded into
+three streams, so every seed is a different run. The game was not made harder.
+
+### Three findings that revise the plan
+
+**Forced declines are 30% of all refusals.** Of 1.91 declines per run, 0.57 are
+the game refusing on the player's behalf because the price could not be paid.
+Every previous statement about players "choosing" to refuse an encounter was
+measuring a mix of choice and inability, with no way to tell them apart. This
+is the counter that had to exist before P7 can tune anything.
+
+**Sales realise 78.7% of headline, not 41%.** The 41% figure was arithmetic for
+a 10-unit stack. Measured, the largest stack sold at any one market is **2.6
+units** — the decay barely engages, because nobody sells ten of anything. The
+asymmetry between buy impact (`p/16 + 1`) and sell impact (`p/8 + 1`) is still
+real and still wrong, but **its measured cost is a fifth of what the arithmetic
+implied.** P4 stands, with its justification corrected: it is a fairness fix and
+a guard against future stack-selling, not a recovery of 60% of the economy.
+
+**The hold runs at 69% mean and 94% peak occupancy, not 30-45%.** The earlier
+figure was *final* cargo, read at the end of a run after selling down — not
+occupancy during it. `UPG_HOLD` is therefore not untested content, and P5's
+premise that the bot never feels hold pressure is wrong. The pressure is
+already there; what is missing is the bot *valuing* the space.
+
+All three came from counters, none from a win rate, and all three corrected a
+conclusion that had been reached by arithmetic alone. That is the argument for
+this phase.
+
+
+---
+
 ## Bugs found, and what found them
 
 | bug | symptom | found by |
