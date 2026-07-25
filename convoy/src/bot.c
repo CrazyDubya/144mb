@@ -9,6 +9,7 @@
 // makes decisions from the world state, which is what makes it possible to ask
 // whether the game rewards playing well.
 #include "bot.h"
+#include "state.h"
 
 #include <string.h>
 
@@ -54,6 +55,16 @@ static int step_to(int sel, int want, int act) {
     return act;
 }
 
+// A job is worth taking if the cargo will fit and the reward beats what the
+// same slots would earn carrying anything else.
+static int contract_worth_taking(const World *w) {
+    const Contract *j = &w->job;
+    if (j->state != CONTRACT_OFFERED) return 0;
+    if (world_cargo(w) + j->qty > CARGO_CAP - 4) return 0;
+    if (j->by_sector > SECTORS - 1) return 0;
+    return 1;
+}
+
 // ---------------------------------------------------------------- trade
 static int decide_trade(Bot *b, const World *w, int sel) {
     const Node *nd = &w->node[w->sector][w->index];
@@ -69,6 +80,10 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
     for (int g = 0; g < GOODS_COUNT; ++g) {
         int surplus = w->held[g] - keep[g];
+        if (surplus <= 0) continue;
+
+        // Cargo under contract is not surplus, whatever the price says.
+        surplus -= world_committed(w, g);
         if (surplus <= 0) continue;
 
         // Never sell a thing where it is made. They have plenty, they pay
@@ -230,7 +245,7 @@ void bot_init(Bot *b, int float_credits) {
     b->at_index  = -1;
 }
 
-int bot_step(Bot *b, const World *w, int sel, int map_sel, int title) {
+int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
     if (title) return BTN_START;
 
     // New stop: forget what was bought at the last one.
@@ -243,7 +258,15 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int title) {
     observe(b, w);
 
     switch (w->state) {
-    case ST_TRADE: return decide_trade(b, w, sel);
+    case ST_TRADE:
+        // Deal with the job board first: a delivery pays better than anything
+        // the same slots would earn on speculation.
+        if (contract_worth_taking(w)) {
+            if (tab != TAB_CONTRACTS) return BTN_RIGHT;   // tabs cycle forward
+            return BTN_A;
+        }
+        if (tab != TAB_MARKET) return BTN_RIGHT;
+        return decide_trade(b, w, sel);
     case ST_MAP:   return decide_map(w, map_sel);
     case ST_EVENT: return decide_event(w);
     default:       return -1;    // run is over

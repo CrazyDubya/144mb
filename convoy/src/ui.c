@@ -20,10 +20,102 @@ const char *const ARCH_DESC[6] = {
     T_ARCH_CLINIC_D, T_ARCH_SCRAPYARD_D, T_ARCH_GENERAL_D
 };
 
-// Only the market tab has rows today; the others land in phases 1 and 2.
+static const char *const TAB_NAME[TAB_COUNT] = {
+    T_TAB_MARKET, T_TAB_GARAGE, T_TAB_CREW, T_TAB_CONTRACTS
+};
+
 int ui_tab_rows(const GameState *gs, int tab) {
-    (void)gs;
-    return tab == TAB_MARKET ? GOODS_COUNT : 0;
+    switch (tab) {
+    case TAB_MARKET:    return GOODS_COUNT;
+    // One row, and only when there is something to press it for.
+    case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
+    default:            return 0;   // garage and crew land in phase 2
+    }
+}
+
+// A tab is shown when it has something in it. Empty tabs are not drawn at all,
+// so no placeholder UI ever reaches a player.
+static int tab_live(const GameState *gs, int tab) {
+    if (tab == TAB_MARKET) return 1;
+    if (tab == TAB_CONTRACTS)
+        return gs->w.job.state != CONTRACT_NONE;
+    return 0;
+}
+
+static int tab_count_live(const GameState *gs) {
+    int n = 0;
+    for (int t = 0; t < TAB_COUNT; ++t) n += tab_live(gs, t);
+    return n;
+}
+
+// Draws the tab strip and returns the height it consumed.
+static int draw_tabs(Framebuffer *fb, const GameState *gs, int x, int y, int pw) {
+    if (tab_count_live(gs) < 2) return 0;
+    int tx = x + 10;
+    for (int t = 0; t < TAB_COUNT; ++t) {
+        if (!tab_live(gs, t)) continue;
+        int tw = text_w(TAB_NAME[t], 1) + 16;
+        int on = (t == gs->tab);
+        fill_rect(fb, tx, y, tw, 20, PALETTE[on ? C_BORDER : C_INK]);
+        if (on) draw_rect(fb, tx, y, tw, 20, PALETTE[C_BONE]);
+        draw_text(fb, tx + 8, y + 6, TAB_NAME[t], 1,
+                  PALETTE[on ? C_BONE : C_DIM]);
+        tx += tw + 4;
+    }
+    // Which keys move between them.
+    draw_text(fb, x + pw - 60, y + 6, "< >", 1, PALETTE[C_DIM]);
+    return 26;
+}
+
+// ---------------------------------------------------------------- contracts
+static void draw_contracts(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
+    const Contract *j = &gs->w.job;
+
+    if (j->state == CONTRACT_NONE) {
+        draw_text(fb, x + 14, y + 12, T_NO_WORK, 1, PALETTE[C_DIM]);
+        return;
+    }
+
+    int offered = (j->state == CONTRACT_OFFERED);
+    draw_text(fb, x + 14, y + 10, offered ? T_JOB_OFFER : T_JOB_TAKEN, 2,
+              PALETTE[offered ? C_BONE : C_WARN]);
+
+    // What, and how much of it.
+    int ry = y + 40;
+    draw_icon(fb, x + 16, ry, j->good, 2);
+    int tx = x + 56;
+    draw_glyph(fb, tx, ry + 10, G_X, 2, PALETTE[C_BONE]);
+    tx += glyph_w(2) + 4;
+    tx += draw_number(fb, tx, ry + 10, j->qty, 2, PALETTE[C_BONE]) + 16;
+    draw_text(fb, tx, ry + 14, GOOD_NAME[j->good], 1, PALETTE[C_DIM]);
+
+    // Where, and what it pays.
+    draw_text(fb, x + 14, ry + 44, T_JOB_DELIVER, 1, PALETTE[C_DIM]);
+    draw_number(fb, x + 14 + text_w(T_JOB_DELIVER, 1) + 8, ry + 44,
+                j->by_sector, 1, PALETTE[C_BONE]);
+
+    int py = ry + 62;
+    int px = x + 14;
+    px += draw_text(fb, px, py, T_JOB_PAYS, 1, PALETTE[C_DIM]) + 8;
+    draw_number(fb, px, py - 4, j->reward, 2, PALETTE[C_WARN]);
+
+    if (offered) {
+        int ky = py + 22;
+        int kx = x + 14;
+        kx += draw_key(fb, kx, ky - 6, G_KEY_Z, 2) + 8;
+        draw_text(fb, kx, ky, T_JOB_ACCEPT, 1, PALETTE[C_BONE]);
+    } else {
+        // Progress, and a reminder that this cargo is spoken for.
+        int ky = py + 22;
+        int kx = x + 14;
+        kx += draw_text(fb, kx, ky, T_JOB_HOLDING, 1, PALETTE[C_DIM]) + 8;
+        kx += draw_number(fb, kx, ky, gs->w.held[j->good], 1,
+                          gs->w.held[j->good] >= j->qty
+                              ? PALETTE[C_GOOD] : PALETTE[C_BAD]);
+        draw_glyph(fb, kx + 2, ky, G_SLASH, 1, PALETTE[C_DIM]);
+        draw_number(fb, kx + glyph_w(1) + 4, ky, j->qty, 1, PALETTE[C_DIM]);
+        draw_text(fb, x + 14, ky + 16, T_JOB_LOCKED, 1, PALETTE[C_DIM]);
+    }
 }
 
 // ---------------------------------------------------------------- backdrop
@@ -267,12 +359,34 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     draw_text(fb, x + 12, y + 10, ARCH_NAME[nd->archetype], 2, PALETTE[C_BONE]);
     draw_text(fb, x + 12, y + 30, ARCH_DESC[nd->archetype], 1, PALETTE[C_DIM]);
+
+    int th = draw_tabs(fb, gs, x, y + 44, pw);
+
+    // A delivery that paid out on arrival says so before anything else.
+    if (w->job_paid > 0) {
+        int px = x + pw - 150;
+        px += draw_text(fb, px, y + 32, T_JOB_DONE, 1, PALETTE[C_GOOD]) + 8;
+        draw_number(fb, px, y + 32, w->job_paid, 1, PALETTE[C_WARN]);
+    }
+
+    if (gs->tab != TAB_MARKET) {
+        if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
+        // Departing is always available, whatever tab is open.
+        int dy = y + 48 + th + GOODS_COUNT * rowh;
+        fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
+        int dx = x + 10;
+        dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
+        dx += draw_text(fb, dx, dy + 5, T_DEPART, 1, PALETTE[C_BONE]) + 10;
+        draw_glyph(fb, dx, dy + 3, G_RIGHT, 2, PALETTE[C_DIM]);
+        return;
+    }
+
     // Column headings, so a bare number is never left to be guessed at.
     draw_text(fb, x + 150, y + 14, T_PRICE, 1, PALETTE[C_DIM]);
     draw_text(fb, x + pw - 20 - text_w(T_HELD, 1), y + 14, T_HELD, 1, PALETTE[C_DIM]);
 
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        int ry = y + 48 + g * rowh;
+        int ry = y + 48 + th + g * rowh;
         if (g == gs->sel) {
             // Dark fill, not the mid-brown border colour: the row carries
             // small text and needs the contrast underneath it.
@@ -300,13 +414,15 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
         // Held quantity, right side.
         int qw = number_w(w->held[g], 2);
+        int committed = world_committed(w, g);
         draw_number(fb, x + pw - 20 - qw, ry + 3, w->held[g], 2,
-                    w->held[g] ? PALETTE[C_BONE] : PALETTE[C_BORDER]);
+                    committed ? PALETTE[C_WARN]
+                              : (w->held[g] ? PALETTE[C_BONE] : PALETTE[C_BORDER]));
     }
 
     // Departing the market: its own row, reading as "leave, onward".
     {
-        int dy = y + 48 + GOODS_COUNT * rowh;
+        int dy = y + 48 + th + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
         int dx = x + 10;
         dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
@@ -317,7 +433,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     // What the selected good is actually for -- the single most useful line
     // on the screen for a player who has never seen it before.
     {
-        int ty = y + 58 + (GOODS_COUNT + 1) * rowh;
+        int ty = y + 58 + th + (GOODS_COUNT + 1) * rowh;
         int tw = text_w(GOOD_USE[gs->sel], 1);
         fill_scrim(fb, x + 6, ty - 4, tw + 16, 18, PALETTE[C_INK], 13);
         draw_text(fb, x + 14, ty, GOOD_USE[gs->sel], 1, PALETTE[C_WARN]);
@@ -325,7 +441,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     // Cargo hold below, the run's health bar.
     const int cell = 20, cols = 15;
-    int cy = y + 78 + (GOODS_COUNT + 1) * rowh;
+    int cy = y + 78 + th + (GOODS_COUNT + 1) * rowh;
     draw_panel(fb, x, cy, cols * cell + 12, 2 * cell + 12);
     int slot = 0;
     for (int g = 0; g < GOODS_COUNT; ++g) {

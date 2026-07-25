@@ -17,10 +17,11 @@ const World *game_world(GameMemory *mem) {
 
 // The test bot drives the real UI rather than calling the simulation directly,
 // so it has to see where the cursor is. Read-only, harness-only.
-void game_ui(GameMemory *mem, int *sel, int *map_sel, int *title) {
+void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
     GameState *gs = (GameState *)mem->permanent;
     if (sel)     *sel     = gs->sel;
     if (map_sel) *map_sel = gs->map_sel;
+    if (tab)     *tab     = gs->tab;
     if (title)   *title   = gs->title;
 }
 
@@ -104,6 +105,8 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         if (gs->tab == TAB_MARKET) {
             if (in->pressed[BTN_A]) world_buy(w, gs->sel);
             if (in->pressed[BTN_B]) world_sell(w, gs->sel);
+        } else if (gs->tab == TAB_CONTRACTS) {
+            if (in->pressed[BTN_A]) world_contract_accept(w);
         }
         if (in->pressed[BTN_START]) { w->state = ST_MAP; gs->map_sel = 0; }
         break;

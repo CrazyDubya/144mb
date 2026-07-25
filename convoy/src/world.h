@@ -67,6 +67,19 @@ typedef enum {
     DEATH_NONE = 0, DEATH_THIRST, DEATH_STRANDED, DEATH_STRIPPED
 } DeathCause;
 
+// A delivery job. Gives the hold a purpose beyond speculation: cargo you are
+// contractually holding is cargo you cannot panic-sell for fuel, which is the
+// tension worth having.
+typedef struct {
+    uint8_t state;     // CONTRACT_NONE / OFFERED / TAKEN
+    uint8_t good;
+    uint8_t qty;
+    uint8_t by_sector; // deliver at a settlement at or beyond this sector
+    int16_t reward;
+} Contract;
+
+enum { CONTRACT_NONE, CONTRACT_OFFERED, CONTRACT_TAKEN };
+
 typedef struct {
     uint32_t rng;
     Node     node[SECTORS][NODES_PER];
@@ -86,7 +99,9 @@ typedef struct {
     int state;
     int death;
 
-    Event event;
+    Event    event;
+    Contract job;      // one at a time: two would just be arithmetic
+    int      job_paid; // reward banked this stop, for the UI to celebrate
 } World;
 
 void world_init  (World *w, uint32_t seed);
@@ -104,6 +119,10 @@ int  world_price_bias(const World *w, int good);
 // Without that spread, buying and immediately reselling at the same stall is
 // profitable -- the buy nudges the price up and you sell into your own nudge.
 int  world_sell_price(const World *w, int good);
+void world_contract_accept(World *w);
+// Units of `good` promised to an accepted contract, so nothing sells them out
+// from under the job.
+int  world_committed (const World *w, int good);
 void world_travel(World *w, int next_index);
 void world_buy   (World *w, int good);
 void world_sell  (World *w, int good);

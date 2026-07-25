@@ -24,6 +24,6 @@ typedef struct {
 void bot_init(Bot *b, int float_credits);
 
 // Returns the button to press this step, or -1 when the run has ended.
-int  bot_step(Bot *b, const World *w, int sel, int map_sel, int title);
+int  bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title);
 
 #endif

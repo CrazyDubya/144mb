@@ -40,6 +40,7 @@ static int rng_range(uint32_t *s, int lo, int hi) {
 
 static void roll_event(World *w);
 static void observe_market(World *w);
+static void contract_tick(World *w);
 
 // ---------------------------------------------------------------- setup
 static void price_node(World *w, Node *n, int sector) {
@@ -122,6 +123,7 @@ void world_init(World *w, uint32_t seed) {
     w->day   = 1;
     w->state = ST_TRADE;   // the starting node is a settlement
     observe_market(w);
+    contract_tick(w);
 }
 
 // Records the prices on offer here. Called on arrival, once per settlement.
@@ -141,6 +143,52 @@ int world_price_bias(const World *w, int good) {
     if (p * 100 <= avg * 86)  return -1;
     if (p * 100 >= avg * 114) return +1;
     return 0;
+}
+
+// ---------------------------------------------------------------- contracts
+int world_committed(const World *w, int good) {
+    if (w->job.state != CONTRACT_TAKEN || w->job.good != good) return 0;
+    return w->job.qty;
+}
+
+void world_contract_accept(World *w) {
+    if (w->job.state == CONTRACT_OFFERED) w->job.state = CONTRACT_TAKEN;
+}
+
+// Called on arrival at a settlement: pay out a delivery if it can be made,
+// then post a new offer if the board is empty.
+static void contract_tick(World *w) {
+    Contract *j = &w->job;
+    w->job_paid = 0;
+
+    if (j->state == CONTRACT_TAKEN
+        && w->sector >= j->by_sector
+        && w->held[j->good] >= j->qty) {
+        w->held[j->good] -= j->qty;
+        w->credits      += j->reward;
+        w->job_paid      = j->reward;
+        j->state = CONTRACT_NONE;
+    }
+
+    if (j->state != CONTRACT_NONE) return;
+
+    // Only worth offering while there is road left to carry it down.
+    int hops_left = (SECTORS - 1) - w->sector;
+    if (hops_left < 3) return;
+    if (rng_range(&w->rng, 0, 99) < 55) return;      // not every stall has work
+
+    int good = rng_range(&w->rng, 0, GOODS_COUNT - 1);
+    int qty  = rng_range(&w->rng, 2, 5);
+    int dist = rng_range(&w->rng, 2, hops_left < 6 ? hops_left : 6);
+
+    j->good      = (uint8_t)good;
+    j->qty       = (uint8_t)qty;
+    j->by_sector = (uint8_t)(w->sector + dist);
+    // Worth roughly double the cargo's value over a long haul. The first
+    // pass paid 3.4x, which handed a starting convoy 408 credits against 150
+    // of starting capital and made the rest of the economy irrelevant.
+    j->reward    = (int16_t)(qty * BASE_PRICE[good] * (7 + dist * 2) / 10);
+    j->state     = CONTRACT_OFFERED;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -210,7 +258,7 @@ void world_travel(World *w, int next_index) {
 
     switch (nd->type) {
     case NODE_GREEN:  w->state = ST_WON;   break;
-    case NODE_SETTLE: w->state = ST_TRADE; observe_market(w); break;
+    case NODE_SETTLE: w->state = ST_TRADE; observe_market(w); contract_tick(w); break;
     case NODE_EVENT:  w->state = ST_EVENT; roll_event(w); break;
     default:          w->state = ST_MAP;   break;
     }
@@ -246,6 +294,8 @@ void world_sell(World *w, int good) {
     Node *nd = &w->node[w->sector][w->index];
     if (nd->type != NODE_SETTLE) return;
     if (w->held[good] < 1) return;
+    // Cargo promised to a contract is not yours to sell.
+    if (w->held[good] - world_committed(w, good) < 1) return;
 
     int p = nd->price[good];
     w->credits += world_sell_price(w, good);

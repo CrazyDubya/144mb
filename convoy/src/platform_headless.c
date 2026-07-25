@@ -124,7 +124,7 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
 #include "bot.h"
 
 const World *game_world(GameMemory *mem);
-void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *title);
+void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title);
 
 // Renders the synth to a WAV and reports level statistics. There is no way to
 // listen to anything on this machine, so the check is numeric: non-silent,
@@ -263,9 +263,9 @@ int main(int argc, char **argv) {
             const World *w = game_world(&mem);
             if (w->state == ST_DEAD || w->state == ST_WON) break;
 
-            int sel = 0, map_sel = 0, title = 0;
-            game_ui(&mem, &sel, &map_sel, &title);
-            int btn = bot_step(&bot, w, sel, map_sel, title);
+            int sel = 0, map_sel = 0, tab = 0, title = 0;
+            game_ui(&mem, &sel, &map_sel, &tab, &title);
+            int btn = bot_step(&bot, w, sel, map_sel, tab, title);
             if (btn < 0) break;
 
             memset(&in, 0, sizeof in);

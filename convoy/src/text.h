@@ -103,6 +103,47 @@
 #define T_TAB_CREW      "CREW"
 #define T_TAB_CONTRACTS "CONTRACTS"
 
+// Contracts
+#define T_NO_WORK       "NO WORK POSTED HERE"
+#define T_JOB_OFFER     "DELIVERY OFFERED"
+#define T_JOB_TAKEN     "CARGO PROMISED"
+#define T_JOB_DELIVER   "DELIVER TO ANY SETTLEMENT AT OR PAST SECTOR"
+#define T_JOB_PAYS      "PAYS"
+#define T_JOB_ACCEPT    "ACCEPT THE JOB"
+#define T_JOB_HOLDING   "HOLDING"
+#define T_JOB_DONE      "DELIVERED"
+#define T_JOB_LOCKED    "PROMISED CARGO CANNOT BE SOLD"
+
+// Garage: one-off purchases that change the rules of the run.
+#define T_UPG_HOLD      "CARGO RACKS"
+#define T_UPG_ECON      "TUNED ENGINE"
+#define T_UPG_ARMOUR    "PLATE ARMOUR"
+#define T_UPG_TANKS     "WATER TANKS"
+#define T_UPG_HOLD_D    "+6 SLOTS IN THE HOLD"
+#define T_UPG_ECON_D    "EVERY THIRD HOP BURNS NO FUEL"
+#define T_UPG_ARMOUR_D  "RAIDERS TAKE LESS WHEN THEY TAKE"
+#define T_UPG_TANKS_D   "THE CREW DRINK ON ALTERNATE DAYS"
+#define T_OWNED         "FITTED"
+#define T_BUY_UPGRADE   "FIT IT"
+#define T_NO_GARAGE     "NOTHING FOR SALE HERE"
+
+// Crew: hands that help, and mouths that drink.
+#define T_CREW_MECHANIC "MECHANIC"
+#define T_CREW_GUARD    "GUARD"
+#define T_CREW_MEDIC    "MEDIC"
+#define T_CREW_SCOUT    "SCOUT"
+#define T_CREW_TRADER   "TRADER"
+#define T_CREW_MECHANIC_D "BREAKDOWNS COST LESS SCRAP"
+#define T_CREW_GUARD_D    "RAIDS COST LESS AMMO"
+#define T_CREW_MEDIC_D    "SICKNESS COSTS NO MEDS"
+#define T_CREW_SCOUT_D    "SEE WHAT LIES TWO SECTORS AHEAD"
+#define T_CREW_TRADER_D   "BETTER PRICES AT EVERY STALL"
+#define T_HIRED         "ABOARD"
+#define T_HIRE          "TAKE THEM ON"
+#define T_NO_CREW       "NOBODY LOOKING FOR WORK"
+#define T_CREW_WARN     "EVERY HAND ABOARD DRINKS A WATER A DAY"
+#define T_CREW_COUNT    "CREW"
+
 // Settlement archetypes. Each makes its own good cheap and the rest dearer, so
 // the map reads as an economic landscape rather than a row of identical shops.
 #define T_ARCH_WELL     "WELL"
