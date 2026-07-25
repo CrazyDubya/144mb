@@ -10,7 +10,7 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 104960
+BYTES_USED = 107008
 LIMIT = 1474560
 
 
@@ -37,6 +37,16 @@ STILLS = [
      "The sky is the only clock, and by the far sectors it has gone. A dark town also "
      "has less on offer &mdash; the forecourt is shut more often and the job board is "
      "thinner &mdash; which bites hardest exactly where you can least afford it."),
+    ("dialogue.png", "Somebody on the road",
+     "Five people recur across a run, and they remember you. Pay what is asked and "
+     "the next meeting is warmer and cheaper; wave them on and it is neither. The "
+     "portraits are assembled from shapes at draw time &mdash; there is no image file "
+     "anywhere in the binary."),
+    ("journal.png", "Who you have met",
+     "The PEOPLE tab is the run's memory: who turned up, how often, and where you "
+     "stand with them. Encounters used to live only on encounter nodes, which meant "
+     "the profitable route was the one that skipped the story &mdash; a fifth of "
+     "winning runs met nobody at all. Now they find you in the market too."),
     ("ending.png", "Arrival",
      "Five endings, graded on what survived rather than on whether you arrived. "
      "Storms spoil seed and raiders take it, so reaching the Green Zone and "
@@ -45,7 +55,7 @@ STILLS = [
 
 FACTS = [
     ("6", "crates you cannot sell"),
-    ("14", "encounter kinds"),
+    ("5", "people who remember you"),
     ("0", "bytes of stored art or audio"),
     ("7%", "of the floppy used"),
 ]
