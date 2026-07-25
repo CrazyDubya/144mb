@@ -168,7 +168,8 @@ void cutscene_draw(Framebuffer *fb, const CutsceneState *s, uint32_t tick) {
     if (!s->running) return;
     const Panel *p = &s->cs->panel[s->index];
 
-    scene_draw(fb, tick, p->depth, 30);
+    scene_draw(fb, tick, p->depth, 30,
+               p->depth * 255 / (SECTORS - 1), WX_CLEAR);
     draw_art(fb, p->art, tick);
 
     // Letterbox. The bars are what make it read as a cut scene rather than a

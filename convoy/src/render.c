@@ -45,6 +45,17 @@ int32_t isin(int32_t a) {
     return sign * v;                          // -256 .. 256
 }
 
+uint32_t rgb_lerp(uint32_t a, uint32_t b, int t) {
+    if (t <= 0) return a;
+    if (t >= 255) return b;
+    int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+    int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+    int r = ar + (br - ar) * t / 255;
+    int g = ag + (bg - ag) * t / 255;
+    int bl = ab + (bb - ab) * t / 255;
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+}
+
 // 4x4 ordered dither. Values are the standard Bayer matrix scaled 0..15.
 static const uint8_t BAYER[16] = {
      0,  8,  2, 10,
@@ -330,6 +341,24 @@ void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset) {
     fill_rect(fb, x, y, 1, h, lit);
     fill_rect(fb, x, y + h - 1, w, 1, shd);
     fill_rect(fb, x + w - 1, y, 1, h, shd);
+}
+
+// A screen change with no transition reads as a glitch rather than a cut. This
+// is a diagonal dithered wipe: cheap, in keeping with the rest of the
+// rendering, and it costs one pass over the framebuffer.
+void draw_wipe(Framebuffer *fb, int t) {
+    if (t <= 0 || t >= 255) return;
+    for (int y = 0; y < fb->h; ++y) {
+        uint32_t *row = fb->pixels + y * fb->w;
+        const uint8_t *brow = BAYER + ((y & 3) << 2);
+        for (int x = 0; x < fb->w; ++x) {
+            // The diagonal term makes the wipe sweep rather than dissolve.
+            int edge = t + (x + y) / 6 - 60;
+            if (edge < 0) edge = 0;
+            if (edge > 255) edge = 255;
+            if ((edge >> 4) <= brow[x & 3]) row[x] = PALETTE[C_INK];
+        }
+    }
 }
 
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h) {

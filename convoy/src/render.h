@@ -43,6 +43,8 @@ enum { ICON_WATER, ICON_FUEL, ICON_AMMO, ICON_MEDS, ICON_SCRAP, ICON_COUNT };
 // Fixed-point sine: angle 0..2047 spans a full turn, result -256..256.
 // Bhaskara's approximation, so there is no table and no libm.
 int32_t isin(int32_t a);
+// Blend two packed 0x00RRGGBB colours. t is 0..255.
+uint32_t rgb_lerp(uint32_t a, uint32_t b, int t);
 
 // ---------------------------------------------------------------- api
 void clear     (Framebuffer *fb, uint32_t rgb);
@@ -61,6 +63,8 @@ void fill_glow (Framebuffer *fb, int cx, int cy, int r, uint32_t rgb, int peak);
 // Panel with a lit top-left edge, shaded bottom-right, and a soft drop shadow.
 void draw_bevel(Framebuffer *fb, int x, int y, int w, int h, int inset);
 void draw_drop (Framebuffer *fb, int x, int y, int w, int h);
+// A dithered wipe used between screens. `t` runs 0..255 as it clears.
+void draw_wipe (Framebuffer *fb, int t);
 void fill_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_rect (Framebuffer *fb, int x, int y, int w, int h, uint32_t rgb);
 void draw_panel(Framebuffer *fb, int x, int y, int w, int h);

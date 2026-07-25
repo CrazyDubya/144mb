@@ -26,6 +26,13 @@ typedef struct {
     int        help;       // showing the instructions overlay
     AudioState audio;
 
+    // A dithered wipe on screen changes, and the convoy driving the map link
+    // on a hop rather than teleporting. Both are pure presentation: the
+    // simulation has already moved on.
+    int      trans;          // ticks left in the wipe
+    int      travel;         // ticks left in the drive
+    uint8_t  from_sector, from_index;
+
     // Cut scenes own the screen while they run: the opening, the endings and
     // the short beats between sectors all share one player.
     CutsceneState cut;

@@ -9,6 +9,7 @@
 #include "world.h"
 #include "audio.h"
 #include "cutscene.h"
+#include "render.h"
 
 // Exposed so the headless harness can trace the simulation; not used by the
 // Windows build, and costs nothing there since it is never referenced.
@@ -39,6 +40,10 @@ static void restart(GameState *gs, uint32_t seed) {
     gs->sel = 0;
     gs->map_sel = 0;
     gs->tab = TAB_MARKET;
+    gs->trans = 0;
+    gs->travel = 0;
+    gs->from_sector = 0;
+    gs->from_index = 0;
     for (int i = 0; i < SECTORS; ++i) gs->vignette_seen[i] = 0;
     cutscene_begin(&gs->cut, &CS_OPENING, gs->tick);
 }
@@ -112,6 +117,7 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     int prev_cargo  = world_cargo(w);
     int prev_credit = w->credits;
     int prev_sector = w->sector;
+    int prev_index  = w->index;
 
     switch (w->state) {
     case ST_TRADE: {
@@ -158,6 +164,18 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         if (in->pressed[BTN_START]) restart(gs, gs->seed + gs->tick);
         break;
     }
+
+    // A hop starts the convoy driving the link it just took, and any change of
+    // screen starts a wipe. Both are cosmetic and run on top of a simulation
+    // that has already moved.
+    if (w->sector != prev_sector) {
+        gs->from_sector = (uint8_t)prev_sector;
+        gs->from_index  = (uint8_t)prev_index;
+        gs->travel = 26;
+    }
+    if (w->state != prev_state) gs->trans = 22;
+    if (gs->trans  > 0) gs->trans--;
+    if (gs->travel > 0) gs->travel--;
 
     // Arriving somewhere new can be worth a beat. Each fires at most once.
     if (w->sector != prev_sector && w->state != ST_DEAD && w->state != ST_WON) {
@@ -227,6 +245,9 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     default: break;
     }
     ui_hud(fb, w);
+
+    // The wipe sits over everything, including the HUD.
+    if (gs->trans > 0) draw_wipe(fb, 255 - gs->trans * 255 / 22);
 }
 
 void game_audio(GameMemory *mem, AudioBuffer *ab) {

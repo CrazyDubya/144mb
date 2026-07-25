@@ -218,7 +218,16 @@ static void draw_contracts(Framebuffer *fb, GameState *gs, int x, int y, int pw)
 void ui_backdrop(Framebuffer *fb, GameState *gs) {
     const World *w = &gs->w;
     int thirst = w->held[G_WATER] < 4 ? (4 - w->held[G_WATER]) * 30 : 0;
-    scene_draw(fb, gs->tick, w->sector, w->sector * 20 + thirst);
+
+    // The whole run is one day: first light at the start, dark by the Green
+    // Zone. A glance at the sky says how far you have come.
+    int phase = w->sector * 255 / (SECTORS - 1);
+
+    int weather = WX_CLEAR;
+    if (w->node[w->sector][w->index].type == NODE_HAZARD) weather = WX_STORM;
+    else if (w->sector >= (SECTORS - 1) / 2)              weather = WX_HAZE;
+
+    scene_draw(fb, gs->tick, w->sector, w->sector * 20 + thirst, phase, weather);
 }
 
 // ---------------------------------------------------------------- hud
@@ -393,8 +402,17 @@ void ui_map(Framebuffer *fb, GameState *gs) {
         }
     }
 
-    // Current position marker.
+    // Current position marker. During a hop the convoy is drawn part-way along
+    // the link it took, which is the difference between travelling and
+    // teleporting.
     int cx, cy; node_pos(w, w->sector, w->index, &cx, &cy, cam);
+    if (gs->travel > 0) {
+        int fx, fy; node_pos(w, gs->from_sector, gs->from_index, &fx, &fy, cam);
+        int t = 26 - gs->travel;                 // 0..26 along the way
+        int dx = fx + (cx - fx) * t / 26;
+        int dy = fy + (cy - fy) * t / 26;
+        draw_convoy(fb, dx - 20, dy - 6, 1, gs->tick, 0);
+    }
     draw_rect(fb, cx - 5, cy - 5, 30, 30, PALETTE[C_BONE]);
     draw_rect(fb, cx - 4, cy - 4, 28, 28, PALETTE[C_BONE]);
 
@@ -724,7 +742,7 @@ static void draw_summary(Framebuffer *fb, const World *w, int cx, int y) {
 }
 
 void ui_title(Framebuffer *fb, GameState *gs) {
-    scene_draw(fb, gs->tick, 0, 20);
+    scene_draw(fb, gs->tick, 0, 20, 30, WX_CLEAR);
 
     // The convoy drives the width of the screen and wraps, so the title screen
     // is never still.
@@ -763,7 +781,7 @@ void ui_title(Framebuffer *fb, GameState *gs) {
 // The instructions. This exists because the game is otherwise a guessing
 // game: icons can show a price but they cannot explain why cargo is health.
 void ui_help(Framebuffer *fb, GameState *gs) {
-    scene_draw(fb, gs->tick, 3, 40);
+    scene_draw(fb, gs->tick, 3, 40, 70, WX_CLEAR);
     fill_scrim(fb, 0, 0, fb->w, fb->h, PALETTE[C_INK], 12);
 
     const int x = 40, y = 30, pw = fb->w - 80, ph = fb->h - 60;
@@ -805,7 +823,8 @@ void ui_help(Framebuffer *fb, GameState *gs) {
 void ui_end(Framebuffer *fb, GameState *gs, int won) {
     World *w = &gs->w;
 
-    scene_draw(fb, gs->tick, won ? SECTORS - 1 : w->sector, won ? 0 : 200);
+    scene_draw(fb, gs->tick, won ? SECTORS - 1 : w->sector, won ? 0 : 200,
+               won ? 235 : 210, WX_CLEAR);
     // Wash the whole scene toward triumph or toward dust.
     fill_scrim(fb, 0, 0, fb->w, fb->h,
                won ? PALETTE[C_GREEN] : PALETTE[C_INK], won ? 4 : 8);
