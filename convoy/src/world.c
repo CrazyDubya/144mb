@@ -198,8 +198,12 @@ int world_price_bias(const World *w, int good) {
 // fitting returns over a 13-hop run gave 47-88 credits against list prices of
 // 120-150: every one of them was a trap, and the bot proved it by buying kit
 // and losing more often.
-static const int UPG_BASE[UPG_COUNT]   = {  70, 115,  55,  65 };
-static const int CREW_BASE[CREW_COUNT] = {  80,  95,  85,  75, 110 };
+//
+// The fixed list prices that used to live here (upgrades 70/115/55/65, crew
+// 80/95/85/75/110) are gone: nothing has read them since pricing became a
+// function of remaining payback in world_upg_price / world_crew_price. They
+// were left behind as unreferenced tables that read like the real prices, and
+// two audits mistook them for live data.
 
 int world_cargo_cap(const World *w) {
     return CARGO_CAP + (w->upgrade[UPG_HOLD] ? 10 : 0);
@@ -397,8 +401,14 @@ static void roll_offers(World *w) {
     // Sized for whichever list is longer: this scratch array is reused for
     // both, and sizing it to UPG_COUNT alone overflowed it by one on the crew
     // pass, which corrupted the stack rather than failing honestly.
-    int avail[UPG_COUNT > CREW_COUNT ? UPG_COUNT : CREW_COUNT];
-    int weight[UPG_COUNT > CREW_COUNT ? UPG_COUNT : CREW_COUNT];
+    //
+    // The two counts are members of different anonymous enums, so comparing
+    // them directly is a -Wenum-compare warning. Widening to int says the same
+    // thing without asking the compiler to relate two unrelated types.
+    #define OFFER_SLOTS ((int)UPG_COUNT > (int)CREW_COUNT \
+                         ? (int)UPG_COUNT : (int)CREW_COUNT)
+    int avail[OFFER_SLOTS];
+    int weight[OFFER_SLOTS];
 
     // Past this point nothing can repay itself, so nothing is offered. A
     // fitting dangled at the last stop is noise, not a choice.
@@ -649,8 +659,11 @@ void world_travel(World *w, int next_index) {
             if (w->encounters < 255) w->encounters++;
         }
         break;
-    case NODE_EVENT:  w->state = ST_EVENT; roll_event(w);
-                      if (w->encounters < 255) w->encounters++; break;
+    case NODE_EVENT:
+        w->state = ST_EVENT;
+        roll_event(w);
+        if (w->encounters < 255) w->encounters++;
+        break;
     default:          w->state = ST_MAP;   break;
     }
 }

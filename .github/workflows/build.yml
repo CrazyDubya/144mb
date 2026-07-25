@@ -6,6 +6,81 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The Windows job builds with ONLY_WIN=1, which skips the harness entirely --
+  # so for three releases neither the test bot nor the headless platform layer
+  # was ever compiled by CI. The measurement layer could have been deleted and
+  # every run would still have gone green. This job compiles them, runs the
+  # sanitizers, and plays the game to completion.
+  harness:
+    name: build harness, sanitize and play
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        shell: bash
+        run: |
+          set -e
+          ver=0.16.0
+          url="https://ziglang.org/download/$ver/zig-x86_64-linux-$ver.tar.xz"
+          echo "downloading $url"
+          curl -fsSL "$url" -o /tmp/zig.tar.xz
+          mkdir -p /tmp/zig && tar -xJf /tmp/zig.tar.xz -C /tmp/zig --strip-components=1
+          echo /tmp/zig >> "$GITHUB_PATH"
+
+      - name: Verify Zig
+        shell: bash
+        run: zig version
+
+      # No ONLY_WIN here: this is the point of the job.
+      - name: Build every game with its harness
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in */build.sh; do
+            d=$(dirname "$f")
+            echo "::group::build $d"
+            ( cd "$d" && ZIG=zig bash build.sh )
+            echo "::endgroup::"
+          done
+
+      - name: Sanitizers
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in */tools/asan.sh; do
+            d=$(dirname "$(dirname "$f")")
+            echo "::group::asan $d"
+            ( cd "$d" && bash tools/asan.sh )
+            echo "::endgroup::"
+          done
+
+      # A build that links but cannot finish a run is not a passing build.
+      # Every difficulty, so a change that breaks one mode cannot hide.
+      - name: Play to completion
+        shell: bash
+        run: |
+          set -e
+          cd convoy
+          for d in 0 1 2; do
+            wins=0
+            for s in $(seq 1 20); do
+              line=$(./build/convoy_headless -s "$s" -B -e 0 -D "$d" -o /tmp)
+              case "$line" in
+                *STALLED*) echo "::error::seed $s difficulty $d stalled"; exit 1;;
+                *WON*)     wins=$((wins + 1));;
+              esac
+            done
+            echo "difficulty $d: $wins/20 won"
+            if [ "$wins" -eq 0 ]; then
+              echo "::error::difficulty $d never won in 20 seeds -- the game is unwinnable"
+              exit 1
+            fi
+          done
+
   windows:
     name: build and smoke-test on Windows
     runs-on: windows-latest

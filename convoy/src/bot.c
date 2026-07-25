@@ -76,15 +76,10 @@ static int contract_worth_taking(const World *w) {
 #define FUEL_WORTH  22
 #define WATER_WORTH 13
 
-static int upgrade_payback(int u, int hops) {
-    switch (u) {
-    case UPG_HOLD:   return hops * 6;                     // more to trade with
-    case UPG_ECON:   return (hops / 2) * FUEL_WORTH;      // a free hop every second
-    case UPG_ARMOUR: return hops * 3 / 5 * 20;            // ~0.8 raids, ~4 cargo each
-    case UPG_TANKS:  return (hops / 2) * WATER_WORTH;     // a dry day every second
-    default:         return 0;
-    }
-}
+// A duplicate of world_upg_payback used to sit here. Nothing called it -- the
+// bot's purchase test never consulted a value at all -- so it was a second
+// copy of a formula that could drift from the real one without any test
+// noticing. Deleted. Phase 3 replaces the purchase test itself.
 
 // Crew drink every day they are aboard, so their keep comes straight out of
 // whatever they save.

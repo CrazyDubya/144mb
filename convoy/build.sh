@@ -22,7 +22,11 @@ mkdir -p "$ROOT/build"
 
 SRC=("$ROOT/src/game.c" "$ROOT/src/render.c" "$ROOT/src/world.c" "$ROOT/src/audio.c" "$ROOT/src/scene.c" "$ROOT/src/ui.c" "$ROOT/src/cutscene.c")
 SIZE_FLAGS="-Os -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables"
-WARN="-Wall -Wextra -Wno-unused-parameter"
+# -Werror is deliberate. Warnings were enabled from the start and accumulated
+# anyway: an unused duplicate of a pricing formula, two dead price tables that
+# two separate audits mistook for live data, and a misleading indentation in a
+# switch case. None of them broke the game, and all of them cost review time.
+WARN="-Wall -Wextra -Wno-unused-parameter -Werror"
 
 echo "== windows x86_64 (submission target) =="
 # shellcheck disable=SC2086

@@ -43,9 +43,6 @@ static const Pattern P_LEAD_TENSE = {
     { 25, 24, R, R,  25, R, 23, R,  R, 22, R, R,  20, R, R, R }, I_PLUCK };
 static const Pattern P_LEAD_WARM = {
     { 22, R, 24, R,  27, R, 24, R,  22, R, 20, R,  19, R, R, R }, I_BELL };
-static const Pattern P_LEAD_NONE = {
-    { R, R, R, R,  R, R, R, R,  R, R, R, R,  R, R, R, R }, I_LEAD };
-
 static const Pattern P_PAD_HOLD = {
     { 12, R, R, R,  R, R, R, R,  15, R, R, R,  R, R, R, R }, I_PAD };
 static const Pattern P_PAD_RISE = {
