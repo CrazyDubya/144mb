@@ -10,7 +10,7 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 78336
+BYTES_USED = 82944
 LIMIT = 1474560
 
 
@@ -21,21 +21,24 @@ def uri(path, mime):
 
 STILLS = [
     ("title.png", "The title",
-     "The convoy drives east toward the only green thing in the world. The four "
-     "controls are shown rather than described &mdash; there is nothing here to read, "
-     "in any language."),
+     "The convoy drives east toward the only green thing in the world. Enter starts "
+     "a run; H opens the instructions."),
+    ("help.png", "How to play",
+     "Reachable at any time, not just from the title. It states the rule the icons "
+     "cannot: there is no health bar, your cargo is your life, and an empty hold "
+     "ends the run. Each good is listed with what it is actually for."),
     ("map.png", "The route",
-     "Ten sectors, one way, no going back. Rooflines are markets, crossed badges are "
-     "encounters, stacked bars are storms that cost an extra fuel and water. The green "
-     "block is nine hops away."),
+     "Ten sectors, one way, no going back. The strip along the bottom names the "
+     "destination and prices the hop, so choosing a road is never a guess about "
+     "what the badge meant."),
     ("trade.png", "The market",
-     "Five goods, each with a price and a held quantity. The selected row carries its "
-     "own two actions. Sell here and this market's price stays depressed for the rest "
-     "of the run &mdash; routes burn out behind you."),
+     "Named goods, labelled columns, and the two actions spelled out on the "
+     "selected row. The line underneath says what the highlighted good is for "
+     "&mdash; the single most useful sentence for someone who has never played."),
     ("event.png", "An encounter",
-     "One shape with different numbers in it: pay the price on the top row, or take "
-     "the consequence on the bottom. Red frames a threat, green an opportunity. Every "
-     "quantity carries an explicit sign, because an icon without one is ambiguous."),
+     "Titled, with both options described. Green frames an opportunity, red a "
+     "threat. Every quantity carries an explicit sign, so a cost can never be "
+     "mistaken for a reward."),
     ("win.png", "Arrival",
      "Day ten, twenty-two credits, six crates &mdash; and no fuel at all. The Green "
      "Zone was reached on the last drop."),
@@ -44,7 +47,7 @@ STILLS = [
 FACTS = [
     ("35", "colours in the whole game"),
     ("0", "bytes of stored art or audio"),
-    ("0", "words of text on screen"),
+    ("300", "bytes for the whole alphabet"),
     ("53%", "win rate for skilled play"),
 ]
 
@@ -275,20 +278,30 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
     <img src="%(win)s" alt="Convoy running in a window on Windows Server 2025" />
     <p class="cap">
       Captured automatically on a GitHub Actions <span class="mono">windows-latest</span>
-      runner: the build launches, survives ten seconds of the real message loop,
-      and screenshots itself. The pixels are identical to the Linux renders. The
-      runner has no sound card, so the audio layer detected the missing device and
-      disabled itself instead of failing to start &mdash; the exact failure that
-      would otherwise surface first on a judge's machine.
+      runner on every push: the build launches, survives ten seconds of the real
+      message loop, and screenshots itself. The pixels are identical to the Linux
+      renders. The runner has no sound card, so the audio layer detected the
+      missing device and disabled itself instead of failing to start &mdash; the
+      exact failure that would otherwise surface first on a judge's machine.
     </p>
   </div>
 
   <h2>What a player sees</h2>
   <p>
-    Nothing on screen is written in any language. Meaning is carried by icon,
-    colour, sign and Arabic numerals, so the game reads identically to a judge in
-    Seoul and one in London. There is no alphabetic font in the build at all,
-    which makes accidental English impossible rather than merely unlikely.
+    This shipped at first with no text whatsoever &mdash; icons, colours and
+    numerals only, on the theory that pure iconography reads the same in every
+    language. It did not survive being looked at by someone who had not written
+    it. Nothing said the droplet was <em>water</em> rather than coolant, that the
+    number beside it was a <em>price</em> rather than a count, or that
+    &ldquo;&minus;meds&times;1 / &minus;water&times;2&rdquo; was a choice between
+    paying a cost and taking a consequence. That is not minimalism; it is a puzzle
+    wrapped around the game, solvable only by dying repeatedly.
+  </p>
+  <p>
+    The icons stayed &mdash; they carry meaning at a glance and survive
+    translation. Words were added so the glance is not a guess. The whole
+    uppercase alphabet is 32 glyphs and about 300 bytes, or two hundredths of one
+    percent of the disk.
   </p>
   <div class="shots">
 %(stills)s

@@ -15,6 +15,19 @@ const char *const ARCH_NAME[6] = {
     T_ARCH_WELL, T_ARCH_REFINERY, T_ARCH_ARMOURY,
     T_ARCH_CLINIC, T_ARCH_SCRAPYARD, T_ARCH_GENERAL
 };
+const char *const UPG_NAME[UPG_COUNT] = {
+    T_UPG_HOLD, T_UPG_ECON, T_UPG_ARMOUR, T_UPG_TANKS
+};
+const char *const UPG_DESC[UPG_COUNT] = {
+    T_UPG_HOLD_D, T_UPG_ECON_D, T_UPG_ARMOUR_D, T_UPG_TANKS_D
+};
+const char *const CREW_NAME[CREW_COUNT] = {
+    T_CREW_MECHANIC, T_CREW_GUARD, T_CREW_MEDIC, T_CREW_SCOUT, T_CREW_TRADER
+};
+const char *const CREW_DESC[CREW_COUNT] = {
+    T_CREW_MECHANIC_D, T_CREW_GUARD_D, T_CREW_MEDIC_D,
+    T_CREW_SCOUT_D, T_CREW_TRADER_D
+};
 const char *const ARCH_DESC[6] = {
     T_ARCH_WELL_D, T_ARCH_REFINERY_D, T_ARCH_ARMOURY_D,
     T_ARCH_CLINIC_D, T_ARCH_SCRAPYARD_D, T_ARCH_GENERAL_D
@@ -29,7 +42,9 @@ int ui_tab_rows(const GameState *gs, int tab) {
     case TAB_MARKET:    return GOODS_COUNT;
     // One row, and only when there is something to press it for.
     case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
-    default:            return 0;   // garage and crew land in phase 2
+    case TAB_GARAGE:    return gs->w.offer_upg  < UPG_COUNT  ? 1 : 0;
+    case TAB_CREW:      return gs->w.offer_crew < CREW_COUNT ? 1 : 0;
+    default:            return 0;
     }
 }
 
@@ -37,8 +52,18 @@ int ui_tab_rows(const GameState *gs, int tab) {
 // so no placeholder UI ever reaches a player.
 static int tab_live(const GameState *gs, int tab) {
     if (tab == TAB_MARKET) return 1;
-    if (tab == TAB_CONTRACTS)
-        return gs->w.job.state != CONTRACT_NONE;
+    if (tab == TAB_CONTRACTS) return gs->w.job.state != CONTRACT_NONE;
+    // The garage and the crew board only exist where there is something on
+    // them, or where the convoy already carries something worth reviewing.
+    if (tab == TAB_GARAGE) {
+        if (gs->w.offer_upg < UPG_COUNT) return 1;
+        for (int i = 0; i < UPG_COUNT; ++i) if (gs->w.upgrade[i]) return 1;
+        return 0;
+    }
+    if (tab == TAB_CREW) {
+        if (gs->w.offer_crew < CREW_COUNT) return 1;
+        return world_crew_count(&gs->w) > 0;
+    }
     return 0;
 }
 
@@ -65,6 +90,42 @@ static int draw_tabs(Framebuffer *fb, const GameState *gs, int x, int y, int pw)
     // Which keys move between them.
     draw_text(fb, x + pw - 60, y + 6, "< >", 1, PALETTE[C_DIM]);
     return 26;
+}
+
+// Shared layout for the two outfitting boards: what is for sale, what it does,
+// what it costs, and what is already aboard.
+static void draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
+                        int offer, int count, const char *const *names,
+                        const char *const *descs, const uint8_t *owned,
+                        int price, const char *empty_msg,
+                        const char *buy_msg, const char *own_msg)
+{
+    if (offer >= count) {
+        draw_text(fb, x + 14, y + 12, empty_msg, 1, PALETTE[C_DIM]);
+    } else {
+        draw_text(fb, x + 14, y + 10, names[offer], 2, PALETTE[C_BONE]);
+        draw_text(fb, x + 14, y + 32, descs[offer], 1, PALETTE[C_WARN]);
+
+        int px = x + 14;
+        int can = gs->w.credits >= price;
+        px += draw_key(fb, px, y + 52, G_KEY_Z, 2) + 8;
+        px += draw_text(fb, px, y + 58, buy_msg, 1,
+                        can ? PALETTE[C_BONE] : PALETTE[C_DIM]) + 12;
+        draw_number(fb, px, y + 54, price, 2,
+                    can ? PALETTE[C_WARN] : PALETTE[C_BAD]);
+    }
+
+    // Everything already fitted or aboard, so the tab is a status board too.
+    int ly = y + 86, any = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!owned[i]) continue;
+        draw_text(fb, x + 18, ly, own_msg, 1, PALETTE[C_GOOD]);
+        draw_text(fb, x + 18 + text_w(own_msg, 1) + 10, ly, names[i], 1,
+                  PALETTE[C_BONE]);
+        ly += 15;
+        any = 1;
+    }
+    (void)any;
 }
 
 // ---------------------------------------------------------------- contracts
@@ -142,11 +203,20 @@ void ui_hud(Framebuffer *fb, const World *w) {
                      w->held[G_FUEL] <= 2 ? PALETTE[C_BAD] : PALETTE[C_BONE]) + 4;
     x += draw_text(fb, x, 15, T_FUEL, 1, PALETTE[C_DIM]) + 18;
 
-    // Cargo occupancy: held / capacity.
+    // Cargo occupancy: held / capacity, which racks can raise.
     x += draw_text(fb, x, 15, T_HOLD, 1, PALETTE[C_DIM]) + 6;
     x += draw_number(fb, x, 13, world_cargo(w), 2, PALETTE[C_BONE]);
     draw_glyph(fb, x, 13, G_SLASH, 2, PALETTE[C_DIM]); x += glyph_w(2);
-    x += draw_number(fb, x, 13, CARGO_CAP, 2, PALETTE[C_DIM]);
+    x += draw_number(fb, x, 13, world_cargo_cap(w), 2, PALETTE[C_DIM]) + 16;
+
+    // Crew, and what they cost in water every day.
+    if (world_crew_count(w) > 0) {
+        x += draw_text(fb, x, 15, T_CREW_COUNT, 1, PALETTE[C_DIM]) + 6;
+        x += draw_number(fb, x, 13, world_crew_count(w), 2, PALETTE[C_BONE]) + 8;
+        draw_glyph(fb, x, 13, G_MINUS, 2, PALETTE[C_BAD]); x += glyph_w(2);
+        draw_icon(fb, x, 9, ICON_WATER, 1); x += 18;
+        x += draw_number(fb, x, 13, world_water_burn(w), 2, PALETTE[C_BAD]);
+    }
 
     // Credits, right-aligned, then the day just left of it.
     int cw = number_w(w->credits, 2);
@@ -371,6 +441,23 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     if (gs->tab != TAB_MARKET) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
+        else if (gs->tab == TAB_GARAGE)
+            draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
+                        UPG_NAME, UPG_DESC, gs->w.upgrade,
+                        gs->w.offer_upg < UPG_COUNT
+                            ? world_upg_price(&gs->w, gs->w.offer_upg) : 0,
+                        T_NO_GARAGE, T_BUY_UPGRADE, T_OWNED);
+        else if (gs->tab == TAB_CREW) {
+            draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew, CREW_COUNT,
+                        CREW_NAME, CREW_DESC, gs->w.crew,
+                        gs->w.offer_crew < CREW_COUNT
+                            ? world_crew_price(&gs->w, gs->w.offer_crew) : 0,
+                        T_NO_CREW, T_HIRE, T_HIRED);
+            // The standing cost of every hand aboard, stated where it is felt.
+            // Sits directly under the hire prompt: any lower and it collides
+            // with the depart row at the foot of the panel.
+            draw_text(fb, x + 14, y + 44 + th + 82, T_CREW_WARN, 1, PALETTE[C_BAD]);
+        }
         // Departing is always available, whatever tab is open.
         int dy = y + 48 + th + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);

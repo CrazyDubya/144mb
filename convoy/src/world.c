@@ -41,6 +41,7 @@ static int rng_range(uint32_t *s, int lo, int hi) {
 static void roll_event(World *w);
 static void observe_market(World *w);
 static void contract_tick(World *w);
+static void roll_offers(World *w);
 
 // ---------------------------------------------------------------- setup
 static void price_node(World *w, Node *n, int sector) {
@@ -121,9 +122,12 @@ void world_init(World *w, uint32_t seed) {
     w->held[G_MEDS]  = 1;
     w->held[G_SCRAP] = 2;
     w->day   = 1;
+    w->offer_upg  = 0xFF;
+    w->offer_crew = 0xFF;
     w->state = ST_TRADE;   // the starting node is a settlement
     observe_market(w);
     contract_tick(w);
+    roll_offers(w);
 }
 
 // Records the prices on offer here. Called on arrival, once per settlement.
@@ -143,6 +147,103 @@ int world_price_bias(const World *w, int good) {
     if (p * 100 <= avg * 86)  return -1;
     if (p * 100 >= avg * 114) return +1;
     return 0;
+}
+
+// ---------------------------------------------------------------- outfitting
+// Priced against what a run actually banks. The first pass asked 220-300 for
+// kit when a winning convoy finishes with under 100 credits to its name, so
+// the garage and the crew board were furniture nobody could afford: across
+// five full bot runs, not one purchase.
+// Priced against measured payback rather than instinct. Deriving what each
+// fitting returns over a 13-hop run gave 47-88 credits against list prices of
+// 120-150: every one of them was a trap, and the bot proved it by buying kit
+// and losing more often.
+static const int UPG_BASE[UPG_COUNT]   = {  70, 115,  55,  65 };
+static const int CREW_BASE[CREW_COUNT] = {  80,  95,  85,  75, 110 };
+
+int world_cargo_cap(const World *w) {
+    return CARGO_CAP + (w->upgrade[UPG_HOLD] ? 10 : 0);
+}
+
+int world_crew_count(const World *w) {
+    int n = 0;
+    for (int i = 0; i < CREW_COUNT; ++i) n += w->crew[i] ? 1 : 0;
+    return n;
+}
+
+// One driver always drinks. Every extra hand drinks too, which is the whole
+// cost of taking people on.
+//
+// Tanks used to halve the total, rounded up -- which with no crew aboard took
+// a burn of 1 to a burn of 1, so the upgrade did nothing at all in the case a
+// player is most likely to buy it. Condensers instead give a dry day every
+// third day, which is worth something whoever is aboard.
+int world_water_burn_on(const World *w, int day) {
+    if (w->upgrade[UPG_TANKS] && (day % 2) == 0) return 0;
+    return 1 + world_crew_count(w);
+}
+
+int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
+
+// Kit gets *cheaper* the further east it is sold, which is the opposite of
+// what it did at first and the opposite of what fuel does.
+//
+// The reason is that its value rises late while working capital's falls.
+// Early on, credits in the hold compound over many legs and beat any fitting;
+// by the back half there are few legs left to compound through and the easy
+// routes have been burned flat by market memory. Pricing kit to escalate like
+// fuel made it dominated at exactly the point it should start winning.
+static int outfit_scale(const World *w) {
+    int left = (SECTORS - 1) - w->sector;
+    int pct  = 100 - (SECTORS - 1 - left) * 3;   // ~3% cheaper per sector east
+    return pct < 55 ? 55 : pct;
+}
+
+int world_upg_price(const World *w, int upg) {
+    return UPG_BASE[upg] * outfit_scale(w) / 100;
+}
+int world_crew_price(const World *w, int crew) {
+    return CREW_BASE[crew] * outfit_scale(w) / 100;
+}
+
+void world_buy_upgrade(World *w) {
+    int u = w->offer_upg;
+    if (u >= UPG_COUNT || w->upgrade[u]) return;
+    int p = world_upg_price(w, u);
+    if (w->credits < p) return;
+    w->credits -= p;
+    w->upgrade[u] = 1;
+    w->offer_upg = 0xFF;
+}
+
+void world_hire_crew(World *w) {
+    int k = w->offer_crew;
+    if (k >= CREW_COUNT || w->crew[k]) return;
+    int p = world_crew_price(w, k);
+    if (w->credits < p) return;
+    w->credits -= p;
+    w->crew[k] = 1;
+    w->offer_crew = 0xFF;
+}
+
+// Each settlement stocks at most one of each, and only things not already had.
+static void roll_offers(World *w) {
+    w->offer_upg = 0xFF;
+    w->offer_crew = 0xFF;
+
+    // Sized for whichever list is longer: this scratch array is reused for
+    // both, and sizing it to UPG_COUNT alone overflowed it by one on the crew
+    // pass, which corrupted the stack rather than failing honestly.
+    int avail[UPG_COUNT > CREW_COUNT ? UPG_COUNT : CREW_COUNT];
+    int n = 0;
+    for (int i = 0; i < UPG_COUNT; ++i) if (!w->upgrade[i]) avail[n++] = i;
+    if (n && rng_range(&w->rng, 0, 99) < 45)
+        w->offer_upg = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
+
+    n = 0;
+    for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
+    if (n && rng_range(&w->rng, 0, 99) < 40)
+        w->offer_crew = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
 }
 
 // ---------------------------------------------------------------- contracts
@@ -235,20 +336,27 @@ void world_travel(World *w, int next_index) {
         return;
     }
 
-    w->held[G_FUEL]--;
+    if (!(w->upgrade[UPG_ECON] && (w->day % 2) == 0)) w->held[G_FUEL]--;
     w->day++;
 
-    // The crew drink whether or not there is anything to drink.
-    if (w->held[G_WATER] < 1) { w->state = ST_DEAD; w->death = DEATH_THIRST; return; }
-    w->held[G_WATER]--;
+    // The crew drink whether or not there is anything to drink, and every
+    // extra hand aboard drinks too.
+    {
+        int burn = world_water_burn_on(w, w->day);
+        if (w->held[G_WATER] < burn) {
+            w->state = ST_DEAD; w->death = DEATH_THIRST; return;
+        }
+        w->held[G_WATER] -= burn;
+    }
 
     w->sector++;
     w->index = next_index;
     Node *nd = &w->node[w->sector][w->index];
     nd->visited = 1;
 
-    if (nd->type == NODE_HAZARD) {
-        // A storm eats supplies on arrival.
+    if (nd->type == NODE_HAZARD && !w->crew[CREW_SCOUT]) {
+        // A storm eats supplies on arrival, unless someone aboard knows the
+        // safe line through it.
         if (w->held[G_WATER] > 0) w->held[G_WATER]--;
         if (w->held[G_FUEL]  > 0) w->held[G_FUEL]--;
         if (w->held[G_WATER] == 0 && w->held[G_FUEL] == 0 && world_cargo(w) == 0) {
@@ -258,7 +366,8 @@ void world_travel(World *w, int next_index) {
 
     switch (nd->type) {
     case NODE_GREEN:  w->state = ST_WON;   break;
-    case NODE_SETTLE: w->state = ST_TRADE; observe_market(w); contract_tick(w); break;
+    case NODE_SETTLE: w->state = ST_TRADE; observe_market(w); contract_tick(w);
+                      roll_offers(w); break;
     case NODE_EVENT:  w->state = ST_EVENT; roll_event(w); break;
     default:          w->state = ST_MAP;   break;
     }
@@ -272,7 +381,7 @@ void world_buy(World *w, int good) {
     Node *nd = &w->node[w->sector][w->index];
     if (nd->type != NODE_SETTLE) return;
     int p = nd->price[good];
-    if (w->credits < p || world_cargo(w) >= CARGO_CAP) return;
+    if (w->credits < p || world_cargo(w) >= world_cargo_cap(w)) return;
 
     w->credits -= p;
     w->held[good]++;
@@ -286,7 +395,9 @@ void world_buy(World *w, int good) {
 #define SELL_DEN 5
 
 int world_sell_price(const World *w, int good) {
-    int p = w->node[w->sector][w->index].price[good] * SELL_NUM / SELL_DEN;
+    int num = SELL_NUM, den = SELL_DEN;
+    if (w->crew[CREW_TRADER]) { num = 9; den = 10; }   // haggles the spread down
+    int p = w->node[w->sector][w->index].price[good] * num / den;
     return p < 1 ? 1 : p;
 }
 
@@ -324,7 +435,7 @@ void world_accept(World *w) {
     if (e->pay_good >= 0) w->held[e->pay_good] -= e->pay_qty;
 
     if (e->gain_good >= 0) {
-        int room = CARGO_CAP - world_cargo(w);
+        int room = world_cargo_cap(w) - world_cargo(w);
         int q = e->gain_qty < room ? e->gain_qty : room;
         if (q > 0) w->held[e->gain_good] += q;
     }
@@ -362,6 +473,10 @@ static void roll_event(World *w) {
     case EV_RAID:
         e->pay_good = G_AMMO;  e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->lose_good = -1;     e->lose_qty = (int8_t)(rng_range(&w->rng, 2, 4) + depth / 3);
+        // A guard makes the fight cheaper; plate means they get less when
+        // they do get in.
+        if (w->crew[CREW_GUARD]) e->pay_qty = 0;   // they handle it
+        if (w->upgrade[UPG_ARMOUR]) e->lose_qty = 1;   // plate holds
         break;
     case EV_WRECK:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
@@ -371,10 +486,14 @@ static void roll_event(World *w) {
     case EV_SICK:
         e->pay_good = G_MEDS;  e->pay_qty = 1;
         e->lose_good = G_WATER; e->lose_qty = (int8_t)rng_range(&w->rng, 2, 3);
+        // A medic treats it out of their own bag.
+        if (w->crew[CREW_MEDIC]) e->pay_qty = 0;
         break;
     case EV_BREAK:
         e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);
         e->lose_good = G_FUEL;  e->lose_qty = 2;
+        // A mechanic makes do with less.
+        if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;   // they carry their own kit
         break;
     default: // EV_TRADER -- an opportunity rather than a threat
         e->pay_good = G_WATER; e->pay_qty = (int8_t)rng_range(&w->rng, 2, 3);

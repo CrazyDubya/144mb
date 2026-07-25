@@ -107,6 +107,10 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
             if (in->pressed[BTN_B]) world_sell(w, gs->sel);
         } else if (gs->tab == TAB_CONTRACTS) {
             if (in->pressed[BTN_A]) world_contract_accept(w);
+        } else if (gs->tab == TAB_GARAGE) {
+            if (in->pressed[BTN_A]) world_buy_upgrade(w);
+        } else if (gs->tab == TAB_CREW) {
+            if (in->pressed[BTN_A]) world_hire_crew(w);
         }
         if (in->pressed[BTN_START]) { w->state = ST_MAP; gs->map_sel = 0; }
         break;

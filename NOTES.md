@@ -207,3 +207,92 @@ Both stalls were caught only because the harness caps a run at 4,000 steps and
 reports STALLED rather than hanging. Give any autonomous agent a step budget and
 a distinct "made no progress" outcome -- an infinite loop that reports nothing
 looks exactly like a slow test.
+
+## Keep a sanitizer build one command away
+
+A plain segfault tells you nothing: no file, no line, no reason. Phase 2 of
+convoy crashed on every seed the moment upgrades and crew landed, and staring
+at the diff produced three wrong theories in a row.
+
+One run under AddressSanitizer and UBSan named it exactly:
+
+    src/world.c:213: index 4 out of bounds for type 'int [4]'
+    stack-buffer-overflow in roll_offers
+    [32, 48) 'avail' <== Memory access at offset 48 overflows this variable
+
+A scratch array declared `int avail[UPG_COUNT]` (4) was reused for the crew
+list (5). One element past the end, straight into the stack.
+
+Notes for doing this here:
+
+- zig cc cannot link its own asan runtime for this target. The system gcc can,
+  and the game core is portable C, so building the harness with plain gcc for
+  diagnostics costs nothing.
+- Pass `-fsanitize=address,undefined` together. UBSan caught the out-of-bounds
+  index at the same time and printed it more legibly than ASan did.
+- Set `ASAN_OPTIONS=detect_leaks=0`. The harness deliberately never frees its
+  arena or framebuffer, and the leak report buries the real finding.
+
+`tools/asan.sh` now does all of that in one command. Run it whenever anything
+touches a fixed-size array or an index, not only when something has already
+crashed -- a one-past-the-end write that happens to land on padding will not
+crash at all, it will just quietly corrupt something later.
+
+## Price every upgrade in the currency the player earns
+
+Two of convoy's four upgrades were quietly worthless when first written.
+
+Water tanks "halved the daily water burn, rounded up". With no crew aboard the
+burn is 1, and (1+1)/2 is 1 -- no effect at all, in precisely the situation a
+player is most likely to buy them. The scout was sold as "see two sectors
+ahead" in a game that already draws the entire route on screen: a purchasable
+nothing.
+
+Neither was a crash, a stall, or a bad win rate. Every sweep was green.
+
+Before shipping any upgrade, do the arithmetic in the player's currency:
+
+- What does it cost?
+- What does it save or earn, over the run that remains?
+- Is that more than the cost?
+
+convoy's tuned engine saves roughly 4 fuel over 13 hops, about 80 credits, and
+was priced at 175. That is not a weak upgrade, it is a trap -- and the bot
+proved it by buying them and *losing more often*: the win rate fell nine points
+the moment kit became affordable enough to purchase.
+
+A useful check: watch what the agent spends, not just whether it wins. An
+option nobody takes and an option that loses money look identical in a win-rate
+column.
+
+## Verify the change is in the build before believing the number
+
+Two consecutive convoy sweeps returned byte-identical results: 46 won, 104
+died, 22 purchases, twice. Identical numbers from what should have been
+different code is not a coincidence, it is a message.
+
+`src/bot.c` did not contain the change. A scripted edit of the form
+
+    s = open(path).read()
+    s = s.replace(OLD, NEW)      # OLD did not match -- silently no-op
+    open(path, 'w').write(s)
+
+writes the file back unchanged when the pattern misses. Nothing fails, the
+build succeeds, the sweep runs, and the number that comes out describes the
+*old* code while appearing to describe the new.
+
+Both sweeps had already been reasoned about and written up before the problem
+surfaced. Those conclusions were worthless.
+
+Guards, in order of preference:
+
+1. **Use an editing tool that errors on a failed match.** `Edit` refuses when
+   `old_string` is absent. A `.replace()` in a script does not.
+2. **Grep for the new code before building**, not after reasoning about the
+   result: `grep -c upgrade_payback src/bot.c`.
+3. **Treat identical results across a change as a bug report.** Balance numbers
+   are noisy; exact repetition means the input did not change.
+
+The same applies to any generated artefact -- if a build, a config or a
+migration "had no effect", check that it was actually applied before drawing
+conclusions about what it means.

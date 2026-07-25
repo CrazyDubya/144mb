@@ -28,7 +28,9 @@ static void reserves(const World *w, int *keep) {
     int span = hops < PLAN_AHEAD ? hops : PLAN_AHEAD;
 
     keep[G_FUEL]  = span + 1;      // +1 for a storm eating one
-    keep[G_WATER] = span + 2;
+    // Water is per day, not per hop, and every hand aboard drinks. Missing
+    // this is how a bot cheerfully hires five people and dies of thirst.
+    keep[G_WATER] = span * world_water_burn(w) + 2;
     keep[G_AMMO]  = 2;             // enough to refuse one raid
     keep[G_MEDS]  = 1;
     keep[G_SCRAP] = 0;             // pure trade good
@@ -60,9 +62,70 @@ static int step_to(int sel, int want, int act) {
 static int contract_worth_taking(const World *w) {
     const Contract *j = &w->job;
     if (j->state != CONTRACT_OFFERED) return 0;
-    if (world_cargo(w) + j->qty > CARGO_CAP - 4) return 0;
+    if (world_cargo(w) + j->qty > world_cargo_cap(w) - 4) return 0;
     if (j->by_sector > SECTORS - 1) return 0;
     return 1;
+}
+
+// What a fitting is worth over the hops that remain, in credits.
+//
+// Derived from the generator's own rates, not from instinct: encounters are
+// 30% of nodes and there are five kinds, so any one kind fires about 0.8 times
+// in a 13-hop run. An earlier version of this assumed a raid every four hops
+// and overvalued armour by more than 3x.
+#define FUEL_WORTH  22
+#define WATER_WORTH 13
+
+static int upgrade_payback(int u, int hops) {
+    switch (u) {
+    case UPG_HOLD:   return hops * 6;                     // more to trade with
+    case UPG_ECON:   return (hops / 2) * FUEL_WORTH;      // a free hop every second
+    case UPG_ARMOUR: return hops * 3 / 5 * 20;            // ~0.8 raids, ~4 cargo each
+    case UPG_TANKS:  return (hops / 2) * WATER_WORTH;     // a dry day every second
+    default:         return 0;
+    }
+}
+
+// Crew drink every day they are aboard, so their keep comes straight out of
+// whatever they save.
+static int crew_payback(const World *w, int k, int hops) {
+    int gross;
+    switch (k) {
+    case CREW_MECHANIC: gross = hops * 3 / 5 * 12; break;
+    case CREW_GUARD:    gross = hops * 3 / 5 * 50; break;
+    case CREW_MEDIC:    gross = hops * 3 / 5 * 40; break;
+    case CREW_SCOUT:    gross = hops * 2 / 5 * 30; break;
+    case CREW_TRADER:   gross = hops * 9;          break;
+    default:            gross = 0;
+    }
+    int keep = hops * WATER_WORTH;
+    if (w->upgrade[UPG_TANKS]) keep /= 2;
+    return gross - keep;
+}
+
+// Credits in the hold compound -- buy low, sell high, repeat -- so over the
+// legs that remain, working capital roughly triples. A fitting has to beat
+// that, not merely beat zero, which in practice means kit is only ever correct
+// out of genuine surplus.
+static int upgrade_worth_buying(const World *w) {
+    int u = w->offer_upg;
+    if (u >= UPG_COUNT || w->upgrade[u]) return 0;
+    int hops = SECTORS_LAST - w->sector;
+    if (hops < 5) return 0;
+    int price = world_upg_price(w, u);
+    if (w->credits - price < 170) return 0;
+    return upgrade_payback(u, hops) > price;
+}
+
+static int crew_worth_hiring(const World *w) {
+    int k = w->offer_crew;
+    if (k >= CREW_COUNT || w->crew[k]) return 0;
+    int hops = SECTORS_LAST - w->sector;
+    if (hops < 5) return 0;
+    int price = world_crew_price(w, k);
+    if (w->credits - price < 190) return 0;
+    if (w->held[G_WATER] < 6) return 0;          // cannot feed them yet
+    return crew_payback(w, k, hops) > price;
 }
 
 // ---------------------------------------------------------------- trade
@@ -116,7 +179,7 @@ static int decide_trade(Bot *b, const World *w, int sel) {
     // A purchase is only worth walking the cursor to if it can actually
     // happen. Without the room check the bot presses BUY at a full hold
     // forever, which is exactly how the 13-hop route deadlocked it.
-    int room = cargo < CARGO_CAP;
+    int room = cargo < world_cargo_cap(w);
 
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
@@ -135,7 +198,7 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
     // 4. Speculate: buy anything unusually cheap, if there is room and money to
     //    spare, to sell further east. This is the part a fixed script cannot do.
-    if (room && cargo < CARGO_CAP - 6 && hops > 1) {
+    if (room && cargo < world_cargo_cap(w) - 6 && hops > 1) {
         int spec = local_spec;
         for (int g = 0; g < GOODS_COUNT; ++g) {
             if (g == G_FUEL || g == G_WATER) continue;   // survival stock, handled above
@@ -263,6 +326,14 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         // the same slots would earn on speculation.
         if (contract_worth_taking(w)) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;   // tabs cycle forward
+            return BTN_A;
+        }
+        if (upgrade_worth_buying(w)) {
+            if (tab != TAB_GARAGE) return BTN_RIGHT;
+            return BTN_A;
+        }
+        if (crew_worth_hiring(w)) {
+            if (tab != TAB_CREW) return BTN_RIGHT;
             return BTN_A;
         }
         if (tab != TAB_MARKET) return BTN_RIGHT;

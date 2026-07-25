@@ -80,6 +80,13 @@ typedef struct {
 
 enum { CONTRACT_NONE, CONTRACT_OFFERED, CONTRACT_TAKEN };
 
+// One-off purchases that change the rules for the rest of the run.
+enum { UPG_HOLD, UPG_ECON, UPG_ARMOUR, UPG_TANKS, UPG_COUNT };
+
+// Crew are hands that help and mouths that drink. Every one aboard raises the
+// daily water burn, so hiring is a running cost rather than a straight upgrade.
+enum { CREW_MECHANIC, CREW_GUARD, CREW_MEDIC, CREW_SCOUT, CREW_TRADER, CREW_COUNT };
+
 typedef struct {
     uint32_t rng;
     Node     node[SECTORS][NODES_PER];
@@ -98,6 +105,11 @@ typedef struct {
 
     int state;
     int death;
+
+    uint8_t  upgrade[UPG_COUNT];   // fitted or not
+    uint8_t  crew[CREW_COUNT];     // aboard or not
+    uint8_t  offer_upg;            // what this settlement will fit, 0xFF if none
+    uint8_t  offer_crew;           // who is looking for work here, 0xFF if none
 
     Event    event;
     Contract job;      // one at a time: two would just be arithmetic
@@ -123,6 +135,15 @@ void world_contract_accept(World *w);
 // Units of `good` promised to an accepted contract, so nothing sells them out
 // from under the job.
 int  world_committed (const World *w, int good);
+
+int  world_cargo_cap (const World *w);   // grows with fitted racks
+int  world_crew_count(const World *w);
+int  world_water_burn(const World *w);   // per day, given crew and tanks
+int  world_water_burn_on(const World *w, int day);
+int  world_upg_price (const World *w, int upg);
+int  world_crew_price(const World *w, int crew);
+void world_buy_upgrade(World *w);
+void world_hire_crew  (World *w);
 void world_travel(World *w, int next_index);
 void world_buy   (World *w, int good);
 void world_sell  (World *w, int good);
