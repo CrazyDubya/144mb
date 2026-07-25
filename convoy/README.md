@@ -2,9 +2,9 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**77,824 bytes — 5.28% of 1,474,560.**
+**78,336 bytes — 5.31% of 1,474,560.**
 
-You run a convoy east across eight sectors toward the Green Zone. You will not
+You run a convoy east across ten sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
 alive.
 
@@ -30,15 +30,21 @@ storms take water and fuel, and an empty hold is death. You die broke.
 Routes burn out behind you, so the pressure to push into the dangerous outer
 sectors is economic rather than an artificial timer.
 
-You start with five fuel and the Green Zone is seven hops away, so reaching it
-is arithmetically impossible without trading. Fuel also gets dearer the further
-east you go, which means the run grows harder to afford exactly as it grows
-harder to survive.
+You start with five fuel and the Green Zone is nine hops away, so reaching it is
+arithmetically impossible without trading. Fuel also gets dearer the further east
+you go, which means the run grows harder to afford exactly as it grows harder to
+survive.
 
-Measured over 200 seeds: a bot that buys fuel at every market wins **27%** of
-runs; one that ignores the economy wins **0%** and dies in 148 of them. Those
-bots follow fixed key sequences, so they cannot react to prices — they measure
-the floor, not the ceiling. Arbitrage is what a human adds.
+### Measured difficulty
+
+| player | wins |
+|---|---|
+| ignores the economy | **0%** |
+| buys fuel, fixed routine | **0%** |
+| plays prices (see the bot below) | **53%** |
+
+Over 200 seeds each. The first two follow fixed key sequences and cannot react
+to a price, so they die out on the road; only the third actually trades.
 
 ## Controls
 
@@ -91,9 +97,30 @@ Script characters are one discrete keypress each: `u d l r` arrows, `a` = Z,
 | `-v` | trace simulation state each step |
 | `-w N` | render N seconds of audio to a wav |
 
+```sh
+# let the price-aware bot play a full run
+./build/convoy_headless -s 16 -B
+```
+
 `tools/mkmedia.py` recompresses frame dumps and assembles an animated GIF —
 GIF/LZW is implemented there because this machine has no ffmpeg, ImageMagick or
-PIL.
+PIL. `tools/crop.py` decodes and crops arbitrary PNGs, filters and all.
+
+## The test bot
+
+`src/bot.c` plays the game through its own UI: it moves the cursor and presses
+the same keys a player would, deciding from world state. It tracks a running
+average of every price it has seen, sells above it, buys below it, keeps a fuel
+and water reserve sized to the distance remaining, and scores each route branch.
+
+It is compiled **only into the headless harness** and contributes zero bytes to
+the submitted executable.
+
+It exists because scripted key sequences measure only the floor — a fixed string
+of presses cannot look at a price and decide. The first thing the bot revealed
+was that the game was far too easy for anyone who knew what they were doing: it
+won 90% of runs on the original eight-sector route. Lengthening the journey and
+thinning out the settlements brought that to 53%.
 
 ## Layout
 
@@ -110,8 +137,8 @@ PIL.
 ## Status
 
 Version 1. Title screen, procedural backdrop, five encounter types, three death
-conditions, win condition, procedural audio, balanced. Zero crashes across 300
-seeds. Verified running on Windows by CI, which launches the binary and
+conditions, win condition, procedural audio, balanced against a price-aware bot.
+Zero crashes across 300 bot-played runs. Verified running on Windows by CI, which launches the binary and
 screenshots it on every push.
 
 The backdrop is generated every frame and stored nowhere: a Bayer-dithered sky,

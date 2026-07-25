@@ -48,9 +48,9 @@ void world_init(World *w, uint32_t seed) {
             else if (s == SECTORS - 1)      nd->type = NODE_GREEN;
             else {
                 int r = rng_range(&w->rng, 0, 99);
-                nd->type = (uint8_t)(r < 42 ? NODE_SETTLE :
-                                     r < 74 ? NODE_EVENT  :
-                                     r < 90 ? NODE_HAZARD : NODE_EMPTY);
+                nd->type = (uint8_t)(r < 34 ? NODE_SETTLE :
+                                     r < 72 ? NODE_EVENT  :
+                                     r < 92 ? NODE_HAZARD : NODE_EMPTY);
             }
             price_node(w, nd, s);
         }

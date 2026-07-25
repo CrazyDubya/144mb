@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#define SECTORS      8
+#define SECTORS      10
 #define NODES_PER    4
 #define GOODS_COUNT  5
 #define CARGO_CAP    30

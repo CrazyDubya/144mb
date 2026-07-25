@@ -24,6 +24,15 @@ const World *game_world(GameMemory *mem) {
     return &((GameState *)mem->permanent)->w;
 }
 
+// The test bot drives the real UI rather than calling the simulation directly,
+// so it has to see where the cursor is. Read-only, harness-only.
+void game_ui(GameMemory *mem, int *sel, int *map_sel, int *title) {
+    GameState *gs = (GameState *)mem->permanent;
+    if (sel)     *sel     = gs->sel;
+    if (map_sel) *map_sel = gs->map_sel;
+    if (title)   *title   = gs->title;
+}
+
 // ---------------------------------------------------------------- helpers
 // Collects the nodes reachable from the current position, in index order.
 static int reachable(const World *w, int *out) {
@@ -89,7 +98,7 @@ static int sector_count(const World *w, int s) {
 // down the middle of the screen rather than a band stuck under the HUD.
 static void node_pos(const World *w, int s, int n, int *x, int *y) {
     int count = sector_count(w, s);
-    *x = 32 + s * 78;
+    *x = 26 + s * 63;
     *y = 258 - (count - 1) * 72 / 2 + n * 72;
 }
 

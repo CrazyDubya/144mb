@@ -98,3 +98,22 @@ screenshot the desktop so there is visual proof from the real platform.
 Note that per-second billing does not exist for Windows VMs anywhere — AWS bills
 Windows per hour and Azure per minute, because of the licence. The free runner is
 the better answer regardless.
+
+## Build a bot that plays, not a script that types
+
+Fixed key sequences are cheap to write and they will lie to you. A script cannot
+look at a price and decide, so it measures the floor of your difficulty curve and
+nothing else. Ours reported a sensible-looking 27% win rate while the game was in
+fact trivial.
+
+Write a bot that reads the world state and drives the real UI — moving the same
+cursor and pressing the same keys a player would. Compile it into the test
+harness only, so it costs nothing in the shipped binary.
+
+The first run of convoy's bot won **90%** of games. That single number was worth
+more than every scripted test combined: it said the game had no difficulty curve
+for anyone who understood it. Lengthening the route and thinning the settlements
+brought competent play to 53% and careless play to 0%, which is the shape a
+roguelike wants.
+
+Balance against the bot, not against the script.

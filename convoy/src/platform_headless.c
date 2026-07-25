@@ -121,7 +121,10 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
     return 1;
 }
 
+#include "bot.h"
+
 const World *game_world(GameMemory *mem);
+void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *title);
 
 // Renders the synth to a WAV and reports level statistics. There is no way to
 // listen to anything on this machine, so the check is numeric: non-silent,
@@ -209,6 +212,8 @@ int main(int argc, char **argv) {
     int         verbose = 0;
     int         wav_secs = 0;
     int         skip_title = 0;
+    int         bot_mode = 0;
+    int         bot_float = 30;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -219,6 +224,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-v")) verbose = 1;
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) wav_secs = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-T")) skip_title = 1;
+        else if (!strcmp(argv[i], "-B")) bot_mode = 1;
+        else if (!strcmp(argv[i], "-F") && i + 1 < argc) bot_float = atoi(argv[++i]);
     }
 
     GameMemory mem = {0};
@@ -241,6 +248,47 @@ int main(int argc, char **argv) {
 
     Input in = {0};
     int dumped = 0;
+
+    // ---- bot mode ----------------------------------------------------
+    // The bot plays through the real UI: it presses the same keys a player
+    // would, one per step, and never touches the simulation directly.
+    if (bot_mode) {
+        Bot bot;
+        bot_init(&bot, bot_float);
+
+        int steps = 0;
+        const int LIMIT = 4000;      // generous; a run is ~60 decisions
+        while (steps++ < LIMIT) {
+            const World *w = game_world(&mem);
+            if (w->state == ST_DEAD || w->state == ST_WON) break;
+
+            int sel = 0, map_sel = 0, title = 0;
+            game_ui(&mem, &sel, &map_sel, &title);
+            int btn = bot_step(&bot, w, sel, map_sel, title);
+            if (btn < 0) break;
+
+            memset(&in, 0, sizeof in);
+            in.down[btn] = in.pressed[btn] = 1;
+            game_update(&mem, &in, &fb);
+            memset(&in, 0, sizeof in);
+            game_update(&mem, &in, &fb);
+
+            if (verbose) trace(steps, '*', game_world(&mem));
+            if (every > 0 && (steps % every) == 0) {
+                char path[512];
+                snprintf(path, sizeof path, "%s/bot_%04d.png", outdir, steps);
+                write_png(path, pixels, FB_W, FB_H);
+                ++dumped;
+            }
+        }
+
+        const World *w = game_world(&mem);
+        printf("BOT seed=%u %s sector=%d day=%d credits=%d cargo=%d steps=%d\n",
+               seed,
+               w->state == ST_WON ? "WON" : (w->state == ST_DEAD ? "DEAD" : "STALLED"),
+               w->sector, w->day, w->credits, world_cargo(w), steps);
+        return 0;
+    }
 
     // Dismiss the title screen so scripts describe the run itself.
     if (skip_title) {
