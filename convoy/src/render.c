@@ -353,7 +353,7 @@ void draw_wipe(Framebuffer *fb, int t) {
         const uint8_t *brow = BAYER + ((y & 3) << 2);
         for (int x = 0; x < fb->w; ++x) {
             // The diagonal term makes the wipe sweep rather than dissolve.
-            int edge = t + (x + y) / 6 - 60;
+            int edge = t + (x + y) / 4 - 40;
             if (edge < 0) edge = 0;
             if (edge > 255) edge = 255;
             if ((edge >> 4) <= brow[x & 3]) row[x] = PALETTE[C_INK];
@@ -501,6 +501,69 @@ int draw_key(Framebuffer *fb, int x, int y, int glyph, int scale) {
 // Up means this market charges more than the player has seen elsewhere, which
 // is where you want to be selling; down means cheap, which is where you buy.
 // Colour follows opportunity, not direction.
+// 16x16 design units at `s` pixels each. Everything -- skin, headwear, eyes,
+// the set of the mouth -- comes off the seed, so five characters cost no art
+// and a sixth costs none either. `mood` is -1..1 and only moves the mouth.
+void draw_portrait(Framebuffer *fb, int x, int y, int s, uint32_t seed, int mood) {
+    static const uint32_t SKIN[4] = { 0xC9926A, 0x8A5F42, 0xE0B48A, 0x6E4630 };
+    static const uint32_t CLOTH[4]= { 0xA84B20, 0x4A6B7A, 0x7A6044, 0x5A4A6B };
+
+    uint32_t h = seed * 2654435761u;
+    uint32_t skin  = SKIN [(h >> 3) & 3];
+    uint32_t cloth = CLOTH[(h >> 7) & 3];
+    int hat   = (h >> 11) & 3;      // 0 none, 1 cap, 2 wrap, 3 goggles-up
+    int beard = (h >> 15) & 1;
+    int scar  = (h >> 17) & 1;
+
+    // Shoulders, then head.
+    fill_rect(fb, x,          y + 11 * s, 16 * s, 5 * s, cloth);
+    fill_rect(fb, x + 3 * s,  y + 2 * s,  10 * s, 10 * s, skin);
+    fill_rect(fb, x + 2 * s,  y + 5 * s,   1 * s,  4 * s, skin);   // ears
+    fill_rect(fb, x + 13 * s, y + 5 * s,   1 * s,  4 * s, skin);
+
+    // Eyes: a dark bar each, which reads at 16px far better than pupils.
+    fill_rect(fb, x + 5 * s, y + 6 * s, 2 * s, 2 * s, PALETTE[C_INK]);
+    fill_rect(fb, x + 9 * s, y + 6 * s, 2 * s, 2 * s, PALETTE[C_INK]);
+
+    if (beard) fill_rect(fb, x + 4 * s, y + 9 * s, 8 * s, 3 * s,
+                         rgb_lerp(skin, PALETTE[C_INK], 130));
+    if (scar)  fill_rect(fb, x + 4 * s, y + 4 * s, 1 * s, 5 * s,
+                         rgb_lerp(skin, PALETTE[C_BAD], 120));
+
+    // Mouth: flat, down or up. One row of pixels carries the whole attitude.
+    int my = y + 10 * s;
+    if (mood < 0) {
+        fill_rect(fb, x + 6 * s, my,          4 * s, s, PALETTE[C_INK]);
+        fill_rect(fb, x + 5 * s, my - s,      1 * s, s, PALETTE[C_INK]);
+        fill_rect(fb, x + 10 * s, my - s,     1 * s, s, PALETTE[C_INK]);
+    } else if (mood > 0) {
+        fill_rect(fb, x + 6 * s, my,          4 * s, s, PALETTE[C_INK]);
+        fill_rect(fb, x + 5 * s, my + s,      1 * s, s, PALETTE[C_INK]);
+        fill_rect(fb, x + 10 * s, my + s,     1 * s, s, PALETTE[C_INK]);
+    } else {
+        fill_rect(fb, x + 6 * s, my, 5 * s, s, PALETTE[C_INK]);
+    }
+
+    switch (hat) {
+    case 1:  // cap with a brim
+        fill_rect(fb, x + 3 * s, y,         10 * s, 3 * s, cloth);
+        fill_rect(fb, x + 2 * s, y + 3 * s, 12 * s, 1 * s, PALETTE[C_INK]);
+        break;
+    case 2:  // head wrap against the dust
+        fill_rect(fb, x + 2 * s, y + s,     12 * s, 4 * s, PALETTE[C_BONE]);
+        fill_rect(fb, x + 2 * s, y + 5 * s,  2 * s, 6 * s, PALETTE[C_BONE]);
+        break;
+    case 3:  // goggles pushed up on the forehead
+        fill_rect(fb, x + 3 * s, y + 2 * s, 10 * s, 2 * s, PALETTE[C_ROAD]);
+        fill_rect(fb, x + 4 * s, y + 2 * s,  3 * s, 2 * s, PALETTE[C_SKY]);
+        fill_rect(fb, x + 9 * s, y + 2 * s,  3 * s, 2 * s, PALETTE[C_SKY]);
+        break;
+    default: break;
+    }
+
+    draw_bevel(fb, x, y, 16 * s, 16 * s, 0);
+}
+
 void draw_trend(Framebuffer *fb, int x, int y, int dir, int scale) {
     if (dir > 0)      draw_glyph(fb, x, y, G_UP,    scale, PALETTE[C_WARN]);
     else if (dir < 0) draw_glyph(fb, x, y, G_DOWN,  scale, PALETTE[C_GOOD]);

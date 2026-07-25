@@ -173,7 +173,11 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         gs->from_index  = (uint8_t)prev_index;
         gs->travel = 26;
     }
-    if (w->state != prev_state) gs->trans = 22;
+    // Only the jarring transitions get a wipe. Running one on every state
+    // change means a player spends a noticeable share of the run looking at a
+    // dither pattern instead of the game.
+    if (w->state != prev_state &&
+        (w->state == ST_EVENT || prev_state == ST_EVENT)) gs->trans = 12;
     if (gs->trans  > 0) gs->trans--;
     if (gs->travel > 0) gs->travel--;
 
@@ -247,7 +251,7 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     ui_hud(fb, w);
 
     // The wipe sits over everything, including the HUD.
-    if (gs->trans > 0) draw_wipe(fb, 255 - gs->trans * 255 / 22);
+    if (gs->trans > 0) draw_wipe(fb, 255 - gs->trans * 255 / 12);
 }
 
 void game_audio(GameMemory *mem, AudioBuffer *ab) {

@@ -101,6 +101,19 @@ typedef struct {
 
 enum { CONTRACT_NONE, CONTRACT_OFFERED, CONTRACT_TAKEN };
 
+// People you meet more than once. Regard shifts with how you treat them and
+// changes what they ask for next time, so a character is a mechanic rather
+// than a portrait with a line of dialogue attached.
+enum {
+    CHAR_NONE = -1,
+    CHAR_CHIEF,     // raiders, tolls, checkpoints
+    CHAR_CAPTAIN,   // the rival convoy, running west
+    CHAR_TRADER,    // road traders and radio tip-offs
+    CHAR_DOC,       // sickness and plague
+    CHAR_DRIFTER,   // walkers, wrecks, caches
+    CHAR_COUNT
+};
+
 // One-off purchases that change the rules for the rest of the run.
 enum { UPG_HOLD, UPG_ECON, UPG_ARMOUR, UPG_TANKS, UPG_COUNT };
 
@@ -141,6 +154,9 @@ typedef struct {
     int8_t   kit_failed;           // an upgrade broke on the last hop, or -1
     uint8_t  offer_crew;           // who is looking for work here, 0xFF if none
 
+    uint8_t  met   [CHAR_COUNT];   // times encountered
+    int8_t   regard[CHAR_COUNT];   // -3..+3, shifts with what you did
+
     Event    event;
     Contract job;      // one at a time: two would just be arithmetic
     int      job_paid; // reward banked this stop, for the UI to celebrate
@@ -170,6 +186,8 @@ int  world_committed (const World *w, int good);
 int  world_payload   (const World *w);
 // Which of the endings this run has earned.
 int  world_outcome   (const World *w);
+// Who is on the other side of this encounter, or CHAR_NONE.
+int  world_event_char(int kind);
 
 int  world_cargo_cap (const World *w);   // grows with fitted racks
 int  world_crew_count(const World *w);

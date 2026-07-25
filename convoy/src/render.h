@@ -89,5 +89,8 @@ int  draw_key   (Framebuffer *fb, int x, int y, int glyph, int scale);
 int  key_w      (int scale);
 // Small up/down/flat indicator used for price trends.
 void draw_trend (Framebuffer *fb, int x, int y, int dir, int scale);
+// A face built from shapes off a seed: same vocabulary as the goods icons, and
+// like everything else here it is generated rather than stored.
+void draw_portrait(Framebuffer *fb, int x, int y, int s, uint32_t seed, int mood);
 
 #endif

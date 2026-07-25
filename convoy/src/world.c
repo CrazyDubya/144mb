@@ -349,6 +349,13 @@ static void roll_offers(World *w) {
 
     int hops = (SECTORS - 1) - w->sector;
 
+    // Late in the run it is dark, and a dark settlement has less on offer:
+    // the forecourt is shut, the job board is thin, fewer hands are looking
+    // for work. This is the time-of-day arc doing something rather than just
+    // looking like something -- and it sharpens the run's shape, because the
+    // last sectors are exactly where you can least afford to be turned away.
+    int night = (w->sector * 255 / (SECTORS - 1)) > 170;
+
     // Sized for whichever list is longer: this scratch array is reused for
     // both, and sizing it to UPG_COUNT alone overflowed it by one on the crew
     // pass, which corrupted the stack rather than failing honestly.
@@ -368,7 +375,7 @@ static void roll_offers(World *w) {
         }
         // Guaranteed early: kit has to appear while there is road left for it
         // to matter on, so the first three sectors always stock something.
-        int chance = (w->sector <= 2) ? 100 : 55;
+        int chance = (w->sector <= 2) ? 100 : (night ? 30 : 55);
         if (n && rng_range(&w->rng, 0, 99) < chance) {
             int pick = rng_range(&w->rng, 0, total - 1);
             for (int i = 0; i < n; ++i) {
@@ -384,7 +391,7 @@ static void roll_offers(World *w) {
     if (hops >= 5) {
         int n = 0;
         for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
-        if (n && rng_range(&w->rng, 0, 99) < 40)
+        if (n && rng_range(&w->rng, 0, 99) < (night ? 20 : 40))
             w->offer_crew = (uint8_t)avail[rng_range(&w->rng, 0, n - 1)];
     }
 }
@@ -419,7 +426,9 @@ static void contract_tick(World *w) {
     // Only worth offering while there is road left to carry it down.
     int hops_left = (SECTORS - 1) - w->sector;
     if (hops_left < 3) return;
-    if (rng_range(&w->rng, 0, 99) < 55) return;      // not every stall has work
+    // A dark town posts less work.
+    if (rng_range(&w->rng, 0, 99) <
+        (((w->sector * 255 / (SECTORS - 1)) > 170) ? 72 : 55)) return;
 
     int good = rng_range(&w->rng, 0, GOODS_COUNT - 1);
     int qty  = rng_range(&w->rng, 2, 5);
@@ -433,6 +442,30 @@ static void contract_tick(World *w) {
     // of starting capital and made the rest of the economy irrelevant.
     j->reward    = (int16_t)(qty * BASE_PRICE[good] * (7 + dist * 2) / 10);
     j->state     = CONTRACT_OFFERED;
+}
+
+// ---------------------------------------------------------------- people
+int world_event_char(int kind) {
+    switch (kind) {
+    case EV_RAID: case EV_TOLL: case EV_CHECKPOINT: return CHAR_CHIEF;
+    case EV_RIVAL:                                  return CHAR_CAPTAIN;
+    case EV_TRADER: case EV_SIGNAL:                 return CHAR_TRADER;
+    case EV_SICK: case EV_PLAGUE:                   return CHAR_DOC;
+    case EV_REFUGEE: case EV_WRECK: case EV_CACHE:  return CHAR_DRIFTER;
+    default:                                        return CHAR_NONE;
+    }
+}
+
+// Dealing with someone shifts how they treat you next time. Paying what is
+// asked earns a little regard; refusing costs some. It is deliberately small
+// per meeting -- the point is that a run accumulates a history.
+static void regard_shift(World *w, int kind, int accepted) {
+    int who = world_event_char(kind);
+    if (who == CHAR_NONE) return;
+    int r = w->regard[who] + (accepted ? 1 : -1);
+    if (r >  3) r =  3;
+    if (r < -3) r = -3;
+    w->regard[who] = (int8_t)r;
 }
 
 // ---------------------------------------------------------------- payload
@@ -608,6 +641,7 @@ static void end_event(World *w) {
 void world_accept(World *w) {
     if (w->state != ST_EVENT) return;
     if (!world_can_accept(w)) return;   // can't afford it; must decline
+    regard_shift(w, w->event.kind, 1);
 
     Event *e = &w->event;
     if (e->pay_good >= 0) w->held[e->pay_good] -= e->pay_qty;
@@ -623,6 +657,7 @@ void world_accept(World *w) {
 
 void world_decline(World *w) {
     if (w->state != ST_EVENT) return;
+    regard_shift(w, w->event.kind, 0);
     Event *e = &w->event;
 
     if (e->lose_qty > 0) {
@@ -754,6 +789,20 @@ static void roll_event(World *w) {
         if (w->crew[CREW_TRADER]) e->gain_credits += 40;  // knows what a tip is worth
         e->lose_qty = 0;
         break;
+    }
+
+    // Someone who has dealt with you before charges accordingly. Good standing
+    // shaves the price; bad standing adds to it, and to what refusing costs.
+    {
+        int who = world_event_char(kind);
+        if (who != CHAR_NONE) {
+            w->met[who]++;
+            int r = w->regard[who];
+            if (r > 0 && e->pay_qty  > 1) e->pay_qty--;
+            if (r < 0 && e->pay_qty  > 0) e->pay_qty++;
+            if (r < 0 && e->lose_qty > 0) e->lose_qty++;
+            if (r > 1 && e->gain_qty > 0) e->gain_qty++;
+        }
     }
 
     // Anyone who searches the hold past the halfway mark knows what the crates

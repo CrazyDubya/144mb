@@ -78,11 +78,16 @@ void draw_convoy(Framebuffer *fb, int x, int y, int s, uint32_t tick, int wrecke
 // at a glance, without a clock or a day counter.
 typedef struct { uint32_t hi, mid, low, sun, glow, land; } SkyKey;
 
+// Deliberately kept inside the game's warm range. A physically plausible night
+// is cold blue, and it looked wrong: the panels, icons and goods colours are
+// all warm, so a blue-grey backdrop fought every one of them and the screen
+// read as muddy rather than dark. This is a dusty, lamp-lit night instead --
+// still clearly night, still recognisably the same desert.
 static const SkyKey SKY_KEY[4] = {
-    /* dawn  */ { 0x2E2A3E, 0x7A5A62, 0xC98F70, 0xFFE6BE, 0xE8905A, 0x5A4A44 },
+    /* dawn  */ { 0x3A2C34, 0x8A6055, 0xC98F70, 0xFFE6BE, 0xE8905A, 0x6A5648 },
     /* noon  */ { 0x7A6A5A, 0xB08A5E, 0xC9A87C, 0xF7E0A8, 0xE8B060, 0x8A6F4E },
-    /* dusk  */ { 0x4A3A52, 0xA05C42, 0xD08A46, 0xFFD08A, 0xE07038, 0x6B4A38 },
-    /* night */ { 0x0E1020, 0x1E2438, 0x38405A, 0xBFD0E8, 0x5A6A90, 0x2A2A36 },
+    /* dusk  */ { 0x4A3038, 0xA05C42, 0xD08A46, 0xFFD08A, 0xE07038, 0x6B4A38 },
+    /* night */ { 0x241A20, 0x3A2A28, 0x554038, 0xF0E4C8, 0x8A6A4E, 0x4A3A30 },
 };
 
 static SkyKey sky_at(int phase) {
@@ -153,11 +158,12 @@ void scene_draw(Framebuffer *fb, uint32_t tick, int depth, int tension,
     for (int i = 0; i < 3; ++i) {
         const DuneLayer *l = &LAYERS[i];
         int scroll = (int)(tick / 8) * l->drift;
-        // The land takes its cast from the sky, so dusk reddens the sand and
-        // night drains it, rather than the ground staying noon-brown all run.
-        uint32_t lit   = rgb_lerp(PALETTE[l->lit],   sky.land, 150);
-        uint32_t shade = rgb_lerp(PALETTE[l->shade], sky.land, 120);
-        uint32_t crest = rgb_lerp(PALETTE[C_HAZE],   sky.low,  120);
+        // The land takes a hint of the sky and no more. Blending it most of
+        // the way there drained the desert of its own colour and made every
+        // panel sitting on top of it look wrong.
+        uint32_t lit   = rgb_lerp(PALETTE[l->lit],   sky.land, 70);
+        uint32_t shade = rgb_lerp(PALETTE[l->shade], sky.land, 55);
+        uint32_t crest = rgb_lerp(PALETTE[C_HAZE],   sky.low,  70);
         for (int x = 0; x < fb->w; ++x) {
             int top = horizon + (i * 10) - dune_y(l, x + scroll, depth);
             if (top < 0) top = 0;
