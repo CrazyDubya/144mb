@@ -2562,3 +2562,111 @@ to the people actually met so it never leaves an empty box on screen.
     win rates                          68/50/32   unchanged
     watchlist assertion                    pass
     ASan/UBSan                            clean
+
+---
+
+# v6 P3 — a verb only this town has
+
+Five services, one per archetype, in the archetype's own location. GENERAL has
+none: it is the baseline the specialists are read against, the same job its
+all-zeros row in `ARCH_MOD` does for prices.
+
+    WELL       three water, whatever the shelf says
+    REFINERY   two scrap becomes two fuel
+    CLINIC     squares you with whoever is closest to leaving
+    SCRAPYARD  list price for metal, or a broken fitting put right
+    ARMOURY    guns at your back for four hops
+
+Two of them exist to give an existing mechanic the counterplay it never had.
+Salvaged kit failing was a pure loss with no recourse. The desertion warning
+was a warning about something a player could do nothing about, which is an
+announcement, not a warning.
+
+## The A/B was measuring the wrong thing
+
+Granted free, the five came back **+2 +2 +1 +0 +0** against a >= +4 bar. That
+reading is wrong, and the baseline says why: NORMAL was 50% before this phase
+and 68% after. **Services were worth +18 points in aggregate** while each one
+granted free measured near zero.
+
+The forced-policy A/B measures *marginal* value on top of what the bot already
+does — and the bot was already taking a service in 91% of runs. For crew and
+kit, which it rarely bought, granting one free measured the design. Here it
+measured nothing, because the thing was already being had.
+
+The clinic makes the point exactly. Unconditionally it is **+0, used in 6% of
+runs** — apparently furniture. Measured on convoys that have a hand aboard, the
+population the service is *for*:
+
+    with a hand aboard:  baseline 58%   clinic granted 64%   +6
+    clinic used in 54% of runs with a hand aboard
+
+Same service, same build. The first reading averaged over 83% of runs with
+nobody to treat.
+
+## Retuned, because +18 is a difficulty setting
+
+Water kills seven of every ten convoys, so a cheap reliable source of it is not
+a service. First cut charged 1.5x list for four water and turned two scrap into
+three fuel: a 2.7x and a 1.75x return on the two goods that decide whether a run
+ends.
+
+    /                       well    refinery   d=0/d=1/d=2
+    first cut               1.5x, 4 water   3 fuel    71/68/36
+    weakened                2.5x, 3 water   2 fuel    71/58/36
+    shipped                 3.5x, 3 water   2 fuel    68/52/32
+
+Against 68/50/32 before the phase: **+0/+2/+0**, inside the +6 budget. Banked
+for P7 rather than retuned here.
+
+## Usage
+
+    WELL       56% of runs        REFINERY   51%
+    SCRAPYARD  48%                ARMOURY    12%
+    CLINIC      6% (54% of runs with a hand aboard)
+    any service used in 93% of runs
+
+The scrapyard started at **0.03 uses per run** — furniture by this project's
+own standard, because a refit needs something to have broken first. It gained a
+second mode: when nothing is broken they pay list for metal, with no 20%
+spread. That is a reason to route there that does not depend on bad luck having
+already happened. 0.03 -> 0.62.
+
+`ARMOURY` at 12% is the one below the band and is left there. Extending the
+escort from three hops to four moved it not at all, so the limit is the bot's
+valuation, not the duration — and the A/B says the escort is worth +1. A low
+take rate for a low-value option is an accurate reading, not a bug to tune away.
+
+## Seven collisions from two blocks
+
+The overlap probe was worth the phase on its own. The service line alone
+collided with, in order: the payback line (fixed by anchoring to a returned
+bottom), DEPART (fixed by clamping), the road-ahead line (the clamp pushed it
+up), the fitted list (the clamp again), and the payback line a second time
+(advanced by text height when the keycap is 22px tall).
+
+Five positions, five collisions. That is the layout saying the block does not
+fit, not that it needs a better offset. The fixes that held were structural:
+
+- **The road east moved to the right column.** It is route information, not
+  forecourt information, and the forecourt column had more in it than it had
+  height. Better home on the merits as well as the only one with space.
+- **The service became the headline**, above the fitted list rather than below
+  it. Everything else in that column grows; a fixed block underneath a growing
+  one must be clamped, and the clamp is what drove it into four different
+  things. Nothing grows above the top of a panel.
+- **The errand did the same** on the ROOM tab, for the same reason.
+- **`draw_outfit`'s roster is now bounded.** It is the growing thing everything
+  else was being clamped away from. With a full crew and a favour on the table
+  it ran through the depart row — **two frames in 750 seeds**, a margin no
+  screenshot would ever have caught.
+
+Final: **0 overlaps across 900 seeds x 3 difficulties.**
+
+## Gate
+
+    win rates       68/52/32   (pre-P3 68/50/32)
+    stalls                 0
+    overlaps               0   n=300 x 3
+    STRIP        240 / 360
+    -X, ASan/UBSan, -Z  clean

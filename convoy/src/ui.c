@@ -65,6 +65,15 @@ static const char *const TAB_NAME[TAB_COUNT] = {
     T_TAB_CONTRACTS, T_TAB_JOURNAL
 };
 
+const char *const SVC_NAME[6] = {
+    T_SVC_WELL, T_SVC_REFINERY, T_SVC_ARMOURY,
+    T_SVC_CLINIC, T_SVC_SCRAPYARD, 0,
+};
+const char *const SVC_DESC[6] = {
+    T_SVC_WELL_D, T_SVC_REFINERY_D, T_SVC_ARMOURY_D,
+    T_SVC_CLINIC_D, T_SVC_SCRAPYARD_D, 0,
+};
+
 const char *const WORKS_NAME[6] = {
     T_WORKS_WELL, T_WORKS_REFINERY, T_WORKS_ARMOURY,
     T_WORKS_CLINIC, T_WORKS_SCRAPYARD, T_WORKS_GENERAL,
@@ -125,7 +134,8 @@ int ui_tab_rows(const GameState *gs, int tab) {
     // One row, and only when there is something to press it for.
     case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
     case TAB_JOURNAL:   return 0;              // a record, not a menu
-    case TAB_GARAGE:    return gs->w.offer_upg  < UPG_COUNT  ? 1 : 0;
+    case TAB_GARAGE:    return (gs->w.offer_upg < UPG_COUNT
+                                || world_service_kind(&gs->w) != SVC_NONE) ? 1 : 0;
     // A hire offer OR a favour being asked. Only the hire was counted, so a
     // hand asking for something produced a tab whose Z and X were both live
     // and whose row count was zero -- the cursor could not land, and nothing
@@ -145,6 +155,10 @@ int ui_tab_live(const GameState *gs, int tab) {
     // them, or where the convoy already carries something worth reviewing.
     if (tab == TAB_GARAGE) {
         if (gs->w.offer_upg < UPG_COUNT) return 1;
+        // The works exists when it has a trade to do, even with nothing on the
+        // forecourt. Without this the location vanishes exactly when its own
+        // speciality is what you came for.
+        if (world_service_kind(&gs->w) != SVC_NONE) return 1;
         for (int i = 0; i < UPG_COUNT; ++i) if (gs->w.upgrade[i]) return 1;
         return 0;
     }
@@ -175,9 +189,9 @@ int ui_tab_live(const GameState *gs, int tab) {
 // were written.
 //
 // A binding a player cannot see is not a mechanic. It is a secret.
-static void draw_errand(Framebuffer *fb, const World *w, int x, int y, int pw) {
+static int draw_errand(Framebuffer *fb, const World *w, int x, int y, int pw) {
     const Errand *e = &w->errand;
-    if (e->state == ERR_NONE || e->state == ERR_DONE) return;
+    if (e->state == ERR_NONE || e->state == ERR_DONE) return y;
     (void)pw;
 
     int who = CHAR_OF_ROLE[e->who];
@@ -219,6 +233,7 @@ static void draw_errand(Framebuffer *fb, const World *w, int x, int y, int pw) {
         qx += draw_text(fb, qx, ly, WHO_NAME[who], 1, PALETTE[C_BAD]) + 6;
         draw_text(fb, qx, ly, T_ERR_QUIT, 1, PALETTE[C_BAD]);
     }
+    return ly + 26;
 }
 
 static void draw_journal(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
@@ -312,9 +327,19 @@ static int draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
     }
 
     // Everything already fitted or aboard, so the tab is a status board too.
+    //
+    // Bounded, because this list is the growing thing that everything else in
+    // the column has had to be clamped away from. With a full crew and a
+    // favour on the table it ran through the depart row -- two frames in seven
+    // hundred and fifty seeds, which is a margin no screenshot was ever going
+    // to catch. Bounding it here fixes the class rather than the instance:
+    // whatever is drawn below is now safe by construction instead of by an
+    // offset somebody has to keep correct.
+    const int floor_y = 58 + 62 + 26 + GOODS_COUNT * 32 - 26;   // above DEPART
     int ly = y + 86, any = 0;
     for (int i = 0; i < count; ++i) {
         if (!owned[i]) continue;
+        if (ly > floor_y) break;
         draw_text(fb, x + 18, ly, own_msg, 1, PALETTE[C_GOOD]);
         draw_text(fb, x + 18 + text_w(own_msg, 1) + 10, ly, names[i], 1,
                   PALETTE[C_BONE]);
@@ -327,7 +352,7 @@ static int draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
 
 // Everything the garage knows that the base panel does not: the condition of
 // what is on offer, what it should return, and what is still on the road.
-static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y,
+static int draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y,
                               int pw, int below) {
     const World *w = &gs->w;
     (void)pw;
@@ -348,17 +373,37 @@ static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y,
                     PALETTE[C_WARN]);
     }
 
-    // The road east, counted off the map the player can already see.
+    // The road east moved to the right column -- see draw_road_ahead.
+    //
+    // It was the last block in this one, and the forecourt column simply had
+    // more in it than it had height: fitted list, then the local trade, then
+    // payback, then this. Every arrangement collided with something, because
+    // there was no arrangement that fit. It is route information rather than
+    // forecourt information, and it now sits with the other standing context
+    // where there is room for it, which is a better home on the merits as well
+    // as the only one with space.
+    return below + 12;
+}
+
+// What the map already shows, counted. Right column, under the watchlist.
+static void draw_road_ahead(Framebuffer *fb, const World *w, int x, int y, int cw) {
     int storms = 0, events = 0;
     world_road_ahead(w, &storms, &events);
-    int ry = below + 18;
-    draw_text(fb, x + 14, ry, T_ROAD_AHEAD, 1, PALETTE[C_BONE]);
-    int rx = x + 14;
-    rx += text_w(T_ROAD_AHEAD, 1) + 16;
-    rx += draw_number(fb, rx, ry, storms, 1, PALETTE[C_WARN]) + 6;
-    rx += draw_text(fb, rx, ry, T_AHEAD_STORMS, 1, PALETTE[C_DIM]) + 14;
-    rx += draw_number(fb, rx, ry, events, 1, PALETTE[C_BAD]) + 6;
-    draw_text(fb, rx, ry, T_AHEAD_EVENTS, 1, PALETTE[C_DIM]);
+
+    // What this town will do for you, if anything. Standing context, which is
+    // what this whole column is.
+    int k = world_service_kind(w);
+    int h = 44 + (k != SVC_NONE ? 26 : 0);
+    draw_panel(fb, x, y, cw, h);
+    if (k != SVC_NONE) {
+        draw_text(fb, x + 10, y + h - 20, SVC_DESC[k], 1, PALETTE[C_DIM]);
+    }
+    draw_text(fb, x + 10, y + 8, T_ROAD_AHEAD, 1, PALETTE[C_BONE]);
+    int rx = x + 10;
+    rx += draw_number(fb, rx, y + 24, storms, 1, PALETTE[C_WARN]) + 6;
+    rx += draw_text(fb, rx, y + 24, T_AHEAD_STORMS, 1, PALETTE[C_DIM]) + 12;
+    rx += draw_number(fb, rx, y + 24, events, 1, PALETTE[C_BAD]) + 6;
+    draw_text(fb, rx, y + 24, T_AHEAD_EVENTS, 1, PALETTE[C_DIM]);
 }
 
 // ---------------------------------------------------------------- contracts
@@ -691,10 +736,10 @@ void ui_map(Framebuffer *fb, GameState *gs) {
 #ifdef CONVOY_INSTRUMENT
 int ui_watchlist_rows = 0;   // the harness checks this instead of tab reachability
 #endif
-static void draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw) {
+static int draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw) {
     int any = 0;
     for (int i = 0; i < CHAR_COUNT; ++i) if (w->met[i]) { any = 1; break; }
-    if (!any) return;
+    if (!any) return y;
 
     // A panel behind it. Without one the column is drawn straight onto the
     // sky, and the standing lines -- which are coloured, and the point of the
@@ -731,6 +776,7 @@ static void draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw
         INSTR_UI(ui_watchlist_rows++);
         if (ly > y + cw + 180) break;   // never run off the panel
     }
+    return ly + 4;
 }
 
 // ---------------------------------------------------------------- trade
@@ -741,7 +787,8 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     const int x = 26, y = 58, pw = 420, rowh = 32;
     // The right column. 180px wide starting at 452, empty since the game had a
     // trade screen at all.
-    draw_watchlist(fb, w, 452, y + 4, 180);
+    int rcol = draw_watchlist(fb, w, 452, y + 4, 180);
+    draw_road_ahead(fb, w, 452, rcol + 8, 180);
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
     // 64, not 50: the row block moved down 14px to give PRICE and HELD their
@@ -799,73 +846,59 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_JOURNAL) draw_journal(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_GARAGE) {
-            int below = draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
+            // The local trade goes FIRST, above the forecourt list.
+            //
+            // It is what this place does -- the reason the location is called
+            // THE STILLS and not GARAGE -- so it reads as the headline rather
+            // than a footnote. It is also the only position that cannot break:
+            // everything else in this column grows (the fitted list by what is
+            // aboard, the payback line by whether there is an offer), and a
+            // fixed block underneath a growing one has to be clamped, which is
+            // what drove it into the list, into DEPART, into the payback line
+            // and into the road-ahead line in turn. Nothing grows above the
+            // top of the panel.
+            int gy = y + 44 + th;
+            int k  = world_service_kind(&gs->w);
+            if (k != SVC_NONE) {
+                int kx = x + 14;
+                kx += draw_key(fb, kx, gy, G_KEY_Z, 2) + 6;
+                kx += draw_text(fb, kx, gy + 4, SVC_NAME[k], 1,
+                                PALETTE[world_can_service(&gs->w) ? C_BONE : C_DIM]) + 10;
+                draw_number(fb, kx, gy + 4, world_service_price(&gs->w), 1,
+                            PALETTE[world_can_service(&gs->w) ? C_WARN : C_BAD]);
+                gy += 28;
+            }
+            int below = draw_outfit(fb, gs, x, gy, pw, gs->w.offer_upg, UPG_COUNT,
                         UPG_NAME, UPG_DESC, gs->w.upgrade,
                         gs->w.offer_upg < UPG_COUNT
                             ? world_upg_price(&gs->w, gs->w.offer_upg,
                                               gs->w.offer_salvaged) : 0,
                         T_NO_GARAGE, T_BUY_UPGRADE, T_OWNED);
-            draw_garage_extra(fb, gs, x, y + 44 + th, pw, below + 6);
+            draw_garage_extra(fb, gs, x, gy, pw, below + 6);
         }
         else if (gs->tab == TAB_CREW) {
-            int below = draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew,
+            // Same shape as the works tab, for the same reason: the thing
+            // being asked of you goes above the roster, because the roster
+            // grows and a block clamped underneath a growing list ends up
+            // inside it. This one collided with the crew names on exactly two
+            // frames in six hundred seeds -- the kind of margin that is found
+            // by a probe and not by a person.
+            int cy2 = y + 44 + th;
+            const Errand *er = &gs->w.errand;
+            int has_err = (er->state != ERR_NONE && er->state != ERR_DONE);
+            if (has_err) cy2 = draw_errand(fb, &gs->w, x, cy2, pw);
+
+            int below = draw_outfit(fb, gs, x, cy2, pw, gs->w.offer_crew,
                         CREW_COUNT, CREW_NAME, CREW_DESC, gs->w.crew,
                         gs->w.offer_crew < CREW_COUNT
                             ? world_crew_price(&gs->w, gs->w.offer_crew) : 0,
                         T_NO_CREW, T_HIRE, T_HIRED);
-            // The standing cost of every hand aboard, stated where it is felt.
-            //
-            // From draw_outfit's returned bottom, not from a constant. It used
-            // to sit at a fixed +82, and the aboard-list grows by a line per
-            // hand -- so a convoy carrying anyone had the roster drawn straight
-            // through this warning. The garage branch above has always taken
-            // the returned y; this one was written with a number that happened
-            // to be right for an empty crew, which was the only crew there was
-            // when it was written.
-            // The errand goes directly under the roster; the water warning is
-            // pinned just above the depart row.
-            //
-            // Both used to hang off `below`, and with a hand aboard AND a
-            // favour being asked the errand's Z/X keycaps landed on the DEPART
-            // keycap 16px below -- 22px caps, so they overlapped outright, and
-            // the block ran off the bottom of the panel with it. That is the
-            // same fixed-offset-against-a-growing-list fault as the warning
-            // this branch had already been fixed for, reintroduced two edits
-            // later by stacking a three-line block on the same anchor.
-            //
-            // So the growing thing hangs off `below` and the one-line thing is
-            // measured back from the fixed row it must not touch.
-            // One anchor, and only one of the two ever drawn.
-            //
-            // The roster grows a line per hand, so anything below it must hang
-            // off `below`. Pinning the warning to the depart row instead just
-            // moved the collision: the errand's keycaps are 22px tall and
-            // landed on it. Stacking both off `below` fails differently -- a
-            // full crew pushes the pair through the bottom of the panel.
-            //
-            // So they take turns. The warning exists to explain what a hand
-            // costs before you take one; once somebody is aboard and asking a
-            // favour, the favour is what the screen is for. This is a decision
-            // about which of two things matters, which is the honest way out of
-            // a space problem -- the alternative was shrinking both until they
-            // fit and neither could be read.
-            //
-            // The errand is also clamped so it cannot reach the depart row. It
-            // needs about 54px and hangs off a roster that grows a line per
-            // hand, so a full crew pushed its keycaps onto the DEPART keycap --
-            // and a 100-seed sweep at NORMAL reported zero collisions while
-            // 150 seeds at EASY and HARD found it. The clamp is what makes the
-            // layout correct for every roster rather than for the ones that
-            // happened to be sampled.
-            const Errand *er = &gs->w.errand;
-            int depart_y = y + 62 + th + GOODS_COUNT * rowh;
-            if (er->state != ERR_NONE && er->state != ERR_DONE) {
-                int ey = below + 12;
-                if (ey > depart_y - 58) ey = depart_y - 58;
-                draw_errand(fb, &gs->w, x, ey, pw);
-            } else {
+            // The standing water cost, from the returned bottom. Shown only
+            // when no favour is on the table: the warning explains what a hand
+            // costs before you take one, and once somebody is aboard asking
+            // something of you, that is what the screen is for.
+            if (!has_err)
                 draw_text(fb, x + 14, below + 12, T_CREW_WARN, 1, PALETTE[C_BAD]);
-            }
         }
         // Departing is always available, whatever tab is open.
         int dy = y + 62 + th + GOODS_COUNT * rowh;

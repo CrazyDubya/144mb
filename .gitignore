@@ -8,6 +8,7 @@ run/
 media/
 docs/
 *.png
+!*/assets/title-source.png
 *.wav
 *.gif
 

@@ -199,6 +199,19 @@
 #define T_TAB_JOURNAL  "PEOPLE"
 // The watchlist, stated as a plan rather than a number. "REGARD +2" is a stat;
 // "ONE MORE GOOD TURN" tells a player what to do with the rest of their run.
+// The local trade. Each names what the place does, not what the menu does.
+#define T_SVC_WELL      "FILL THE TANKS"
+#define T_SVC_REFINERY  "RUN A BLEND"
+#define T_SVC_CLINIC    "SEE TO THE CREW"
+#define T_SVC_SCRAPYARD "STRIP AND REFIT"
+#define T_SVC_ARMOURY   "HIRE AN ESCORT"
+#define T_SVC_WELL_D      "THREE WATER, SHELF OR NOT"
+#define T_SVC_REFINERY_D  "TWO SCRAP, TWO FUEL"
+#define T_SVC_CLINIC_D    "SQUARES YOU WITH A HAND"
+#define T_SVC_SCRAPYARD_D "LIST PRICE FOR METAL"
+#define T_SVC_ARMOURY_D   "GUNS FOR FOUR HOPS"
+#define T_ESCORT        "ESCORT"
+
 #define T_WATCH_TITLE   "PEOPLE"
 #define T_WATCH_ABOARD  "DRIVING FOR YOU"
 #define T_WATCH_READY   "WOULD DRIVE FOR YOU"
@@ -428,6 +441,8 @@
 #define T_TOWN_B15 "END"
 
 extern const char *const WORKS_NAME[6];
+extern const char *const SVC_NAME[6];
+extern const char *const SVC_DESC[6];
 extern const char *const TOWN_A[16];
 extern const char *const TOWN_B[16];
 extern const char *const GOOD_NAME[5];

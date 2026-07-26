@@ -402,6 +402,11 @@ typedef struct {
     // town cost a call each. Reset on arrival.
     uint8_t  calls_left;
     uint8_t  svc_used;      // the local trade is a once-per-stop thing
+    uint8_t  escort;        // hops of hired guns still with you
+    // Harness-only forced-policy arm: archetype+1, or 0. Grants that service
+    // free at every stop that offers it, so its worth can be measured apart
+    // from whether the bot decides to buy it.
+    uint8_t  svc_forced;
     Rumour   heard[RUMOUR_SLOTS];
     uint8_t  heard_n;
 
@@ -457,6 +462,24 @@ int  world_event_char(int kind);
 
 int  world_cargo_cap (const World *w);   // grows with fitted racks
 int  world_crew_count(const World *w);
+
+// The one trade this place does that no other place does.
+//
+// A settlement was a price row and a name. A service is the reason to route
+// toward an archetype for something other than what it charges: a well will
+// fill your tanks under the market, a scrapyard will put right the kit that
+// broke, a clinic will square you with somebody who is thinking of leaving.
+//
+// One per stop. Two of the five exist to give an existing mechanic the
+// counterplay it never had -- salvaged kit failing was a pure loss with no
+// recourse, and the desertion warning was a warning about something the player
+// could do nothing about, which is not a warning, it is an announcement.
+enum { SVC_NONE = -1 };
+int  world_service_kind (const World *w);           // SVC_NONE, or the archetype
+int  world_service_price(const World *w);
+int  world_can_service  (const World *w);
+void world_service      (World *w);
+void world_service_forced(World *w);
 int  world_water_burn(const World *w);   // per day, given crew and tanks
 int  world_water_burn_on(const World *w, int day);
 int  world_crew_drinks_on(const World *w, int day);

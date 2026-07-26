@@ -1054,6 +1054,146 @@ int world_can_travel(const World *w, int next_index) {
     return !world_hop_costs_fuel(w) || w->held[G_FUEL] >= 1;
 }
 
+// ---------------------------------------------------------------- services
+//
+// GENERAL deliberately has none. It is the baseline the specialists are read
+// against -- the same job its all-zeros row in ARCH_MOD does for prices -- and
+// a trading post that also did something would leave nothing to compare to.
+
+int world_service_kind(const World *w) {
+    const Node *nd = &w->node[w->sector][w->index];
+    if (nd->type != NODE_SETTLE) return SVC_NONE;
+    if (w->svc_used) return SVC_NONE;
+    if (nd->archetype == ARCH_GENERAL) return SVC_NONE;
+
+    // A trade nobody needs is not on offer. This is the guard against the
+    // failure v4 recorded about the garage and the crew board -- "furniture
+    // nobody could afford: across five full bot runs, not one purchase" --
+    // arriving from the other side: furniture nobody has any use for.
+    switch (nd->archetype) {
+    // Two modes, because one of them almost never comes up. A refit needs
+    // something to have broken, which happens 0.03 times a run at a scrapyard
+    // -- furniture, by this project's own standard. When nothing is broken they
+    // will at least pay properly for metal, which is a reason to route here
+    // that does not depend on bad luck having already happened.
+    case ARCH_SCRAPYARD: if (w->kit_failed < 0 && w->held[G_SCRAP] < 2)
+                             return SVC_NONE;
+                         break;
+    case ARCH_CLINIC:    if (world_crew_count(w) == 0)   return SVC_NONE; break;
+    case ARCH_WELL:      if (w->held[G_WATER] >= 12)     return SVC_NONE; break;
+    case ARCH_REFINERY:  if (w->held[G_SCRAP] < 2)       return SVC_NONE; break;
+    case ARCH_ARMOURY:   if (w->escort > 0)              return SVC_NONE; break;
+    default: break;
+    }
+    return nd->archetype;
+}
+
+int world_service_price(const World *w) {
+    const Node *nd = &w->node[w->sector][w->index];
+    switch (nd->archetype) {
+    // Under the market, and that is the whole offer: the well is where water is
+    // cheap, so the thing it does for you is sell it cheaper still.
+    // Priced at a modest return, not a good one.
+    //
+    // First cut charged 1.5x list for four water and turned two scrap into
+    // three fuel -- a 2.7x and a 1.75x return on the two goods that decide
+    // whether a run ends, and NORMAL went from 50% to 68%. Water kills seven
+    // out of ten convoys, so a cheap reliable source of it is not a service,
+    // it is a difficulty setting.
+    case ARCH_WELL:      return nd->price[G_WATER] * 7 / 2;
+    case ARCH_REFINERY:  return nd->price[G_FUEL];
+    case ARCH_CLINIC:    return nd->price[G_MEDS];
+    case ARCH_SCRAPYARD: return w->kit_failed >= 0 ? nd->price[G_SCRAP] * 3 : 0;
+    case ARCH_ARMOURY:   return nd->price[G_AMMO] * 2;
+    default:             return 0;
+    }
+}
+
+// Applies the forced-policy service, if the harness asked for one. Called on
+// arrival so the grant lands before the bot does anything, exactly as -U and -C
+// are applied after the title -- set any earlier and world_init zeroes it, a
+// mistake that once cost an entire armour A/B.
+void world_service_forced(World *w) {
+    if (!w->svc_forced) return;
+    const Node *nd = &w->node[w->sector][w->index];
+    if (nd->type != NODE_SETTLE) return;
+    if (nd->archetype != w->svc_forced - 1) return;
+    if (world_service_kind(w) == SVC_NONE) return;
+    int keep = w->credits;
+    world_service(w);
+    w->credits = keep;      // granted, not sold
+}
+
+int world_can_service(const World *w) {
+    int k = world_service_kind(w);
+    if (k == SVC_NONE) return 0;
+    if (w->credits < world_service_price(w)) return 0;
+    if (k == ARCH_WELL && world_cargo(w) >= world_cargo_cap(w)) return 0;
+    if (k == ARCH_REFINERY && w->held[G_SCRAP] < 2) return 0;
+    return 1;
+}
+
+void world_service(World *w) {
+    if (!world_can_service(w)) return;
+    int k = world_service_kind(w);
+    w->credits -= world_service_price(w);
+    w->svc_used = 1;
+    INSTR(w->in.svc_used[k]++);
+
+    switch (k) {
+    case ARCH_WELL: {
+        // Up to four, and never past the hold.
+        int room = world_cargo_cap(w) - world_cargo(w);
+        int n = room < 3 ? room : 3;
+        w->held[G_WATER] += n;
+        break;
+    }
+    case ARCH_REFINERY:
+        w->held[G_SCRAP] -= 2;
+        w->held[G_FUEL]  += 2;
+        break;
+    case ARCH_CLINIC: {
+        // Squares you with whoever is closest to walking. The desertion warning
+        // has existed since v5 with nothing a player could do about it, which
+        // makes it an announcement rather than a warning.
+        int worst = -1;
+        for (int r = 0; r < CREW_COUNT; ++r) {
+            if (!w->crew[r]) continue;
+            int c = CHAR_OF_ROLE[r];
+            if (worst < 0 || w->regard[c] < w->regard[worst]) worst = c;
+        }
+        if (worst >= 0 && w->regard[worst] < 3) w->regard[worst]++;
+        w->warned = 0;
+        break;
+    }
+    case ARCH_SCRAPYARD:
+        // No spread on metal here. The 20% bid-ask exists so the round trip is
+        // not free money; a scrapyard paying list for scrap is the one place
+        // that is not true, which is what makes it worth the detour.
+        if (w->kit_failed < 0) {
+            int n = w->held[G_SCRAP] < 4 ? w->held[G_SCRAP] : 4;
+            w->held[G_SCRAP] -= n;
+            w->credits += n * w->node[w->sector][w->index].price[G_SCRAP];
+            break;
+        }
+        // The counterplay salvaged kit never had: it broke, and that was that.
+        if (w->kit_failed >= 0) {
+            w->upgrade[w->kit_failed]     = 1;
+            w->upg_salvaged[w->kit_failed] = 0;   // properly refitted, not patched
+            w->kit_failed = -1;
+        }
+        break;
+    case ARCH_ARMOURY:
+        // Four hops, not three. At three the escort covered well under one
+        // expected encounter -- they fire about 3.7 times across a fourteen
+        // sector run -- so it was priced against a saving that usually never
+        // arrived, and was taken in 12% of runs against a 15% bar.
+        w->escort = 4;
+        break;
+    default: break;
+    }
+}
+
 // ---------------------------------------------------------------- travel
 void world_travel(World *w, int next_index) {
     if (!world_can_travel(w, next_index)) {
@@ -1065,6 +1205,7 @@ void world_travel(World *w, int next_index) {
     }
 
     if (world_hop_costs_fuel(w)) w->held[G_FUEL]--;
+    if (w->escort > 0) w->escort--;
     w->day++;
 
     // The crew drink whether or not there is anything to drink, and every
@@ -1086,6 +1227,7 @@ void world_travel(World *w, int next_index) {
         INSTR(w->in.c_lapsed++);
     }
 
+    w->svc_used = 0;    // a new town, a new favour to ask of it
     salvage_check(w);
 
     // Sampled once per hop rather than per keypress, so the mean is over the
@@ -1152,7 +1294,7 @@ void world_travel(World *w, int next_index) {
     case NODE_GREEN:  w->state = ST_WON;   break;
     case NODE_SETTLE:
         w->state = ST_TRADE; observe_market(w); contract_tick(w);
-        errand_tick(w); roll_offers(w);
+        errand_tick(w); roll_offers(w); world_service_forced(w);
         // Someone is waiting for you in the market. Encounters used to live
         // only on encounter nodes, which put the story in direct competition
         // with trading: the profitable route is the one through settlements,
@@ -1615,6 +1757,13 @@ static void roll_event(World *w) {
     // A guard aboard makes every threat cost less, not only the three kinds
     // they specialise in. Always-on is the shape that measured well: the
     // trader was the least-bad role in v4 for exactly this reason.
+    // Hired guns. They do not stop trouble finding you, they make paying it
+    // off cheaper -- which is the same shape as the guard aboard, deliberately,
+    // because a service that did something structurally new would need its own
+    // measurement before it could be trusted and this one can be read straight
+    // off the existing threat counters.
+    if (w->escort > 0 && e->pay_good == G_AMMO && e->pay_qty > 0) e->pay_qty--;
+
     if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) {
         if (e->lose_good == -2) e->lose_qty--;
         else                    e->lose_qty = 1;

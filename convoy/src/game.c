@@ -181,7 +181,15 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
             // tab was one of three where X silently did nothing.
             if (in->pressed[BTN_B]) world_contract_decline(w);
         } else if (gs->tab == TAB_GARAGE) {
-            if (in->pressed[BTN_A]) world_buy_upgrade(w);
+            // The forecourt sells kit; the works does the local trade. Z takes
+            // whichever is actually on offer, and the offer takes precedence
+            // over the service only when there is one -- a settlement rarely
+            // has both, and when it does the fitting is the rarer thing.
+            if (in->pressed[BTN_A]) {
+                if (w->offer_upg < UPG_COUNT) world_buy_upgrade(w);
+                else                          world_service(w);
+            }
+            if (in->pressed[BTN_B]) world_service(w);
         } else if (gs->tab == TAB_CREW) {
             // An offered errand takes precedence: it is the thing on screen.
             if (w->errand.state == ERR_OFFERED) {

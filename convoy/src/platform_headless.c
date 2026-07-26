@@ -410,6 +410,7 @@ typedef struct {
     int   daily;           // --daily: take today's fixed map, via the menu
     int   force_upg;       // -U n: fit upgrade n from the start, or -1
     int   force_crew;      // -C n: put crew n aboard from the start, or -1
+    int   force_svc;       // -V n: apply service n's effect free each stop, or -1
     int   feats;           // -M n: which human pressures the bot feels
     int   shot_tab;        // -S n: photograph the first frame showing tab n
 } RunOpts;
@@ -504,6 +505,10 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
             if (o->force_upg >= 0 && o->force_upg < UPG_COUNT) {
                 World *mw = (World *)(uintptr_t)w;   // harness only
                 mw->upgrade[o->force_upg] = 1;
+            }
+            if (o->force_svc >= 0 && o->force_svc < ARCH_COUNT) {
+                World *mw = (World *)(uintptr_t)w;
+                mw->svc_forced = (uint8_t)(o->force_svc + 1);
             }
             if (o->force_crew >= 0 && o->force_crew < CREW_COUNT) {
                 World *mw = (World *)(uintptr_t)w;
@@ -798,7 +803,8 @@ static void print_run(const RunResult *r) {
            " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u"
            " alt_off=%u alt_take=%u alt_fail=%u"
            " err_off=%u err_take=%u err_done=%u err_fail=%u left=%u"
-           " sout=%u sblock=%u",
+           " sout=%u sblock=%u svc=%u"
+           " sv0=%u sv1=%u sv2=%u sv3=%u sv4=%u",
            ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
            m->c_declined, m->c_lapsed, m->c_forfeit,
            m->pl_storm, m->pl_demand, m->pl_random,
@@ -811,7 +817,11 @@ static void print_run(const RunResult *r) {
            m->crew_left,
            (unsigned)(m->stock_out[0] + m->stock_out[1] + m->stock_out[2]
                     + m->stock_out[3] + m->stock_out[4]),
-           m->bought_blocked);
+           m->bought_blocked,
+           (unsigned)(m->svc_used[0] + m->svc_used[1] + m->svc_used[2]
+                    + m->svc_used[3] + m->svc_used[4] + m->svc_used[5]),
+           m->svc_used[0], m->svc_used[1], m->svc_used[2],
+           m->svc_used[3], m->svc_used[4]);
     (void)ev_fired;
 #endif
     printf("\n");
@@ -833,6 +843,7 @@ int main(int argc, char **argv) {
     // presses rather than by reaching into GameState, so the shot also proves
     // the tab can actually be reached -- which for a while it could not.
     int         journal_at = 0;
+    int         force_svc  = -1;
     int         diff = DIFF_NORMAL;   // -D selects a difficulty for a sweep
     int         refuse_all = 0;       // -R makes the bot decline every encounter
     int         end_shot = 0;         // -E dumps the summary screen after the run
@@ -875,6 +886,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-A") && i + 1 < argc) use_ref = !strcmp(argv[++i], "ref");
         else if (!strcmp(argv[i], "--daily")) daily = 1;
         else if (!strcmp(argv[i], "-U") && i + 1 < argc) force_upg = atoi(argv[++i]);
+        // Forced-policy arm for a service: grant it free at the start and
+        // measure what it is worth, independently of whether the bot chooses
+        // to buy it. Same tool as -U and -C, same reason -- a take rate
+        // measures the bot's arithmetic, a granted A/B measures the design.
+        else if (!strcmp(argv[i], "-V") && i + 1 < argc) force_svc = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-C") && i + 1 < argc) force_crew = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-K")) kinds = 1;
@@ -928,9 +944,9 @@ int main(int argc, char **argv) {
 
     if (exploit) return exploit_probe();
 
-    RunOpts opt ={ bot_float, refuse_all, journal_at, end_shot,
+    RunOpts opt ={ bot_float, refuse_all, journal_at, end_shot, 
                     every, verbose, outdir, determinism, use_ref, daily,
-                    force_upg, force_crew, feats, shot_tab };
+                    force_upg, force_crew, force_svc, feats, shot_tab };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player

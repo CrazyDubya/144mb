@@ -321,6 +321,55 @@ static int crew_worth_hiring(const Bot *b, const World *w) {
 }
 
 // ---------------------------------------------------------------- trade
+
+static int good_value(const Bot *b, const World *w, int g);
+
+// What the town's own trade is worth, in the same currency as everything else
+// the bot values: units of goods at the prices it has paid for them.
+//
+// Deliberately one function for all five. The rule this file keeps is that a
+// fifteenth encounter kind needs no change in decide_event; a sixth service
+// should need none here either.
+static int service_worth_taking(const Bot *b, const World *w) {
+    int k = world_service_kind(w);
+    if (k == SVC_NONE || !world_can_service(w)) return 0;
+
+    int price = world_service_price(w);
+    int gain  = 0;
+    switch (k) {
+    case ARCH_WELL:     gain = 3 * good_value(b, w, G_WATER); break;
+    case ARCH_REFINERY: gain = 2 * good_value(b, w, G_FUEL)
+                             - 2 * good_value(b, w, G_SCRAP); break;
+    // A refit restores a fitting outright. Valued at what the fitting costs to
+    // buy, since that is what replacing it would take.
+    case ARCH_SCRAPYARD:
+        if (w->kit_failed >= 0) { gain = world_upg_price(w, w->kit_failed, 0); break; }
+        // Selling metal at list instead of at the 20% spread.
+        {
+            int n = w->held[G_SCRAP] < 4 ? w->held[G_SCRAP] : 4;
+            gain = n * (w->node[w->sector][w->index].price[G_SCRAP]
+                        - world_sell_price(w, G_SCRAP));
+        }
+        break;
+    // Keeping a hand is worth what having one is worth, and the A/Bs say that
+    // is about eight credits a hop -- the same measured figure crew_value
+    // floors at, used here rather than a second guess at the same quantity.
+    case ARCH_CLINIC: {
+        int st = 0, ev = 0;
+        world_road_ahead(w, &st, &ev);
+        gain = (st + ev) * 8;
+        break;
+    }
+    // Three hops of cheaper threats. An encounter fires about 3.7 times over a
+    // whole run, so three hops is well under one expected saving -- priced low
+    // on purpose, and if that makes it a service nobody takes, that is a
+    // finding rather than a bug to paper over.
+    case ARCH_ARMOURY:  gain = good_value(b, w, G_AMMO); break;
+    default: return 0;
+    }
+    return gain > price;
+}
+
 static int decide_trade(Bot *b, const World *w, int sel) {
     const Node *nd = &w->node[w->sector][w->index];
     int keep[GOODS_COUNT];
@@ -716,6 +765,15 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         if ((b->feats & BOT_CONTRACT) && contract_worth_declining(w)) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;
             return BTN_B;
+        }
+        // The local trade, priced generically -- what it costs against what it
+        // hands back, valued at the prices this convoy has actually seen. No
+        // per-archetype rules: five bespoke tests would let one service be
+        // undervalued to zero and read as "players do not want it", which is
+        // exactly how UPG_HOLD hid behind a healthy win rate for a release.
+        if (service_worth_taking(b, w)) {
+            if (tab != TAB_GARAGE) return BTN_RIGHT;
+            return w->offer_upg < UPG_COUNT ? BTN_B : BTN_A;
         }
         if (upgrade_worth_buying(b, w)) {
             if (tab != TAB_GARAGE) return BTN_RIGHT;

@@ -33,11 +33,16 @@ entertainment value — in that order.
 | game | status | size | % of disk |
 |---|---|---|---|
 | [convoy](convoy/) | v4 complete | 110,592 | 7.50% |
+| [deepscan](deepscan/) | beta | 143,360 | 9.72% |
+| [switchyard](switchyard/) | beta | 142,848 | 9.69% |
+| [last-light](last-light/) | beta | 141,824 | 9.62% |
+| [microcolony](microcolony/) | beta | 142,848 | 9.69% |
+| [ten-paces](ten-paces/) | beta | 143,872 | 9.76% |
 
 ## Building
 
 Each game has its own `build.sh` and needs only [Zig](https://ziglang.org) as a
-C cross-compiler:
+C cross-compiler. For example:
 
 ```sh
 cd convoy && ./build.sh
@@ -45,6 +50,16 @@ cd convoy && ./build.sh
 
 It produces a Windows `.exe` and fails the build if the binary exceeds the limit,
 so going over is impossible to miss.
+
+The five beta games also produce native headless executables. Running one plays
+a deterministic automated session through the real game rules and reports the
+terminal state:
+
+```sh
+cd deepscan
+./build.sh
+./build/deepscan_headless
+```
 
 Useful environment variables:
 

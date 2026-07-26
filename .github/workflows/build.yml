@@ -57,6 +57,13 @@ jobs:
             ( cd "$d" && bash tools/asan.sh )
             echo "::endgroup::"
           done
+          for d in deepscan switchyard last-light microcolony ten-paces; do
+            echo "::group::asan $d"
+            gcc -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+              -o "/tmp/$d-asan" "$d/src/platform.c" "$d/src/game.c"
+            ASAN_OPTIONS=detect_leaks=0 "/tmp/$d-asan"
+            echo "::endgroup::"
+          done
 
       # A build that links but cannot finish a run is not a passing build.
       # Every difficulty, so a change that breaks one mode cannot hide.
@@ -79,6 +86,39 @@ jobs:
               echo "::error::difficulty $d never won in 20 seeds -- the game is unwinnable"
               exit 1
             fi
+          done
+          cd ..
+          declare -A terminal=(
+            [deepscan]="ASCENT COMPLETE"
+            [switchyard]="CAMPAIGN COMPLETE"
+            [last-light]="HARBOR SAFE"
+            [microcolony]="RESEARCH COMPLETE"
+            [ten-paces]="CAMPAIGN WON"
+          )
+          declare -A failure=(
+            [deepscan]="LOST"
+            [switchyard]="NETWORK FAILED"
+            [last-light]="SOMETHING CAME ASHORE"
+            [microcolony]="CULTURE COLLAPSED"
+            [ten-paces]="YOU ARE DOWN"
+          )
+          for d in deepscan switchyard last-light microcolony ten-paces; do
+            line=$("$d"/build/*_headless -N 100)
+            echo "$line"
+            case "$line" in
+              *"${terminal[$d]}"*) ;;
+              *) echo "::error::$d did not reach its beta completion state"; exit 1;;
+            esac
+            case "$line" in
+              *"SWEEP "*" 100/100 completed"*) ;;
+              *) echo "::error::$d failed its 100-seed beta sweep"; exit 1;;
+            esac
+            loss_line=$("$d"/build/*_headless -L -N 20)
+            echo "$loss_line"
+            case "$loss_line" in
+              *"${failure[$d]}"*"SWEEP "*" 20/20 completed"*) ;;
+              *) echo "::error::$d failed its loss-path sweep"; exit 1;;
+            esac
           done
 
   windows:
