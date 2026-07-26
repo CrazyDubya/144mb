@@ -2977,3 +2977,44 @@ One recorded-not-fixed finding remains, and it stays recorded: word of the road
 carries no mechanical advantage, because the map's per-sector choices are too
 alike for information about them to pay. That one needs route generation to
 change, which is a different release.
+
+---
+
+# Post-v6 note: the recorded diagnosis was wrong
+
+v6 shipped word of the road as carrying no mechanical advantage, with a stated
+cause: *"a hop offers two or three near-interchangeable nodes, so knowing more
+about one cannot pay"*, and a stated fix: *"make sectors differ, which is route
+generation and not this phase's to change."*
+
+That claim was never tested. It has now been, in a scratch tree, by forcing no
+two settlements in a sector to share a trade:
+
+    v6 shipped        true 39%   honest 39%   false 38%   oracle 0
+    diverse sectors   true 48%   honest 48%   false 48%   oracle 0
+
+**The oracle is still worth nothing.** The diagnosis was wrong.
+
+Note also what did move: forcing archetype diversity raised the win rate nine
+points on its own. Sectors offering different trades is worth a great deal --
+just not to the rumour system.
+
+The better reading, and the one a v7 should start from: **archetype is already
+visible on the map, so making it more varied hands the bot more information it
+can already see.** The things rumours actually hide -- condition, stock,
+price -- appear to have small effect on whether a run ends well, compared with
+the things the map draws. Information is only worth what the thing it describes
+is worth, and the fog covers the cheap half of the world.
+
+Two candidate directions, both testable before anything is built:
+
+1. Measure what the hidden variables are worth at all. If knowing every
+   condition in advance is worth two points, no rumour system can be worth more
+   than two points, and that ceiling should be established before designing one.
+2. Move something expensive behind the fog rather than making the cheap things
+   more varied.
+
+Recorded rather than acted on, because it is a v7 question and v6 is tagged. The
+value here is that the next attempt no longer starts from a false premise --
+which was exactly why the unused scoring function was kept in the source with
+its measurements attached.

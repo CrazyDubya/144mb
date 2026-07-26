@@ -1,5 +1,8 @@
 # Five-game beta gate
 
+> Historical milestone. All five games have passed this gate and are now
+> governed by [RC1-GATE.md](RC1-GATE.md).
+
 The five new games are considered beta when their complete game loops and
 campaign structures are present, their presentation paths work on the target,
 and automated evidence can reproduce completion. Beta does not mean final

@@ -1,5 +1,6 @@
 # Build outputs
 build/
+dist/
 
 # Harness output: frame dumps, rendered audio, encoded media
 out/

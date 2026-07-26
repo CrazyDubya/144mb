@@ -89,14 +89,14 @@ jobs:
           done
           cd ..
           declare -A terminal=(
-            [deepscan]="ASCENT COMPLETE"
+            [deepscan]="EXPEDITION COMPLETE"
             [switchyard]="CAMPAIGN COMPLETE"
             [last-light]="HARBOR SAFE"
             [microcolony]="RESEARCH COMPLETE"
-            [ten-paces]="CAMPAIGN WON"
+            [ten-paces]="THE TOWN REMEMBERS"
           )
           declare -A failure=(
-            [deepscan]="LOST"
+            [deepscan]="SUBMERSIBLE LOST"
             [switchyard]="NETWORK FAILED"
             [last-light]="SOMETHING CAME ASHORE"
             [microcolony]="CULTURE COLLAPSED"
@@ -107,11 +107,11 @@ jobs:
             echo "$line"
             case "$line" in
               *"${terminal[$d]}"*) ;;
-              *) echo "::error::$d did not reach its beta completion state"; exit 1;;
+              *) echo "::error::$d did not reach its RC1 completion state"; exit 1;;
             esac
             case "$line" in
               *"SWEEP "*" 100/100 completed"*) ;;
-              *) echo "::error::$d failed its 100-seed beta sweep"; exit 1;;
+              *) echo "::error::$d failed its 100-seed RC1 sweep"; exit 1;;
             esac
             loss_line=$("$d"/build/*_headless -L -N 20)
             echo "$loss_line"
@@ -119,6 +119,16 @@ jobs:
               *"${failure[$d]}"*"SWEEP "*" 20/20 completed"*) ;;
               *) echo "::error::$d failed its loss-path sweep"; exit 1;;
             esac
+          done
+
+      - name: Verify deterministic campaign replay
+        shell: bash
+        run: |
+          set -e
+          for d in deepscan switchyard last-light microcolony ten-paces; do
+            "$d"/build/*_headless -s 41 -N 20 > "/tmp/$d-a"
+            "$d"/build/*_headless -s 41 -N 20 > "/tmp/$d-b"
+            cmp "/tmp/$d-a" "/tmp/$d-b"
           done
 
   windows:
@@ -182,6 +192,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path shots | Out-Null
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $failed = $false
+          $shell = New-Object -ComObject WScript.Shell
 
           foreach ($e in $exes) {
             Write-Host "launching $($e.Name)"
@@ -195,6 +206,16 @@ jobs:
               $failed = $true
               continue
             }
+
+            # Exercise the title transition, game input, help path and mute
+            # path rather than proving only that an idle title window exists.
+            $null = $shell.AppActivate($p.Id)
+            Start-Sleep -Milliseconds 300
+            $shell.SendKeys("{ENTER}")
+            Start-Sleep -Milliseconds 300
+            $shell.SendKeys("{ENTER}")
+            $shell.SendKeys("ZXCVHM")
+            Start-Sleep -Seconds 2
 
             $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
             $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height

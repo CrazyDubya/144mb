@@ -33,11 +33,11 @@ entertainment value — in that order.
 | game | status | size | % of disk |
 |---|---|---|---|
 | [convoy](convoy/) | v4 complete | 110,592 | 7.50% |
-| [deepscan](deepscan/) | beta | 143,360 | 9.72% |
-| [switchyard](switchyard/) | beta | 143,360 | 9.72% |
-| [last-light](last-light/) | beta | 141,824 | 9.62% |
-| [microcolony](microcolony/) | beta | 143,360 | 9.72% |
-| [ten-paces](ten-paces/) | beta | 143,872 | 9.76% |
+| [deepscan](deepscan/) | 1.0 RC1 | 1,301,504 | 88.26% |
+| [switchyard](switchyard/) | 1.0 RC1 | 1,298,944 | 88.09% |
+| [last-light](last-light/) | 1.0 RC1 | 1,298,432 | 88.06% |
+| [microcolony](microcolony/) | 1.0 RC1 | 1,298,944 | 88.09% |
+| [ten-paces](ten-paces/) | 1.0 RC1 | 1,298,944 | 88.09% |
 
 ## Building
 
@@ -51,7 +51,7 @@ cd convoy && ./build.sh
 It produces a Windows `.exe` and fails the build if the binary exceeds the limit,
 so going over is impossible to miss.
 
-The five beta games also produce native headless executables. Running one plays
+The five RC1 games also produce native headless executables. Running one plays
 a deterministic automated session through the real game rules and reports the
 terminal state:
 
@@ -65,6 +65,14 @@ Useful environment variables:
 
 - `ZIG=/path/to/zig` — pick a specific compiler
 - `ONLY_WIN=1` — skip the native development harness
+
+The five RC1 executables embed their Win32 head, title, six campaign plates,
+three narrative plates, rules, English interface, and synthesized stereo audio.
+The source PNG files are production inputs; no PNG or other loose asset is
+needed to run a release.
+
+Run `./release.sh` after building to create reviewable folders and SHA-256
+manifests under `dist/`.
 
 ## Adding a game
 

@@ -1,16 +1,25 @@
-# LAST LIGHT — beta
+# LAST LIGHT — 1.0 release candidate 1
 
-Judge seven contacts during a storm while managing generator power. A genuine
-ship shows green, gives a possible tide claim, sounds the correct horn, uses a
-listed call sign, and answers within four seconds. Imitations always fail at
-least one test. Guide genuine ships and leave false contacts in darkness;
-three errors lose the harbor.
+Keep the lighthouse through seven storm nights and fourteen contacts. Each
+campaign selects one logically consistent rule governing the imitation. Move
+among the lens, radio, chart, generator, journal, and exterior gallery to reveal
+written evidence before deciding whether to guide or deny a contact.
 
-- Z: open the safe channel
-- X: refuse the contact
-- H: hold for the evidence rule and controls; pauses play
-- Enter: restart
+Daylight choices repair the generator, search the former keeper's records, or
+store power. Saved ships, rejected genuine callers, admitted imitations,
+evidence, equipment condition, and the missing keeper determine the ending.
+
+## Controls
+
+- Left/right: choose a lighthouse station
+- Z: inspect evidence or repair at the generator
+- X: guide the contact through the safe channel
+- C: deny the contact and keep the light dark
+- V: wait and advance the contact timer
+- Enter: commit the daylight choice; restart after an ending
+- H: hold for objective and controls; pauses play
+- M: toggle audio
 - Escape: quit
 
-Build with `./build.sh`. The Windows game includes storm, horn, and lighthouse
-synthesis. Run `./build/last-light_headless -N 100` for a solved campaign sweep.
+`./build.sh` creates `build/last-light.exe` and
+`build/last-light_headless`. The harness accepts `-s`, `-N`, `-t`, and `-L`.
