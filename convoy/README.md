@@ -233,9 +233,10 @@ see `TESTLOG.md` for the numbers:
   worth zero win-rate points, because a hop offers two or three
   near-interchangeable places and knowing more about one cannot pay. Fixing it
   means making route generation produce sectors that differ.
-- **The mechanic fell from +11 to +3** when granted free. The new shops do what
-  the mechanic does, and made the role largely redundant without anyone deciding
-  to.
+*(A second one — the mechanic falling to +3 as the new shops made the role
+redundant — was found at the gate and fixed before release. A mechanic now
+prices salvaged kit at what it is actually worth, which is a job no shop can
+sell you.)*
 
 The backdrop is generated every frame and stored nowhere: a Bayer-dithered sky,
 three parallax dune layers summed from sines, a dithered sun corona, and dust

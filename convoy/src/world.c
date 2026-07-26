@@ -515,7 +515,25 @@ int world_upg_payback(const World *w, int upg) {
 
 int world_upg_price(const World *w, int upg, int salvaged) {
     int p = world_upg_payback(w, upg) * SOUND_PCT / 100;
-    if (salvaged) p = p * SALVAGE_PCT / 100;
+    if (salvaged) {
+        p = p * SALVAGE_PCT / 100;
+        // A mechanic can tell what a salvaged fitting is actually worth, and
+        // haggles accordingly.
+        //
+        // This exists because v6's shops took the mechanic from +11 to +3. The
+        // role already stops salvaged kit failing -- salvage_check returns
+        // early with one aboard -- so the shops did not duplicate that. What
+        // they did was make NOT having a mechanic cheap to recover from: a
+        // scrapyard puts the broken fitting right for a handful of scrap, so
+        // the disaster the mechanic prevents stopped being a disaster.
+        //
+        // Repricing the yard would have fixed the number by making a service
+        // used in half of all runs worse. This does it the other way: the yard
+        // still sells the cure, and the mechanic now turns cheap risky salvage
+        // from a gamble into a strategy nobody else can run. Prevention and
+        // cure, rather than two answers to one question.
+        if (w->crew[CREW_MECHANIC]) p = p * 3 / 5;
+    }
     return p < 8 ? 8 : p;
 }
 

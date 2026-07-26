@@ -10,6 +10,7 @@ docs/
 *.png
 !*/assets/title-source.png
 !*/assets/scenes-rc1.png
+!*/assets/story-rc1.png
 *.wav
 *.gif
 

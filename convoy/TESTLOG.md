@@ -2944,3 +2944,36 @@ Still said "Version 4" and still listed the tab strip as "market, garage, crew,
 contracts, people" -- none of which exist. Brought current, including the two
 findings recorded rather than fixed, so a reader meets them in the README rather
 than discovering them in a sweep.
+
+## The mechanic regression, fixed rather than shipped
+
+Recorded above as a known regression. Reopened, because a regression this
+release caused is this release's to fix.
+
+The diagnosis in that note was half wrong. The mechanic already prevents
+salvaged kit from failing -- `salvage_check` returns early with one aboard --
+so the shops never duplicated the role's job. What they did was make **not**
+having a mechanic cheap to recover from: a scrapyard puts the broken fitting
+right for a handful of scrap, so the disaster the mechanic prevents stopped
+being a disaster.
+
+Two ways to fix that. Repricing the yard would have restored the number by
+making a service used in half of all runs worse. Instead the mechanic gained an
+upside no shop can sell: they can tell what a salvaged fitting is actually worth
+and haggle it down 40%. The yard still sells the cure; the mechanic turns cheap
+risky salvage from a gamble into a strategy. Prevention and cure, rather than
+two answers to one question.
+
+    role       v5    v6 gate   shipped
+    MECHANIC  +11      +3       +10
+    GUARD      +8     +11       +11
+    MEDIC     +12     +11       +11
+    SCOUT     +16     +15       +15
+    TRADER    +19     +13       +13
+
+All five back over the +8 bar v5 set. Win rates unmoved at 65/48/29, n=1000.
+
+One recorded-not-fixed finding remains, and it stays recorded: word of the road
+carries no mechanical advantage, because the map's per-sector choices are too
+alike for information about them to pay. That one needs route generation to
+change, which is a different release.
