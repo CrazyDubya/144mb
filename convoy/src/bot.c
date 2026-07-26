@@ -204,11 +204,13 @@ static int crew_value(const Bot *b, const World *w, int k, int hops) {
 
     // Keep: what one more mouth adds to the burn over the hops remaining.
     // world_water_burn_on is a fact, not a valuation, so asking it is fine.
+    // Asked, not assumed. This loop used to test `day % 2` directly -- a copy
+    // of the ration schedule that went stale the moment the schedule changed,
+    // leaving the bot pricing hires against a burn rate the game no longer
+    // used. The rule lives in world.c; the bot reads it.
     int keep = 0;
-    for (int i = 1; i <= hops; ++i) {
-        int day = w->day + i;
-        if (world_water_burn_on(w, day) > 0 && (day % 2) == 1) keep += water;
-    }
+    for (int i = 1; i <= hops; ++i)
+        if (world_crew_drinks_on(w, w->day + i)) keep += water;
 
     if (k == CREW_TRADER) {
         // The only one whose benefit is not tied to encounters: it takes a

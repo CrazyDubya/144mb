@@ -248,13 +248,34 @@ int world_water_burn_on(const World *w, int day) {
     // a run, which no specialist ability could repay -- every hire was
     // net-negative and the correct play was to travel alone.
     int burn = 1;
-    if ((day % 2) == 1) burn += world_crew_count(w);
+    // Every third day, not every second.
+    //
+    // At alternate-day rations a hand drank about 84 credits of water over a
+    // thirteen-hop run while covering roughly 0.8 encounters -- worth 23 to 38
+    // credits depending on the role. Every crew member was net-negative before
+    // their fee was even considered, which is why an honest bot hired nobody
+    // in 400 runs per difficulty. No price could fix that: the floor is 10, so
+    // even free crew lost money.
+    //
+    // This is the smallest change that makes the trade defensible rather than
+    // arithmetically impossible. They are still mouths that drink -- just not
+    // ones that cost more than they can ever save.
+    if ((day % 3) == 1) burn += world_crew_count(w);
     // A medic runs the water discipline as well as the medicine.
     if (w->crew[CREW_MEDIC] && burn > 1) burn--;
     return burn;
 }
 
 int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
+
+// Whether the crew take their ration on a given day. A fact about the rules,
+// exported so the bot can cost a hire without keeping its own copy of the
+// schedule -- it had one, still set to alternate days, and went on valuing crew
+// against a ration that had been changed underneath it.
+int world_crew_drinks_on(const World *w, int day) {
+    if (w->upgrade[UPG_TANKS] && (day % 2) == 0) return 0;
+    return (day % 3) == 1;
+}
 
 // What each fitting can still earn back over the hops that remain, in credits.
 // Rates come from the generator: encounters are 30% of nodes across five
@@ -307,21 +328,59 @@ int world_upg_price(const World *w, int upg, int salvaged) {
 // Crew are priced the same way kit is: off what they can still return, net of
 // what they will drink. A flat base price left them unaffordable exactly when
 // they were worth having, which is the same trap kit fell into.
+// What a hand is worth over the road that is actually left, in credits.
+//
+// The rate here used to be `hops * 3 / 5`, from a comment stating that
+// encounters were 30% of nodes "across five kinds". There are fourteen kinds.
+// At 13 hops that formula claims 7.8 fires per role; measured over 400 runs it
+// is 0.79 -- so every crew payback, and therefore every crew price, was
+// overstated by roughly ten times, and by nearly eighteen for the scout. That,
+// not player judgement, is why an honest bot hired nobody in 400 runs per
+// difficulty.
+//
+// Priced against the road ahead instead of a flat rate: world_road_ahead
+// counts the sectors that could hold a storm or an encounter, and since a
+// convoy takes one node per sector only about 45% of them are actually met.
+// A hand covers three of the fourteen kinds.
 int world_crew_payback(const World *w, int crew) {
     int hops = (SECTORS - 1) - w->sector;
     if (hops < 1) return 0;
 
+    int storms = 0, events = 0;
+    world_road_ahead(w, &storms, &events);
+
+    // Computed in one expression on purpose. Written as
+    // `events * 45 / 100 * 3 / 14` it truncates to zero: a role covers about
+    // 0.8 encounters over a whole run, and integer division rounds a sub-unit
+    // rate away entirely, so every crew member priced at the floor regardless
+    // of the road ahead.
+    #define COVER(v) (events * 45 * 3 * (v) / (100 * 14))
+
     int gross;
     switch (crew) {
-    case CREW_MECHANIC: gross = hops * 3 / 5 * 26; break;  // breaks, leaks, bridges
-    case CREW_GUARD:    gross = hops * 3 / 5 * 45; break;  // raids, tolls, checkpoints
-    case CREW_MEDIC:    gross = hops * 3 / 5 * 30; break;  // sickness, plague, refugees
-    case CREW_SCOUT:    gross = hops * 3 / 5 * 28; break;  // storms, bridges, caches
-    default:            gross = hops * 12;         break;  // trader: every sale
+    case CREW_MECHANIC: gross = COVER(30); break;  // breaks, leaks, wrecks
+    case CREW_GUARD:    gross = COVER(60); break;  // raids, tolls, checkpoints
+    case CREW_MEDIC:    gross = COVER(45); break;  // sickness, plague, refugees
+    // The only thing in the game that protects the seed: a scout walks the
+    // convoy around a storm entirely, and a storm is the one threat to the
+    // payload that cannot be paid off. Priced accordingly, and only about a
+    // quarter of the storms on the map are on any given route.
+    case CREW_SCOUT:    gross = COVER(45) + storms * 15; break;
+    default:            gross = hops * 4;  break;  // trader: a cut of every sale
     }
-    int keep = hops * WATER_WORTH / 2;        // alternate-day rations
-    if (crew == CREW_MEDIC)    keep /= 2;     // runs the water discipline too
-    if (w->upgrade[UPG_TANKS]) keep /= 2;
+    #undef COVER
+
+    // What the extra mouth drinks over the hops remaining. Crew ration on
+    // alternate days, so it is half a unit of water per hop.
+    //
+    // The medic's keep used to be halved here for "running the water
+    // discipline too" -- but world_water_burn_on already cancels exactly the
+    // medic's own thirst and nobody else's, so the same saving was counted
+    // twice. And the keep was halved again whenever water tanks were fitted,
+    // although tanks zero the burn on even days while crew drink on odd ones:
+    // fitting tanks made every hand more expensive for a synergy that does not
+    // exist. Both are gone.
+    int keep = hops * WATER_WORTH / 3;   // every third day, matching the burn
     int net = gross - keep;
     return net < 0 ? 0 : net;
 }

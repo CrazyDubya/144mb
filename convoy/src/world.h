@@ -270,6 +270,7 @@ int  world_cargo_cap (const World *w);   // grows with fitted racks
 int  world_crew_count(const World *w);
 int  world_water_burn(const World *w);   // per day, given crew and tanks
 int  world_water_burn_on(const World *w, int day);
+int  world_crew_drinks_on(const World *w, int day);
 int  world_upg_price (const World *w, int upg, int salvaged);
 // What a fitting can still return over the hops that remain. Price is derived
 // from this, so an offer that cannot repay itself is never made.

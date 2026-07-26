@@ -1362,6 +1362,77 @@ The acceptance test is that `-Q` produces byte-identical BOT lines to a
 full-size run, which it does -- and that is worth having for its own sake: it
 proves the render path cannot influence a balance number.
 
+## P8 — kit and crew, derived from readings
+
+| difficulty | P7 | P8 |
+|---|---:|---:|
+| FORGIVING | 97% | 97% |
+| THE ROAD | 82% | 80% |
+| UNFORGIVING | 56% | 56% |
+
+n=400, zero stalls, `-X` and `-Z` clean.
+
+### The rate was wrong by an order of magnitude
+
+`world_crew_payback` used `hops * 3 / 5` fires per role, from a comment stating
+encounters were 30% of nodes "across five kinds". There are **fourteen**. At 13
+hops the formula claims 7.8 fires per role; measured over 400 runs:
+
+| role | formula | measured | overstated by |
+|---|---:|---:|---:|
+| MECHANIC | 7.8 | 0.81 | 9.6x |
+| GUARD | 7.8 | 0.79 | 9.9x |
+| MEDIC | 7.8 | 0.80 | 9.8x |
+| SCOUT | 7.8 | 0.44 | 17.7x |
+
+Crew are now priced against the road actually ahead, using `world_road_ahead`,
+which already existed and was already counting the storms and encounters left.
+
+### But the pricing was never the binding constraint
+
+With the rate corrected, every role was still **net-negative before its fee**:
+23 to 38 credits of coverage against **84 credits of water** over a run. No
+price could fix that — the floor is 10, so even free crew lost money. An honest
+bot hiring nobody in 400 runs per difficulty was the correct answer to the
+question as posed.
+
+The ration is the finding. Crew now drink every third day rather than every
+second: `keep` falls from 84 to 56, which is the smallest change that makes the
+trade defensible rather than arithmetically impossible. They remain mouths that
+drink; they are no longer mouths that cost more than they can ever save.
+
+### Two bugs found by writing the arithmetic down
+
+**Integer truncation zeroed the whole calculation.** Written as
+`events * 45 / 100 * 3 / 14`, a rate of about 0.8 fires per role rounds to
+**zero** mid-expression, so every role priced at the floor regardless of the
+road ahead. Computed in one expression instead.
+
+**The bot kept its own copy of the ration schedule.** `crew_value` tested
+`day % 2` directly; when the game moved to `day % 3` the bot went on costing
+hires against a burn rate that no longer existed. Exported
+`world_crew_drinks_on` — a fact, which the P3 invariant permits the bot to read
+— and deleted the copy. Hiring went 4% of runs to **12%** on that fix alone.
+
+### Two documented falsehoods removed
+
+**The medic's water saving was counted twice.** `world_water_burn_on` cancels
+exactly the medic's own thirst and nobody else's, and `world_crew_payback` then
+halved its keep again for "runs the water discipline too".
+
+**Fitting water tanks made every hand more expensive for nothing.** Crew keep
+was halved whenever tanks were fitted, but tanks zero the burn on *even* days
+and crew ration on *odd* ones. The synergy priced there does not exist.
+
+### Where it landed
+
+Runs hiring at least one hand: **0% → 12%**. Short of the 15% bar
+`DESIGN-kit.md` set, and recorded as such rather than tuned to hit it: the
+remaining gap is that the bot's own valuation needs to have *seen* the trouble
+a role covers before it will pay for it, and crew are offered from sector 5 on,
+by which point a run has met one or two encounters. That is defensible
+behaviour, not a fault, and the number is honest.
+
 ---
 
 ## Bugs found, and what found them
