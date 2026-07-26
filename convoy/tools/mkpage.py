@@ -74,10 +74,10 @@ STILLS = [
 ]
 
 FACTS = [
+    ("14", "encounter kinds, all live choices"),
     ("6", "crates you cannot sell"),
-    ("5", "people who remember you"),
     ("0", "bytes of stored art or audio"),
-    ("7%", "of the floppy used"),
+    ("7.5%", "of the floppy used"),
 ]
 
 
@@ -340,6 +340,100 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
 %(facts)s
   </div>
 
+  <h2>The release where the numbers stopped lying</h2>
+  <p>
+    Convoy shipped three versions steered by a win rate. Version four began by
+    auditing that number and found it was measuring the wrong thing.
+  </p>
+  <p>
+    The test bot &mdash; the only instrument the game had &mdash; sampled market
+    prices <b>once per keypress</b> rather than once per market, so its running
+    average was weighted by how long it happened to loiter in each shop. It sized
+    its water reserve from a single day&rsquo;s ration, which alternates, so the
+    reserve collapsed to two units whenever the parity fell wrong and the convoy
+    thirsted to death carrying money. And its rule for buying crew was
+    <code>payback &gt; price</code>, where the price is defined as 45%% of that
+    same payback &mdash; <code>p &gt; 0.45p</code>, true for every positive value,
+    at any price, however wrong the number behind it was.
+  </p>
+  <p>
+    Fixing those three things made the bot play <b>twenty points better on a game
+    that had not changed</b>. Three releases of recorded difficulty had been
+    measuring the instrument&rsquo;s handicap. Everything downstream &mdash; the
+    encounter tables, the crew economy, the difficulty curve &mdash; had been
+    tuned against it.
+  </p>
+
+  <h2>What measurement found once it could be trusted</h2>
+  <div class="tbl">
+    <table>
+      <tr><th>Looked like</th><th>Actually was</th></tr>
+      <tr><td>Seven of fourteen encounters were dull</td>
+          <td>The bot vetoed any fuel or water payment before pricing the deal.
+              Removing the veto turned five dead encounters into real decisions
+              with <b>no change to the game</b>.</td></tr>
+      <tr><td>Plate armour was the priciest fitting</td>
+          <td>It gave <b>zero</b> protection past sector four &mdash; the payload
+              demand overwrote its effect three lines later &mdash; and measured
+              as the least valuable of the four.</td></tr>
+      <tr><td>The fuel economiser was a luxury</td>
+          <td>Worth <b>+42 points</b>. The bot bought it a third of the time,
+              blocked by a working-capital rule written when kit was overpriced.</td></tr>
+      <tr><td>Breakdowns were refused as bad deals</td>
+          <td>60%% of them <b>could not be paid</b>. Repairs cost scrap; scrap is
+              the cheapest good, so it had all been sold. A refusal and an
+              inability are the same keypress and mean opposite things.</td></tr>
+      <tr><td>Nobody hired crew because they were expensive</td>
+          <td>Every role is negative <b>even when granted free</b>. A specialist
+              covers three of fourteen encounter kinds &mdash; it fires 0.8 times
+              a run. That is a design problem, not a price.</td></tr>
+      <tr><td>Difficulties failed in different ways</td>
+          <td>They did, until the bot&rsquo;s water bug was fixed. The asymmetry
+              was an artifact of the observer. Recorded rather than recreated.</td></tr>
+    </table>
+  </div>
+
+  <h2>How it is measured</h2>
+  <p>
+    The game core makes no OS calls, so it runs headless at a fixed timestep with
+    a bot pressing the same keys a player would. Version four rebuilt that rig
+    into something that can be trusted:
+  </p>
+  <div class="tbl">
+    <table>
+      <tr><th>Instrument</th><th>What it answers</th></tr>
+      <tr><td>Three separate RNG streams</td>
+          <td>Everything drew from one, so editing an encounter table reshuffled
+              every later market offer &mdash; a seed stopped being the same run
+              the moment anything was tuned. Now a table edit leaves every map
+              identical while the win rate moves.</td></tr>
+      <tr><td>In-process sweeps</td>
+          <td>Every sweep used to re-launch the binary per seed, which is how one
+              straddles a rebuild and reports half of each. Now one process,
+              byte-identical to the old way.</td></tr>
+      <tr><td>A frozen reference agent</td>
+          <td>When both the game and its observer change, a moved number is
+              unattributable. The v4-entry bot is kept verbatim to hold one side
+              still.</td></tr>
+      <tr><td>Engagement counters</td>
+          <td>Per encounter kind: taken, refused, and <i>could not afford</i>.
+              An option nobody takes and an option nobody can take are identical
+              in a win-rate column.</td></tr>
+      <tr><td>Forced-policy A/Bs</td>
+          <td>Grant a fitting free and measure. Settles &ldquo;is this worth
+              buying&rdquo; without asking the bot&rsquo;s opinion of it.</td></tr>
+      <tr><td>Determinism and exploit probes</td>
+          <td>Each seed replayed and hashed step by step; every good swept at
+              every price for a profitable round trip. Both run every phase.</td></tr>
+      <tr><td>A 50&times; faster sweep</td>
+          <td>A balance run never looks at a pixel, but the core drew a full
+              frame twice a step. Shrinking the drawn area cut a phase gate from
+              fifteen minutes to sixteen seconds &mdash; and the results are
+              byte-identical, which proves rendering cannot influence a balance
+              number.</td></tr>
+    </table>
+  </div>
+
   <h2>What is proven, and what is not</h2>
   <p>
     Every row below was verified by tracing the simulation, measuring rendered
@@ -350,25 +444,37 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
     <table>
       <tr><th>Claim</th><th>How it was checked</th><th class="n">Result</th></tr>
       <tr><td>The economy is not optional</td>
-          <td>A bot that ignores prices, 200 seeds</td>
+          <td>Fixed key sequences that cannot read a price, 60 seeds &times; 3</td>
           <td class="n yes">0%% win</td></tr>
-      <tr><td>Skill is rewarded</td>
-          <td>A price-aware bot playing the real UI, 150 seeds</td>
-          <td class="n yes">39%% win</td></tr>
-      <tr><td>Outfitting is a real choice</td>
-          <td>Kit priced off remaining payback; parity measured at n=250</td>
-          <td class="n yes">51 vs 49</td></tr>
+      <tr><td>Skill is rewarded, and calibrated</td>
+          <td>A price-aware bot playing the real UI, 1,000 seeds per difficulty</td>
+          <td class="n yes">61 / 47 / 27</td></tr>
+      <tr><td>Every encounter is a real decision</td>
+          <td>Per-kind accept, refuse and <i>forced</i> rates, 400 seeds</td>
+          <td class="n yes">14 of 14</td></tr>
+      <tr><td>Every fitting is worth considering</td>
+          <td>Take rate per fitting, plus forced-policy A/Bs granting each free</td>
+          <td class="n yes">4 of 4</td></tr>
+      <tr><td>Crew are worth hiring</td>
+          <td>Same A/B: every role is negative even when granted free</td>
+          <td class="n no">0 of 5</td></tr>
       <tr><td>All five endings are reachable</td>
-          <td>Outcome recorded across 200 bot runs</td>
-          <td class="n no">4 of 5</td></tr>
+          <td>Outcome recorded across 200 runs of a refuse-everything probe</td>
+          <td class="n yes">5 of 5</td></tr>
+      <tr><td>No profitable market round trip</td>
+          <td>Every good at every price 1&ndash;200, with and without the trader</td>
+          <td class="n yes">+0 best</td></tr>
+      <tr><td>The same seed replays identically</td>
+          <td>State hashed every step, each seed run twice, 150 &times; 3</td>
+          <td class="n yes">identical</td></tr>
       <tr><td>No crashes, deadlocks or memory errors</td>
-          <td>200 seeds played out, plus AddressSanitizer and UBSan</td>
+          <td>3,000 seeds played out, plus AddressSanitizer and UBSan on both agents</td>
           <td class="n yes">0</td></tr>
       <tr><td>Audio never clips</td>
           <td>Peak, DC and per-row RMS measured against the pattern tables</td>
           <td class="n yes">&minus;3.1 dB</td></tr>
       <tr><td>Runs on Windows</td>
-          <td>Launched and screenshotted on a windows-latest runner</td>
+          <td>Built, launched and screenshotted on a windows-latest runner</td>
           <td class="n yes">verified</td></tr>
       <tr><td>Played by a human</td>
           <td>Nobody has actually sat down with it yet</td>
