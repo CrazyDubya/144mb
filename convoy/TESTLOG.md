@@ -2033,3 +2033,90 @@ The last row is the one to remember. Four of these announced themselves. The
 unaffordable garage did not: the win rate was a healthy 48% and every sweep was
 green. It surfaced only from asking a different question — not "did it win?" but
 "what did it actually do?"
+
+---
+
+# v5 — the people you pick up
+
+115,200 bytes (+4,608 over v4). 7.81% of the floppy.
+
+## The problem v4 recorded and refused to paper over
+
+Forced-policy A/B, each role granted **free** at run start (n=600, NORMAL):
+
+    MEDIC +4   TRADER -9   SCOUT -19   MECHANIC -20   GUARD -23
+
+Not a pricing fault. A role covered 3 of 14 encounter kinds against 3.7
+encounters per run, so a specialist's ability fired **0.79 times per run**.
+
+## The fix, and what it moved
+
+The ability now fires on *every* encounter as a third option, not on 3-in-14 of
+them. Same ability, same per-fire strength, 4.7x the presence.
+
+| role | v4 free | v5 free | delta |
+|---|---|---|---|
+| TRADER   |  -9 | **+18** | +27 |
+| SCOUT    | -19 | **+16** | +35 |
+| MECHANIC | -20 | **+11** | +31 |
+| MEDIC    |  +4 | **+11** |  +7 |
+| GUARD    | -23 |  **+8** | +31 |
+
+Every role clears the +8 bar set in the plan; none exceeds +45 (ECON is +42),
+so no hand has become a mandatory purchase.
+
+## Final gate, n=1000 per arm
+
+    d=0 EASY    won 661/1000   66%
+    d=1 NORMAL  won 473/1000   47%
+    d=2 HARD    won 301/1000   30%
+
+Zero stalls at any difficulty. Sanitizers clean. `-Z` determinism clean across
+all three difficulties. `-X` market round-trip: best trip nets +0 at price 1.
+
+## Replayability, measured
+
+Take rates per role (n=600, NORMAL): MECHANIC 15%, GUARD 5%, MEDIC 15%,
+SCOUT 16%, TRADER 14%. CREWSET entropy 1.09 bits of a theoretical 5.00.
+
+Policy divergence — 400 fixed seeds played under two encounter policies, then
+compared on final `crew[]`:
+
+    all seeds ............................ 17%
+    seeds where either policy hired ..... 100%   (68 seeds)
+
+**Both targets were missed on the headline and met on the mechanism.** Plan
+asked for >60% divergence and >=2.0 bits; got 17% and 1.09. But the conditional
+number is 100%: whenever the bot hires at all, the two policies end with
+different people aboard *every single time*. The shortfall is entirely the
+adoption rate — 17% of runs have a hand — not the discrimination.
+
+## The measurement that was nearly believed
+
+Late in P5, three consecutive sweeps returned crew counts identical **to the
+digit** (MECHANIC 9, GUARD 7, MEDIC 18, SCOUT 29, TRADER 17) after edits that
+should have moved them. That is the stale-binary signature this log has recorded
+five times before, so the sixth check was reflexive:
+
+    grep -n "if (hops < 3) return 0;" src/bot.c   -> present
+    ./build.sh                                    -> succeeded
+    md5sum build/convoy_headless                  -> unchanged across rebuild
+
+The binary was **not** stale. The edits were compiled in and genuinely changed
+nothing: the bot's `hops` gate was never the binding constraint. Having a
+false-positive pattern for an error makes you fast at spotting it and slow at
+disbelieving it. The md5 check is what separated "my tooling lied" from "my
+hypothesis was wrong", and only the second was true.
+
+The real constraint was `crew_value > price` — the bot's own model of a hand
+kept returning a number near the 10-credit floor and declining. Fixed by
+flooring the valuation at what the A/B measured rather than what the model
+derived:
+
+    // When a measurement and a model disagree by that margin the measurement
+    // wins: a hand carried for the rest of the route is worth about eight
+    // credits a hop, and the model is left in place to argue for MORE.
+    int floor_v = hops * 8;
+
+Runs with a hand aboard: 7% -> 17%. This is the fourth time in two releases that
+a number blamed on the game turned out to be the observer's arithmetic.

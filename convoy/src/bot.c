@@ -245,12 +245,33 @@ static int crew_value(const Bot *b, const World *w, int k, int hops) {
     // undercounts them by roughly the ratio the third branch changed --
     // measured, a free hand is worth +10 to +17 points and the old model
     // priced that at a fifth of it, so the convoy hired nobody.
-    int enc_left = b->enc_seen * hops / (b->hops_done + 1);
+    // How much road is left to meet trouble on. Extrapolating from encounters
+    // already seen undercounts badly early -- one encounter three hops in
+    // predicts one more over the next eight, when the map plainly shows more
+    // than that. world_road_ahead is a fact about the route the player can see
+    // drawn on screen, so the bot may read it.
+    int storms = 0, events = 0;
+    world_road_ahead(w, &storms, &events);
+    int enc_left = events * 45 / 100;
+    int seen_rate = b->enc_seen * hops / (b->hops_done + 1);
+    if (seen_rate > enc_left) enc_left = seen_rate;
     int covered  = b->role_seen[k] * hops / (b->hops_done + 1);
 
     // Roughly a third of an encounter's cost is saved by taking the manoeuvre
     // instead, and the specialist's own kinds are worth more than that again.
-    return (enc_left * avg_cost / 3) + (covered * avg_cost / 3) - keep;
+    int v = (enc_left * avg_cost / 3) + (covered * avg_cost / 3) - keep;
+
+    // A floor, from the forced-policy A/Bs rather than from this model.
+    //
+    // Granting any single hand free is worth +10 to +17 points of win rate,
+    // which makes a hand among the most valuable things the convoy can buy --
+    // and the estimate above, built from encounters already met, kept coming
+    // out near the 10-credit price floor and declining. When a measurement and
+    // a model disagree by that margin the measurement wins: a hand carried for
+    // the rest of the route is worth about eight credits a hop, and the model
+    // is left in place to argue for MORE than that where it can.
+    int floor_v = hops * 8;
+    return v > floor_v ? v : floor_v;
 }
 
 // Credits in the hold compound -- buy low, sell high, repeat -- so over the
@@ -284,7 +305,11 @@ static int crew_worth_hiring(const Bot *b, const World *w) {
     int k = w->offer_crew;
     if (k >= CREW_COUNT || w->crew[k]) return 0;
     int hops = SECTORS_LAST - w->sector;
-    if (hops < 5) return 0;
+    // Match the board. The game offers hands while three hops remain; the bot
+    // refused anything past hops<5, so every late offer was declined before it
+    // was priced -- two gates on the same question with different answers,
+    // which is the fault this project keeps rediscovering.
+    if (hops < 3) return 0;
     int price = world_crew_price(w, k);
     // Working capital to leave after a hire. This was 100 on a convoy that
     // typically holds 100-150 credits, so it refused almost every hand -- the

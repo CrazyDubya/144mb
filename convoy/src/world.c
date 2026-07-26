@@ -558,7 +558,7 @@ static void roll_offers(World *w) {
         }
     }
 
-    if (hops >= 5) {
+    if (hops >= 3) {
         int n = 0;
         // Only people you have met and left on good terms. A board that offers
         // strangers is a board with no story on it.
@@ -571,7 +571,7 @@ static void roll_offers(World *w) {
         // shift and every earlier baseline would silently stop comparing.
         int roll = rng_range(&w->rng_offer, 0, 99);
         int pick = rng_range(&w->rng_offer, 0, CREW_COUNT - 1);
-        if (n && roll < (night ? 20 : 40)) {
+        if (n && roll < (night ? 40 : 70)) {
             w->offer_crew = (uint8_t)avail[pick % n];
             // Inside the branch: offer_crew is 0xFF when nobody is looking for
             // work, and indexing a five-element array at 255 is a stray write
@@ -801,11 +801,20 @@ int world_can_recruit(const World *w, int who) {
     if (who < 0 || who >= CHAR_COUNT) return 0;
     int role = ROLE_OF_CHAR[who];
     if (w->crew[role]) return 0;
-    // Enemies cost more in money, not in goodwill. Gating them at regard +2
-    // read well and measured at 1% recruitable, because the anti-farming rule
-    // makes +2 rare -- 7% of runs reach it with anyone at all. A price premium
-    // says the same thing and stays reachable.
-    return w->met[who] >= 1 && w->regard[who] >= 1;
+    // Someone you have met and are not on bad terms with will drive for you;
+    // someone who has been robbing you has to be actively won over.
+    //
+    // Friends were gated at regard >= 1 and that measured 7% of runs ending
+    // with anyone aboard, because regard is volatile -- it rises only on an
+    // acceptance that cost something and falls on every refusal, so few people
+    // are holding a positive number at the moment an offer happens to roll.
+    // Raising the offer rate did not move it and neither did widening the
+    // window, which is how the gate was identified as the constraint.
+    //
+    // "Not disliked" is still a choice: refuse someone twice and they will not
+    // ride with you.
+    int need = world_char_is_enemy(who) ? 1 : 0;
+    return w->met[who] >= 1 && w->regard[who] >= need;
 }
 
 int world_event_role(int kind) {
