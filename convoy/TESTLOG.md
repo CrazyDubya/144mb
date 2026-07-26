@@ -2917,3 +2917,30 @@ added shops" is that adding shops can cost you a character.
 
     rumours    2.20/run     situations 4.44/run
     services   1.20/run     dry shelf  30% of runs
+
+## The screenshot pass, and a tool that was destroying its own runs
+
+The P7 checklist called for a photograph of every location. Doing it found that
+`-S n` retried on every trade frame for as long as the shot was outstanding,
+pressing RIGHT ten times a go. On a seed where the wanted location never opens
+-- a town with no situation, a convoy with no crew -- that burned the whole
+4,000-step budget and the run ended at the cap having photographed nothing.
+
+Not a stall in the game, and the sweeps never saw it because sweeps do not pass
+`-S`. Worse than a stall, in a way: it looks like a screenshot that did not
+happen rather than a run that did not finish. Bounded to 40 attempts.
+
+All five locations then photographed and looked at:
+
+    STALLS      the market, with stock as a depth bar per row
+    FORECOURT   the works, named per archetype, service as its headline
+    ROOM        hiring, and a favour being asked
+    BOARD       contracts
+    EMPTY       the situation, named for the condition
+
+## README
+
+Still said "Version 4" and still listed the tab strip as "market, garage, crew,
+contracts, people" -- none of which exist. Brought current, including the two
+findings recorded rather than fixed, so a reader meets them in the README rather
+than discovering them in a sweep.

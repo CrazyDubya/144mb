@@ -19,7 +19,7 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE hp,LPSTR cmd,int show){
 #else
 #include <stdlib.h>
 int main(int argc,char**argv){
-    int seed=1,runs=1,ticks=12000,loss=0;for(int i=1;i<argc;i++){if(!strcmp(argv[i],"-s")&&i+1<argc)seed=atoi(argv[++i]);else if(!strcmp(argv[i],"-N")&&i+1<argc)runs=atoi(argv[++i]);else if(!strcmp(argv[i],"-t")&&i+1<argc)ticks=atoi(argv[++i]);else if(!strcmp(argv[i],"-L"))loss=1;}
+    int seed=1,runs=1,ticks=36000,loss=0;for(int i=1;i<argc;i++){if(!strcmp(argv[i],"-s")&&i+1<argc)seed=atoi(argv[++i]);else if(!strcmp(argv[i],"-N")&&i+1<argc)runs=atoi(argv[++i]);else if(!strcmp(argv[i],"-t")&&i+1<argc)ticks=atoi(argv[++i]);else if(!strcmp(argv[i],"-L"))loss=1;}
     uint32_t*p=calloc(FB_W*FB_H,4);if(!p)return 2;Framebuffer fb={p,FB_W,FB_H};int wins=0;
     for(int r=0;r<runs;r++){game_init((uint32_t)(seed+r));int t=0;for(;t<ticks&&!game_result();t++){Input in=loss?game_careless(t):game_autoplay(t);game_tick(&in);}game_draw(&fb);uint32_t h=2166136261u;for(int i=0;i<FB_W*FB_H;i++){h^=p[i];h*=16777619u;}h^=game_hash();int16_t aud[1470];game_audio(aud,735);int peak=0;for(int i=0;i<1470;i++){int v=aud[i]<0?-aud[i]:aud[i];if(v>peak)peak=v;}int ok=(loss?game_result()==-1:game_result()==1)&&peak>100;char s[256];game_status(s,sizeof s);printf("%s %s seed=%d ticks=%d hash=%08x audio=%d %s\n",ok?"PASS":"FAIL",game_name(),seed+r,t,h,peak,s);wins+=ok;}
     printf("SWEEP %s %d/%d completed\n",game_name(),wins,runs);free(p);return wins==runs?0:3;

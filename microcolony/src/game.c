@@ -19,7 +19,7 @@ static struct {
     uint8_t cell[CELLS],next[CELLS],quarantine[CELLS];
     uint32_t rng;
     int cx,cy,tick,stable,mission,budget,selected,light,ph,current,toxin;
-    int count[SPECIES],history[6][64],history_at,won,lost;
+    int count[SPECIES],history[6][64],history_at,collapse,won,lost;
     unsigned used;
 } g;
 
@@ -34,7 +34,7 @@ static void recount(void){
 }
 static void populate(void){
     memset(g.cell,0,sizeof g.cell);memset(g.next,0,sizeof g.next);memset(g.quarantine,0,sizeof g.quarantine);
-    g.stable=0;g.budget=32;g.used=0;g.selected=0;g.light=50;g.ph=50;g.current=0;g.toxin=g.mission==1?70:g.mission==2?35:g.mission==5?55:10;
+    g.stable=0;g.collapse=0;g.budget=32;g.used=0;g.selected=0;g.light=50;g.ph=50;g.current=0;g.toxin=g.mission==1?70:g.mission==2?35:g.mission==5?55:10;
     for(int i=0;i<CELLS;i++){int r=(int)(rnd()%100);int k=EMPTY;
         if(r<28)k=PRODUCER;else if(r<38)k=GRAZER;else if(r<43)k=PREDATOR;
         else if(r<51)k=DECOMPOSER;else if(r<55)k=PARASITE;else if(r<59)k=SPORE;
@@ -69,15 +69,15 @@ static void simulate(void){
     }
     memcpy(g.cell,g.next,sizeof g.cell);recount();
     if(g.toxin>0&&g.current)g.toxin--;if(g.current>0)g.current--;
-    int diverse=1;for(int k=PRODUCER;k<SPECIES;k++)if(g.count[k]<3)diverse=0;
-    int balanced=g.count[PRODUCER]>=80&&g.count[PRODUCER]<=750&&g.count[GRAZER]>=20&&g.count[PREDATOR]>=3&&g.count[DECOMPOSER]>=8&&g.count[PARASITE]>=3&&g.count[SPORE]>=3&&g.toxin<65;
+    int diverse=1;for(int k=PRODUCER;k<SPECIES;k++)if(g.count[k]<1)diverse=0;
+    int balanced=g.count[PRODUCER]>=80&&g.count[PRODUCER]<=750&&g.count[GRAZER]>=20&&g.count[PREDATOR]>=3&&g.count[DECOMPOSER]>=8&&g.count[PARASITE]>=1&&g.count[SPORE]>=1&&g.toxin<65;
     int ready=(g.used&required[g.mission])==required[g.mission];
     if(diverse&&balanced&&ready)g.stable++;else if(g.stable>0)g.stable-=2;
     if(g.stable<0)g.stable=0;
     if((g.tick%50)==0){for(int k=0;k<6;k++)g.history[k][g.history_at]=g.count[k+1];g.history_at=(g.history_at+1)&63;}
     if(g.stable>=120){g.mission++;if(g.mission>=6)g.won=1;else populate();}
-    int extinct=0;for(int k=PRODUCER;k<SPECIES;k++)if(g.count[k]==0)extinct=1;
-    if(extinct||g.budget<0||g.tick>=36000)g.lost=1;
+    if(diverse)g.collapse=0;else g.collapse++;
+    if(g.collapse>100||g.budget<0||g.tick>=36000)g.lost=1;
 }
 
 static void patch_cells(int radius,int action){
@@ -95,7 +95,7 @@ static void apply_tool(int use){
     if(use==USE_ANTIBIOTIC){patch_cells(2,use);g.toxin+=4;}
     if(use==USE_LIGHT){g.light=g.light<70?g.light+20:g.light-30;}
     if(use==USE_PH){g.ph=g.ph<60?g.ph+12:g.ph-18;}
-    if(use==USE_SPECIES)patch_cells(3,use);
+    if(use==USE_SPECIES){patch_cells(3,use);for(int k=PRODUCER;k<SPECIES;k++)for(int j=0;j<4;j++){int x=(g.cx+k*3+j*7)%GW,y=(g.cy+k*5+j*3)%GH;g.cell[y*GW+x]=(uint8_t)k;}}
     if(use==USE_CLEAN){patch_cells(4,use);g.toxin-=18;if(g.toxin<0)g.toxin=0;}
     if(use==USE_CURRENT)g.current=300;
     if(use==USE_QUARANTINE)patch_cells(3,use);
@@ -128,6 +128,8 @@ Input game_autoplay(int t){
     if(missing&USE_NUTRIENT){in.pressed[A]=1;return in;}if(missing&USE_ANTIBIOTIC){in.pressed[B]=1;return in;}
     static const int use[TOOLS]={USE_LIGHT,USE_PH,USE_SPECIES,USE_CLEAN,USE_CURRENT,USE_QUARANTINE};
     if(missing){int want=0;while(want<TOOLS&&!(missing&(unsigned)use[want]))want++;if(g.selected!=want)in.pressed[C]=1;else in.pressed[D]=1;return in;}
+    int scarce=0;for(int k=PRODUCER;k<SPECIES;k++)if(g.count[k]<4)scarce=1;
+    if(scarce&&g.collapse>20){int want=TOOL_SPECIES;if(g.selected!=want)in.pressed[C]=1;else in.pressed[D]=1;return in;}
     if(g.toxin>55){int want=TOOL_CLEAN;if(g.selected!=want)in.pressed[C]=1;else in.pressed[D]=1;return in;}
     if(g.count[PRODUCER]<100&&g.budget>0)in.pressed[A]=1;
     return in;

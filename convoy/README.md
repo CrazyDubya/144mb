@@ -26,9 +26,23 @@ cannot fight off the next raid. That is the whole game.
 **Cargo is health.** There is no hit-point bar anywhere. Raiders take cargo,
 storms take water and fuel, and an empty hold is death. You die broke.
 
-**Markets remember.** Selling into a settlement permanently depresses its prices.
-Routes burn out behind you, so the pressure to push into the dangerous outer
-sectors is economic rather than an artificial timer.
+**Markets remember, and they run out.** Selling into a settlement permanently
+depresses its prices, so routes burn out behind you and the pressure to push
+into the dangerous outer sectors is economic rather than an artificial timer.
+Stock is finite and set by what a place produces — a well has water to spare
+and almost no ammunition — so a cargo is assembled across several towns rather
+than bought at one.
+
+**A town is a place, not a price row.** It has a name, and about half of them
+are going through something: under siege, sick, booming, half-abandoned, run by
+a cartel, or gone dry. That bends what they have and what they charge, and each
+one offers a choice you can walk into or walk past. You cannot see any of it
+from the map — the kind of place is drawn, its condition and prices are found by
+arriving.
+
+**Every archetype does one thing no other will.** A well fills your tanks
+whatever the shelf says; a scrapyard puts a broken fitting right, or pays list
+for metal; a clinic squares you with whoever is closest to walking out.
 
 You start with five or six fuel and the Green Zone is thirteen hops away, so
 reaching it is arithmetically impossible without trading. Fuel also gets dearer the further east
@@ -60,7 +74,7 @@ substantially its own handicap. See `TESTLOG.md`, phase P3.
 | ↑ ↓ | select |
 | Z | buy · accept · travel |
 | X | sell · refuse |
-| ← → | switch tabs: market, garage, crew, contracts, people |
+| ← → | walk between places in town |
 | ↵ | depart · restart |
 | H | how to play |
 | Esc | quit |
@@ -119,7 +133,13 @@ Script characters are one discrete keypress each: `u d l r` arrows, `a` = Z,
 | `-X` | hunt for a profitable buy-then-sell round trip |
 | `-K` | per-encounter-kind accept/refuse/forced report |
 | `-S n` | photograph the first frame showing tab n |
+| `-Y` | fail on any frame where two pieces of text overlap |
 | `-U n` | fit upgrade n regardless of what the bot chooses |
+| `-C n` | put crew member n aboard regardless |
+| `-V n` | grant archetype n's service free at every stop |
+| `-I n` | force every rumour true (1) or false (2) |
+| `-M n` | which human pressures the bot feels |
+| `-J n` | photograph the watchlist at bot step n |
 | `-R` | refuse every encounter (reachability probe) |
 | `-E` | dump the end screen |
 | `--daily` | play today's fixed map |
@@ -186,15 +206,36 @@ one multiplier.
 
 ## Status
 
-Version 4. A payload of seed stock that cannot be sold and decides the ending;
-fourteen encounter kinds, all of them measurably real decisions; five recurring
-characters with dialogue that remembers how you left them; contracts, a garage
-and a crew board; three difficulties and a daily map; procedural backdrop with
-weather and time of day; cut scenes and five endings; procedural audio.
+**Version 6**, 123,904 bytes — 8.4% of the floppy.
 
-Zero crashes and zero stalls across 1,200 bot-played runs at the v4 gate, plus
-determinism and market-exploit probes on every phase. Verified running on Windows by CI, which launches the binary and
-screenshots it on every push.
+A payload of seed stock that cannot be sold and decides the ending; fourteen
+encounter kinds, all measurably real decisions; five recurring characters who
+can be recruited, carry personal errands, offer a third way through any
+encounter, and desert you after a warning; towns with names, finite stock, a
+situation to walk into and a trade only they will do; word of the road from
+people whose reliability depends on how you have treated them; contracts, kit,
+three difficulties and a daily map; procedural backdrop with weather and time of
+day; cut scenes, five endings and procedural audio.
+
+    65 / 48 / 29 win rate across 3,000 bot-played runs at the v6 gate
+    zero crashes, zero stalls, zero text collisions
+    determinism, market-exploit and layout probes on every phase
+
+Verified running on Windows by CI, which launches the binary and screenshots it
+on every push.
+
+### Recorded, not fixed
+
+Two things measured badly and are documented rather than quietly rebalanced —
+see `TESTLOG.md` for the numbers:
+
+- **Word of the road carries no mechanical advantage.** A perfect oracle is
+  worth zero win-rate points, because a hop offers two or three
+  near-interchangeable places and knowing more about one cannot pay. Fixing it
+  means making route generation produce sectors that differ.
+- **The mechanic fell from +11 to +3** when granted free. The new shops do what
+  the mechanic does, and made the role largely redundant without anyone deciding
+  to.
 
 The backdrop is generated every frame and stored nowhere: a Bayer-dithered sky,
 three parallax dune layers summed from sines, a dithered sun corona, and dust

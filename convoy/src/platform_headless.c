@@ -418,7 +418,7 @@ typedef struct {
 
 typedef struct {
     uint32_t seed, map, trace;
-    int      steps, journal_tab;
+    int      steps, journal_tab, shot_tries;
     int      shot_done;
     World    w;            // the whole thing, copied at the end
 } RunResult;
@@ -441,6 +441,7 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
     memset(res, 0, sizeof *res);
     res->seed = seed;
     res->journal_tab = -1;
+    res->shot_tries  = 0;
     res->trace = 2166136261u;
     INSTR(probe_seed = seed; probe_step = 0);
 
@@ -567,8 +568,19 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         // already reads ST_TRADE, so shooting on state alone photographs the
         // cut scene -- the same disagreement between what the simulation says
         // and what is on screen that produced the wrong map hash in P1.
-        if (o->shot_tab >= 0 && !res->shot_done && steps > 25
-            && w->state == ST_TRADE) {
+        // Bounded retries.
+        //
+        // This used to try again on every trade frame for as long as the shot
+        // was outstanding, pressing RIGHT ten times a go. On a seed where the
+        // wanted location never opens -- a town with no situation, a convoy
+        // with no crew -- that burned the entire 4,000-step budget and the run
+        // ended at the cap having photographed nothing. Not a stall in the
+        // game, but a tool that quietly destroys the run it is measuring, which
+        // is worse: it looks like a screenshot that did not happen rather than
+        // a run that did not finish.
+        if (o->shot_tab >= 0 && !res->shot_done && res->shot_tries < 40
+            && steps > 25 && w->state == ST_TRADE) {
+            res->shot_tries++;
             for (int k = 0; k < TAB_COUNT; ++k) {
                 int t = 0;
                 game_ui(mem, NULL, NULL, &t, NULL);
