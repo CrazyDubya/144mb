@@ -1,5 +1,21 @@
 # Phase 2A — rebuilding kit as a decision
 
+> **Correction, v4.** Two numbers below are wrong and are left in place
+> because this document's value is the record of a model being tested rather
+> than the prescription itself.
+>
+> - It prescribes `price = payback * 3 / 4`. The shipped value is 45%
+>   (`SOUND_PCT`), settled by measurement in phase 2A.
+> - It prescribes salvaged kit at ~45% of sound. `TESTLOG.md` records that
+>   value as discredited — at 45% salvaged is strictly better and there is no
+>   decision. The shipped value is 67% (`SALVAGE_PCT`).
+>
+> Separately, the payback model this document is built on was itself wrong by
+> an order of magnitude until v4 P8: it assumed a role covers ~7.8 encounters
+> per run, where the measured figure is 0.79. The method here — derive a
+> price from what a fitting returns — is sound. The rate it was fed was not.
+
+
 ## Why the current design cannot be tuned into working
 
 Kit loses to working capital, and it loses structurally rather than by a

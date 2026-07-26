@@ -64,6 +64,11 @@ one game a few minutes. Two consequences:
   strongest version of this is to ship no alphabetic font at all, which makes
   accidental English impossible rather than merely unlikely. Keycaps (`Z`, `X`,
   `↵`) are fine — they label physical keys, not words.
+
+  > **Superseded.** This was tried and reversed. See *Do not mistake "no text"
+  > for "universally readable"* below: a game with no words turned out to be a
+  > guessing game, and the fix was a 32-glyph uppercase font costing about 300
+  > bytes. Read that section before acting on this one.
 - **Be legible in 30 seconds.** Anything that takes twenty minutes to become
   interesting will not be seen.
 
@@ -467,3 +472,80 @@ does.
 Of the six numbers per difficulty, **resupply density moved the win rate more
 than the other five combined**. Starting stock is what a player notices; how
 often they can restock is what actually decides the run.
+
+---
+
+## Split your generator before you tune anything
+
+convoy drew map layout, market offers, contracts, encounters and equipment
+failure from a single RNG stream. Adding one die roll to an encounter table
+therefore reshuffled every later offer and contract for that seed: the seed
+stopped being the same run the moment any table was edited, so paired
+before/after comparison was never valid. Worse, salvaged kit rolled for failure
+only when it was fitted — so the convoy's own purchase decision moved the
+stream and re-rolled its own encounters.
+
+Split into three streams, an encounter-table edit now leaves every map hash
+untouched across 100 seeds on each difficulty while the win rate moves. That
+was verified by deliberately inserting an extra draw and checking.
+
+**Do this in the first hour of any project with a seed and a tuning loop.** It
+costs eight bytes of state and it is the difference between a comparison that
+means something and one that does not.
+
+## A price derived from a payback makes every test of it a tautology
+
+convoy priced crew at 45% of what a crew member was calculated to return. The
+bot's hiring rule was `payback > price`. That reduces to `p > 0.45p` — true for
+every positive p, at any price, however wrong the payback figure happened to
+be. It was wrong by a factor of ten.
+
+The rule that fixes it: **an agent may take facts from the system it measures,
+never valuations.** Prices, rates, capacities, what is reachable — all fine.
+What something is *worth* has to be estimated independently, from observable
+quantities, or the agent cannot disagree with the system and the disagreement
+is the entire measurement.
+
+## Freeze a reference agent before you improve the current one
+
+When both the game and the agent that measures it are changing, a moved number
+is unattributable. Copy the agent, freeze the copy, run both over the same
+seeds every time. When the agent changes the frozen one holds the game fixed;
+when the game changes they move together.
+
+The frozen copy does not need to be good — convoy's plays badly and lies to
+itself. It needs to be *constant*.
+
+## A win-rate sweep cannot resolve a rare mechanic
+
+An encounter kind that fires a quarter of a time per run contributes far less
+than the standard error of any feasible sweep. Tuning one by watching the win
+rate produces a confident wrong answer.
+
+What worked was counting engagement directly: how often each kind came up, how
+often it was taken, and — the column that mattered most — how often it was
+refused because it *could not be paid* rather than because it was a bad deal.
+Those two are the same keypress and mean opposite things. Seven of fourteen
+kinds turned out to be non-decisions, and the largest single fix was in the
+agent rather than the tables.
+
+## Four tools reported success while doing nothing
+
+In one release: a sync script that copied a tree to itself; the guard added to
+fix it, defeated by piping its output so the shell saw `tail`'s exit status; a
+harness flag that set a value on the world built for the title screen, which
+the real run then rebuilt from scratch; and a probe script whose `sed` produced
+a syntax error, built into `/dev/null`, and reported the same number for five
+different configurations.
+
+Every one produced a plausible result. Three were caught only because a number
+that should have differed came back **exactly** identical.
+
+- **Identical is a red flag, not a relief.** Two configurations agreeing to the
+  unit is a defect report.
+- **Never silence a build.** `>/dev/null` on a compile turns every later
+  measurement into a report on the previous binary.
+- **Never pipe a check whose exit status you depend on.**
+- **When a guard has been defeated twice, move it.** The fix that finally held
+  was a pre-commit hook comparing the shipped tree against the tested one —
+  somewhere it cannot be piped, skipped, or run from the wrong directory.

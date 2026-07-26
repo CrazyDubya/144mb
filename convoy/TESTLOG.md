@@ -1560,6 +1560,63 @@ They are now shown on the line that already describes the selected good.
 
 A grep for unreferenced `T_*` symbols returns nothing.
 
+## P10 — documentation, and the shipped state of v4
+
+### Final gate
+
+| difficulty | band | v4 final (n=1000) |
+|---|---|---:|
+| FORGIVING | 60-70% | **69%** |
+| THE ROAD | 42-52% | **43%** |
+| UNFORGIVING | 22-32% | **25%** |
+
+Zero stalls. Careless play 0%. Sanitizers clean, determinism clean over 200
+seeds on each difficulty, market-exploit probe clean across every good at every
+price with and without the trader aboard.
+
+**110,592 bytes — 7.50% of the floppy.**
+
+### What the documents claimed
+
+`convoy/README.md` described **Version 1**: "five encounter types" against
+fourteen, "five fuel and nine hops" against six and thirteen, a seven-file
+layout for a twenty-two file tree, six of twenty harness flags, and **no row
+for the left and right keys** — the ones that reach the garage, the crew board,
+the contracts and the journal. A player following that table could not open
+four of the game's five screens.
+
+It also carried the v3 difficulty figures as though they were current. They are
+now published with the caveat that matters: they are not comparable to anything
+before v4, because the generator was re-seeded into three streams *and* the
+agent that produced them was measuring its own handicap.
+
+`DESIGN-kit.md` prescribed two values its own log records as wrong — a price at
+3/4 of payback where the shipped figure is 45%, and salvage at 45% where
+TESTLOG explicitly records that value as discredited. A correction block was
+added rather than editing the body: the document's worth is the record of a
+model being tested, and quietly fixing its numbers would destroy exactly that.
+The block also notes that the payback model underneath it was wrong by an order
+of magnitude until P8 — the *method* was sound, the rate it was fed was not.
+
+`NOTES.md` opened with "make it language-free — the strongest version ships no
+alphabetic font at all", and reversed that sixty lines later without a marker.
+A reader working top to bottom would have acted on the retracted advice. It now
+carries a superseded note pointing forward.
+
+`tools/mkpage.py` hard-coded the byte count, so the published page misreported
+the size after every build that changed it — which is every build worth
+publishing. It measures the binary now.
+
+### New entries in NOTES
+
+Five lessons that generalise past this game: split the generator before tuning
+anything; a price derived from a payback makes every test of it a tautology;
+freeze a reference agent before improving the current one; a win-rate sweep
+cannot resolve a rare mechanic; and four tools reporting success while doing
+nothing, with the rules that came out of it — identical is a red flag, never
+silence a build, never pipe a check whose exit status you depend on, and when a
+guard has been defeated twice, move it somewhere it cannot be bypassed.
+
 ---
 
 ## Bugs found, and what found them

@@ -2,7 +2,7 @@
 
 A post-apocalyptic trading roguelike that fits on a floppy disk.
 
-**108,544 bytes — 7.36% of 1,474,560.**
+**110,592 bytes — 7.50% of 1,474,560.**
 
 You run a convoy east across fourteen sectors toward the Green Zone. You will not
 get there without trading, and everything you trade is something that keeps you
@@ -30,8 +30,8 @@ storms take water and fuel, and an empty hold is death. You die broke.
 Routes burn out behind you, so the pressure to push into the dangerous outer
 sectors is economic rather than an artificial timer.
 
-You start with five fuel and the Green Zone is nine hops away, so reaching it is
-arithmetically impossible without trading. Fuel also gets dearer the further east
+You start with five or six fuel and the Green Zone is thirteen hops away, so
+reaching it is arithmetically impossible without trading. Fuel also gets dearer the further east
 you go, which means the run grows harder to afford exactly as it grows harder to
 survive.
 
@@ -41,10 +41,17 @@ survive.
 |---|---|---|---|
 | ignores the economy | **0%** | **0%** | **0%** |
 | buys fuel, fixed routine | **0%** | **0%** | **0%** |
-| plays prices (see the bot below) | **64%** | **46%** | **25%** |
+| plays prices (see the bot below) | **70%** | **43%** | **27%** |
 
-Over 200 seeds each. The first two follow fixed key sequences and cannot react
-to a price, so they die out on the road; only the third actually trades.
+Over 400 seeds each, zero stalls. The first two follow fixed key sequences and
+cannot react to a price, so they die out on the road; only the third trades.
+
+These numbers are **not** comparable to anything published before v4. The
+generator was re-seeded into three independent streams, so every seed is a
+different run — and, more importantly, the bot that produced the old figures
+sampled prices by loitering and thirsted itself to death on a reserve that
+collapsed whenever the day parity was wrong. The difficulty it reported was
+substantially its own handicap. See `TESTLOG.md`, phase P3.
 
 ## Controls
 
@@ -53,6 +60,7 @@ to a price, so they die out on the road; only the third actually trades.
 | ↑ ↓ | select |
 | Z | buy · accept · travel |
 | X | sell · refuse |
+| ← → | switch tabs: market, garage, crew, contracts, people |
 | ↵ | depart · restart |
 | H | how to play |
 | Esc | quit |
@@ -102,6 +110,19 @@ Script characters are one discrete keypress each: `u d l r` arrows, `a` = Z,
 | `-o DIR` | output directory |
 | `-v` | trace simulation state each step |
 | `-w N` | render N seconds of audio to a wav |
+| `-B` | play with the price-aware bot |
+| `-N n` | run seeds 1..n in one process, then print a SWEEP line |
+| `-D n` | difficulty: 0 forgiving, 1 the road, 2 unforgiving |
+| `-A ref` | play with the frozen v4-entry agent instead of the current one |
+| `-Q` | shrink the drawn area — ~50x faster, identical results |
+| `-Z` | replay every seed and compare a state hash |
+| `-X` | hunt for a profitable buy-then-sell round trip |
+| `-K` | per-encounter-kind accept/refuse/forced report |
+| `-S n` | photograph the first frame showing tab n |
+| `-U n` | fit upgrade n regardless of what the bot chooses |
+| `-R` | refuse every encounter (reachability probe) |
+| `-E` | dump the end screen |
+| `--daily` | play today's fixed map |
 
 ```sh
 # let the price-aware bot play a full run
@@ -116,8 +137,15 @@ PIL. `tools/crop.py` decodes and crops arbitrary PNGs, filters and all.
 
 `src/bot.c` plays the game through its own UI: it moves the cursor and presses
 the same keys a player would, deciding from world state. It tracks a running
-average of every price it has seen, sells above it, buys below it, keeps a fuel
-and water reserve sized to the distance remaining, and scores each route branch.
+average of every price it has seen — once per market, not once per keypress —
+sells above it, buys below it, keeps fuel and water reserves summed over the
+days ahead, and scores the road two hops out.
+
+It takes **facts** from `world.h` and never a **valuation**. That rule is not
+stylistic: `world_crew_price` is a fixed percentage of `world_crew_payback`, so
+the old hiring test `payback > price` reduced to `p > 0.45p` — true for every
+positive p, at any price, however wrong the payback figure was. A tautology
+cannot discover that a price is wrong.
 
 It is compiled **only into the headless harness** and contributes zero bytes to
 the submitted executable.
@@ -125,31 +153,47 @@ the submitted executable.
 It exists because scripted key sequences measure only the floor — a fixed string
 of presses cannot look at a price and decide. The first thing the bot revealed
 was that the game was far too easy for anyone who knew what they were doing: it
-won 90% of runs on the original eight-sector route. Lengthening the journey and
-thinning out the settlements brought that to 53%, and the systems added since --
-a payload that cannot be sold, kit that is a real gamble, and people who turn up
-whether or not you routed toward them -- have brought it to 46% on the middle
-setting. The three difficulties do not scale one number: easy and normal kill
-you with thirst, hard kills you with fuel, because settlements thin out faster
-than the water margin does.
+won 90% of runs on the original ten-sector route.
+
+The more useful thing it revealed came later, in v4: once its own faults were
+fixed it played twenty points better on a game that had not changed, which
+meant three releases of recorded difficulty had been measuring the instrument
+rather than the game. Every number in `TESTLOG.md` above the v4 epoch marker is
+kept as a record of what was tried, and none of it is a current measurement.
+
+The three difficulties move every field — starting capital, water, fuel, the
+fuel price curve, storm severity, storm frequency and settlement density — not
+one multiplier.
 
 ## Layout
 
 | file | |
 |---|---|
 | `src/game.h` | the boundary: memory, input, pixels, audio. No OS calls cross it. |
-| `src/game.c` | state machine and presentation |
-| `src/world.c` | route generation, markets, travel, survival — pure simulation |
-| `src/render.c` | rasterizer, bitmap numerals, icon vocabulary |
-| `src/audio.c` | synthesiser and sequencer, integer maths only |
+| `src/game.c` | state machine and input |
+| `src/state.h` | the run's complete state, shared by game.c and ui.c |
+| `src/world.{c,h}` | route generation, markets, travel, survival — pure simulation |
+| `src/ui.c` | every screen; reads state, writes pixels, decides nothing |
+| `src/render.{c,h}` | rasterizer, 5x7 font, icon vocabulary, procedural portraits |
+| `src/scene.{c,h}` | procedural backdrop: sky, dunes, weather, time of day |
+| `src/cutscene.{c,h}` | letterboxed panels, typewriter text, endings and vignettes |
+| `src/audio.{c,h}` | synthesiser and sequencer, integer maths only |
+| `src/text.h` | every string in the game |
+| `src/bot.{c,h}` | the price-aware test agent — harness only |
+| `src/bot_ref.{c,h}` | a frozen copy of it, so the game can be held fixed |
 | `src/platform_win32.c` | submission target |
 | `src/platform_headless.c` | development harness |
 
 ## Status
 
-Version 1. Title screen, procedural backdrop, five encounter types, three death
-conditions, win condition, procedural audio, balanced against a price-aware bot.
-Zero crashes across 300 bot-played runs. Verified running on Windows by CI, which launches the binary and
+Version 4. A payload of seed stock that cannot be sold and decides the ending;
+fourteen encounter kinds, all of them measurably real decisions; five recurring
+characters with dialogue that remembers how you left them; contracts, a garage
+and a crew board; three difficulties and a daily map; procedural backdrop with
+weather and time of day; cut scenes and five endings; procedural audio.
+
+Zero crashes and zero stalls across 1,200 bot-played runs at the v4 gate, plus
+determinism and market-exploit probes on every phase. Verified running on Windows by CI, which launches the binary and
 screenshots it on every push.
 
 The backdrop is generated every frame and stored nowhere: a Bayer-dithered sky,

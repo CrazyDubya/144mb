@@ -10,7 +10,18 @@ import os
 MEDIA = "media"
 OUT = "docs/progress.html"
 
-BYTES_USED = 108544
+# Read from the binary rather than typed in. It was hard-coded, so the
+# published page silently misreported the size after every build that changed
+# it -- which is every build worth publishing.
+def _measure():
+    import os
+    for c in ("build/convoy.exe", "../build/convoy.exe",
+              "/home/opc/convoy/build/convoy.exe"):
+        if os.path.exists(c):
+            return os.path.getsize(c)
+    raise SystemExit("mkpage: cannot find convoy.exe to measure")
+
+BYTES_USED = _measure()
 LIMIT = 1474560
 
 
