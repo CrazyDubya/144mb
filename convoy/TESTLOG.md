@@ -2767,3 +2767,95 @@ in the right column, which is what that column is for.
 
     -Y overlap sweep, n=200 x 3 difficulties   0
     ASan/UBSan, -X, -Z                     clean
+
+---
+
+# v6 P4 — a situation to walk into
+
+Six conditions, rolled at world-gen from `rng_town`, on about half of
+settlements: SIEGE, SICK, BOOM, EMPTY, CARTEL, DRY. Each bends stock and price,
+and each offers one choice in its own location.
+
+Names are eight characters because the strip gate said so. QUARANTINE and
+ABANDONED were the first two and neither fits a five-location strip.
+
+**Condition modifiers apply before the water/fuel floor**, which is why COND_DRY
+moves price and not stock: reversed, a dry town takes water to zero underneath
+the clamp and starves runs to death while reading as a difficulty result.
+
+## The choice is an Event
+
+Not a parallel resolution path. Routing it through `world_accept` /
+`world_decline` / `world_attempt` buys the v5 third branch, the two-reason split
+in `world_accept_block`, the whole encounter panel, the fate counters, and the
+bot's `decide_event` — which is written so a fifteenth kind needs no change in
+it. A separate path would have needed every one of those rebuilt and would have
+given the harness nothing to read.
+
+## Two calibration passes and 30 parameterisations
+
+First cut: **84/74/62** against 68/52/32. Roughly six situations a run each
+paying 30-55 credits is an income stream, not a dilemma. Second cut overshot to
+**56/41/23**. A subagent then swept thirty parameterisations at n=400 and
+re-ran the finalists at n=1500-3000, because n=400 is +/-2.5 points at 1 sigma
+and several early conclusions were noise.
+
+Shipped: SIEGE 2 ammo -> 20+ credits, refuse 1 water; SICK 1 meds -> 8+, refuse
+2 water; BOOM 1 fuel -> 26+, refuse 2 random; EMPTY 1 fuel -> 1 meds, refuse
+nothing; CARTEL 1 ammo -> 12, refuse 2 random; DRY 2 water -> 70+, refuse 1
+random.
+
+## The instrument was broken, and that is the finding
+
+`world_situation_enter` never incremented `ev_fired[kind]`, but `world_accept`
+and `world_decline` increment `ev_accepted` and `ev_forced` regardless of where
+an encounter came from. So `-K` was dividing situation outcomes by the
+random-encounter count alone and reporting **accept 312%, refuse -212%**.
+
+A percentage over a hundred is the instrument saying it is broken. The danger is
+the ones that stay under a hundred and look like results. Fixed with one line —
+a situation is a firing of its kind, because that is what it is.
+
+## A regression the repaired instrument then found
+
+With `-K` trustworthy again, against v5 on the same seeds:
+
+    kind      v5    v6 (before fix)   after fix
+    WRECK    14%          53%            20%
+    BREAK     6%          37%             7%
+    LEAK      7%          34%             5%
+
+All three are priced in scrap or fuel — exactly what the refinery and scrapyard
+services consume. **The services were eating the goods the encounters demand.**
+The convoy cashed in its metal and then met a breakdown it could not pay for.
+
+A service that makes a later encounter unaffordable has not sold the player
+anything; it has moved a cost somewhere they cannot see it. Services now refuse
+to take a good below its survival reserve, and the scrapyard never buys the last
+three scrap.
+
+Two of the three are back to v5 levels. The rises that remain -- SICK 7% -> 17%,
+TOLL 6% -> 13% -- are on the kinds the situations reuse, which is expected and
+recorded rather than hidden.
+
+## Where it landed, and what could not be reached
+
+    n=800:  62 / 46 / 34        contract 66 / 47 / 30
+
+NORMAL is one point out. The EASY-HARD spread is 28 where the contract has 36,
+and across thirty parameterisations the spread never exceeded 31 — it shrinks as
+the overall level rises. Every lever inside `world_situation_enter` is uniform
+or HARD-favouring.
+
+The reading is that the condition price and stock distortions compress the
+difficulty spread on their own, so the pre-situation spread is not restorable
+from the situation economy alone. That is a job for the difficulty table in P7,
+which is where it belongs.
+
+**SICK could not be de-forced**, and it is stated rather than papered over: 24%
+of the time the convoy has no meds. The only fix is to stop charging in meds,
+which contradicts the flavour and removes one of the two drains holding HARD
+down. In mitigation the random `EV_PLAGUE` already forces at a similar rate, so
+the situation is no more optionless than the kind it reuses.
+
+    stalls 0 · overlaps 0 · ASan/-X/-Z clean

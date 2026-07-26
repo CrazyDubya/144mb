@@ -334,6 +334,25 @@ static int service_worth_taking(const Bot *b, const World *w) {
     int k = world_service_kind(w);
     if (k == SVC_NONE || !world_can_service(w)) return 0;
 
+    // A service must not eat the survival stock.
+    //
+    // The refinery burns two scrap and the scrapyard sells up to four, and
+    // nothing checked what that left behind -- so the convoy would cash in its
+    // metal and then meet a breakdown it could not pay for. Measured against
+    // v5 on the same seeds: WRECK forced 14% -> 53%, BREAK 6% -> 37%, LEAK
+    // 7% -> 34%. Those three are exactly the kinds priced in scrap and fuel.
+    //
+    // A service that makes a later encounter unaffordable has not sold the
+    // player anything, it has moved a cost somewhere they cannot see it.
+    {
+        int keep[GOODS_COUNT];
+        reserves(w, keep);
+        if (k == ARCH_REFINERY && w->held[G_SCRAP] - 2 < keep[G_SCRAP]) return 0;
+        if (k == ARCH_SCRAPYARD && w->kit_failed < 0
+            && w->held[G_SCRAP] <= keep[G_SCRAP]) return 0;
+        if (k == ARCH_WELL && w->held[G_FUEL] < keep[G_FUEL]) return 0;
+    }
+
     int price = world_service_price(w);
     int gain  = 0;
     switch (k) {

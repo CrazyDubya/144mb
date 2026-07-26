@@ -1225,7 +1225,10 @@ void world_service(World *w) {
         // not free money; a scrapyard paying list for scrap is the one place
         // that is not true, which is what makes it worth the detour.
         if (w->kit_failed < 0) {
-            int n = w->held[G_SCRAP] < 4 ? w->held[G_SCRAP] : 4;
+            // Never the last of it. Selling a convoy's whole scrap stock is
+            // how a breakdown two hops later stops being a decision.
+            int spare = w->held[G_SCRAP] - 3;
+            int n = spare < 0 ? 0 : (spare < 4 ? spare : 4);
             w->held[G_SCRAP] -= n;
             w->credits += n * w->node[w->sector][w->index].price[G_SCRAP];
             break;
@@ -1269,37 +1272,37 @@ void world_situation_enter(World *w) {
     case COND_SIEGE:    // they need ammo and will pay for it
         e->kind = EV_TOLL;
         e->pay_good = G_AMMO;  e->pay_qty = 2;
-        e->gain_credits = 14 + deep / 6;
+        e->gain_credits = 20 + deep / 6;
         e->lose_good = G_WATER; e->lose_qty = 1;
         break;
     case COND_SICK:     // meds, or they will not let you near the well
         e->kind = EV_PLAGUE;
         e->pay_good = G_MEDS;  e->pay_qty = 1;
-        e->gain_credits = 10 + deep / 6;
+        e->gain_credits = 8 + deep / 6;
         e->lose_good = G_WATER; e->lose_qty = 2;
         break;
     case COND_BOOM:     // everyone is buying; sell into it
         e->kind = EV_TRADER;
-        e->pay_good = G_SCRAP; e->pay_qty = 2;
-        e->gain_credits = 16 + deep / 6;
-        e->lose_good = -1;     e->lose_qty = 1;
+        e->pay_good = G_FUEL;  e->pay_qty = 1;
+        e->gain_credits = 26 + deep / 5;
+        e->lose_good = -1;     e->lose_qty = 2;
         break;
     case COND_EMPTY:    // pick the place over
         e->kind = EV_CACHE;
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_good = G_SCRAP; e->gain_qty = 2;
+        e->gain_good = G_MEDS; e->gain_qty = 1;
         e->lose_good = -1;     e->lose_qty = 0;
         break;
     case COND_CARTEL:   // pay the family, or they take a cut anyway
         e->kind = EV_CHECKPOINT;
         e->pay_good = G_AMMO;  e->pay_qty = 1;
-        e->gain_credits = 9;
+        e->gain_credits = 12;
         e->lose_good = -1;     e->lose_qty = 2;   // random cargo
         break;
     case COND_DRY:      // haul water up for them
         e->kind = EV_REFUGEE;
         e->pay_good = G_WATER; e->pay_qty = 2;
-        e->gain_credits = 18 + deep / 4;
+        e->gain_credits = 70 + deep / 3;
         e->lose_good = -1;     e->lose_qty = 1;
         break;
     default: return;
@@ -1324,7 +1327,16 @@ void world_situation_enter(World *w) {
     }
 
     w->sit_done = 1;
-    INSTR(w->in.sit_entered++);
+    // Count it as a firing of its kind, which is what it is.
+    //
+    // Without this the -K table is not merely incomplete, it is WRONG:
+    // world_accept and world_decline increment ev_accepted and ev_forced for
+    // the kind regardless of where the encounter came from, so situation
+    // outcomes were being divided by the random-encounter count alone. The
+    // table reported accept 312% and refuse -212% for the reused kinds. A
+    // percentage over a hundred is the instrument saying it is broken; the
+    // danger is the ones that stay under a hundred and look like results.
+    INSTR(w->in.sit_entered++; w->in.ev_fired[e->kind]++);
     w->after_event = ST_TRADE;
     w->state = ST_EVENT;
 }
