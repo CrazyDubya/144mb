@@ -74,14 +74,43 @@ typedef struct {
     uint8_t alt_odds;              // percent, 35..85
 } Event;
 
+// What a settlement is going through when you get there. Rolled at world-gen
+// and hidden until arrival: the world always knew, the fog is the player's.
+enum {
+    COND_NONE = 0, COND_SIEGE, COND_QUARANTINE, COND_BOOM,
+    COND_ABANDONED, COND_CARTEL, COND_DRY, COND_COUNT
+};
+
 typedef struct {
     uint8_t active;
     uint8_t type;
     uint8_t visited;
     uint8_t links;              // bitmask of reachable nodes in the next sector
     uint8_t archetype;          // meaningful only for NODE_SETTLE
+    uint8_t cond;               // COND_*, hidden until visited
+    uint8_t name;               // high nibble picks the first word, low the second
+    uint8_t stock[GOODS_COUNT]; // units this settlement will part with
     int16_t price[GOODS_COUNT]; // current, mutated permanently by player trades
 } Node;
+
+// What the player is allowed to know about a node they have not stood in.
+//
+// The fog lives here rather than in the drawing code, and that is the whole
+// point of the type existing. A rule enforced only where a panel is drawn is a
+// rule the test bot never meets, and the bot is what every measurement in this
+// project is made with -- so a bot reading node[s][n].price directly would make
+// the rumour system score perfectly against information the player cannot see,
+// and the release's central number would be measuring nothing.
+//
+// Type, archetype, links and name survive the fog: all four are drawn on the
+// map, and a name is not information -- it is what a rumour points at.
+typedef struct {
+    uint8_t known;              // 0 when this node has never been visited
+    uint8_t type, archetype, links, name;
+    uint8_t cond;               // 0 unless known
+    uint8_t stock[GOODS_COUNT]; // 0 unless known
+    int16_t price[GOODS_COUNT]; // 0 unless known
+} NodeView;
 
 typedef enum {
     ST_MAP, ST_TRADE, ST_EVENT, ST_DEAD, ST_WON
@@ -136,6 +165,41 @@ typedef struct {
     uint8_t qty;        // units to carry
     uint8_t by_sector;  // do it before arriving here
 } Errand;
+
+// Something someone told you about the road ahead.
+//
+// Held on the World and not on the Node, deliberately. A rumour parked on the
+// node it describes would let a player accumulate a solved map, and it would be
+// state whose meaning depends on when it was written. Four slots, FIFO, and a
+// rumour is dropped the moment its sector is behind you -- forward-only travel
+// makes expiry free.
+//
+// A rumour may only claim things the fog hides. The map already draws node type
+// and archetype, so "there is a storm at X" is not information, it is the map
+// read aloud, and a claim set that duplicates the map is noise wearing a hat.
+#define RUMOUR_SLOTS 4
+
+enum {
+    CL_PRICE,   // "they pay well for meds there" / "fuel is cheap"
+    CL_STOCK,   // "they have water to spare" / "no ammo left"
+    CL_COND,    // "that place is under siege"
+    CL_ROAD,    // which kind of trouble an encounter node holds
+    CL_COUNT
+};
+
+typedef struct {
+    uint8_t sector, index;   // the node it is about
+    uint8_t claim;           // CL_*
+    uint8_t arg;             // the good, condition or event kind claimed
+    int8_t  src;             // CHAR_* who said it, or -1 for the room
+    uint8_t conf;            // 0..100, honestly derived from who is speaking
+    // Whether the claim is actually true. Never shown, and never read by the
+    // bot -- see the note on NodeView. The confidence above is honest even when
+    // this is not: the claim may lie, the game's account of how well it knows
+    // may not. A game that misrepresents its own certainty teaches the player
+    // to discard all of its information, the true parts included.
+    uint8_t truth;
+} Rumour;
 
 // People you meet more than once. Regard shifts with how you treat them and
 // changes what they ask for next time, so a character is a mechanic rather
@@ -231,6 +295,26 @@ typedef struct {
 
     uint8_t  min_water, min_fuel;
     uint16_t days_thin;       // days ending with water or fuel at 2 or less
+
+    // Towns. Reserved in one go rather than a field at a time, for the reason
+    // the block above was: Metrics should grow once in a release, not in every
+    // phase, so that a struct change is never confused with a result.
+    //
+    // The pair that decides whether finite stock shipped as a mechanic or as
+    // decoration is stock_out against bought_blocked: a constraint that never
+    // binds is furniture, and one that binds constantly is starving the run.
+    uint16_t stock_out[GOODS_COUNT];  // stops where a wanted good had none left
+    uint16_t bought_blocked;          // buys refused for want of stock
+    uint16_t svc_offered[ARCH_COUNT], svc_used[ARCH_COUNT];
+    uint16_t cond_seen[COND_COUNT],   cond_won[COND_COUNT];
+    uint16_t sit_present, sit_entered, sit_accepted, sit_declined;
+    uint16_t places_live, places_visited, calls_spent;
+    // Rumours, banded by stated confidence. Accuracy is measured per band
+    // because the bands are the only thing the player can act on: a system
+    // whose "swears to it" and "reckons" come true equally often has told them
+    // nothing, however good its average.
+    uint16_t rum_offered, rum_true, rum_acted;
+    uint16_t rum_band[3], rum_band_true[3];
 } Metrics;
 #define INSTR(stmt) do { stmt; } while (0)
 #else
@@ -238,7 +322,7 @@ typedef struct {
 #endif
 
 typedef struct {
-    // Three independent streams, not one. Everything used to draw from a
+    // Five independent streams, not one. Everything used to draw from a
     // single generator, which meant adding one die roll to an encounter table
     // reshuffled every later market offer and contract for that seed -- so a
     // seed stopped being the same run the moment any table was edited, and
@@ -255,8 +339,14 @@ typedef struct {
     // crew manoeuvre comes off. Separate from the three above for the reason
     // v4 proved expensively -- a single extra draw in roll_event reshuffles
     // every later market offer for that seed, and the resulting numbers still
-    // look entirely plausible. Nothing reads this yet.
+    // look entirely plausible.
     uint32_t rng_people;
+    // Towns: stock levels, names, which places are open, what the situation is,
+    // and who is talking. Split off for the same reason as the four above, and
+    // the rule for v6 is absolute -- nothing in the town layer draws from any
+    // other stream, so that a settlement change cannot silently reshuffle an
+    // encounter or a contract and hand back numbers that look plausible.
+    uint32_t rng_town;
     Node     node[SECTORS][NODES_PER];
 
     int sector, index;          // where the convoy is
@@ -307,6 +397,14 @@ typedef struct {
     uint8_t  warned;   // a hand has said they are thinking of leaving
     int      job_paid; // reward banked this stop, for the UI to celebrate
 
+    // A stop is not a menu you exhaust. Daylight is what makes a town a choice
+    // rather than a longer list: the stalls are free, and the other places in
+    // town cost a call each. Reset on arrival.
+    uint8_t  calls_left;
+    uint8_t  svc_used;      // the local trade is a once-per-stop thing
+    Rumour   heard[RUMOUR_SLOTS];
+    uint8_t  heard_n;
+
 #ifdef CONVOY_INSTRUMENT
     Metrics in;
 #endif
@@ -325,6 +423,9 @@ uint8_t world_links(const World *w);
 int  world_reachable (const World *w, int *out);
 // The good a settlement specialises in, or -1 for a general trading post.
 int  world_arch_good (int archetype);
+// What may be known about a node from where the convoy is standing. Every
+// reader of a node other than the one underfoot must come through here.
+void world_node_known(const World *w, int s, int n, NodeView *out);
 // -1 if this market is notably cheap for the good, +1 if notably dear, 0 if
 // it is about what the player has seen elsewhere.
 int  world_price_bias(const World *w, int good);

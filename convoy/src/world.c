@@ -17,6 +17,28 @@ static const int8_t ARCH_MOD[ARCH_COUNT][GOODS_COUNT] = {
     /* GENERAL   */ {    0,    0,    0,    0,    0 },
 };
 
+// What can be known about a node from here.
+//
+// In this phase it hands back everything, so the whole release can be built and
+// measured against a version of this function that hides nothing; the fog is
+// switched on in its own phase, alone, where its cost to the win rate is a
+// single attributable number. What matters now is that every reader goes
+// through here from the start, because a fog added later to an accessor nobody
+// calls is not a fog.
+void world_node_known(const World *w, int s, int n, NodeView *out) {
+    const Node *nd = &w->node[s][n];
+    out->known     = nd->visited;
+    out->type      = nd->type;
+    out->archetype = nd->archetype;
+    out->links     = nd->links;
+    out->name      = nd->name;
+    out->cond      = nd->cond;
+    for (int g = 0; g < GOODS_COUNT; ++g) {
+        out->stock[g] = nd->stock[g];
+        out->price[g] = nd->price[g];
+    }
+}
+
 int world_arch_good(int archetype) {
     switch (archetype) {
     case ARCH_WELL:      return G_WATER;
@@ -118,6 +140,7 @@ void world_init(World *w, uint32_t seed, int diff) {
     w->rng_offer = mix32(w->seed ^ 0x85EBCA6Bu);
     w->rng_event = mix32(w->seed ^ 0xC2B2AE35u);
     w->rng_people= mix32(w->seed ^ 0x27D4EB2Fu);
+    w->rng_town  = mix32(w->seed ^ 0x165667B1u);
     w->diff = (uint8_t)(diff < 0 ? 0 : (diff >= DIFF_COUNT ? DIFF_COUNT - 1 : diff));
     const DiffRule *D = &DIFF[w->diff];
 
