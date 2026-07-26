@@ -848,6 +848,139 @@ cause, three days apart. **Anything the harness pokes into the world has to be
 poked after the title, not before.**
 
 
+## P3 — the bot stops lying
+
+Game frozen; `bot.c` only. This is the first trustworthy baseline of the
+release, and it is nothing like the numbers that preceded it.
+
+| difficulty | frozen `ref` | honest `v4` | change |
+|---|---:|---:|---:|
+| FORGIVING | 72% | **92%** | +20 |
+| THE ROAD | 46% | **67%** | +21 |
+| UNFORGIVING | 27% | **38%** | +11 |
+
+n=400 each, zero stalls. `ref` is byte-identical to its P2 figures, which is
+the proof that the game did not move: **every point of that gain is the
+observer, not the observed.**
+
+### The game was never as hard as three releases of this log reported
+
+The difficulty numbers were measuring the instrument's handicap. Two faults did
+most of it:
+
+**The water reserve sampled one day's parity and multiplied it out.** The daily
+burn alternates — crew drink on odd days, water tanks give a dry day on even
+ones — so `span * world_water_burn(w)` swung between two very different
+answers depending on which day the convoy happened to arrive at a market. With
+tanks fitted on an even day the burn reads 0 and the whole reserve collapsed to
+2 units. The bot then sold water down to that and died of thirst a day later.
+It now sums `world_water_burn_on` over the days ahead.
+
+**The price average was weighted by loitering.** `observe()` ran on every step,
+i.e. every keypress, so a market was counted five to twenty times depending on
+how long the bot stood in it — and because `world_buy` and `world_sell` move
+the local price permanently, what accumulated was the *moved* price, over and
+over. The error was therefore a function of how much the bot traded, which is
+precisely what the average is used to decide.
+
+`world.h` carried a comment for three releases saying the bot "keeps the same
+running average for itself, so both reason from identical information". It was
+not true. It is now, and the harness checks it rather than asserting it: with
+`-Z`, at every arrival, the bot's per-good sample count and mean must equal the
+world's exactly. 100 seeds × 3 difficulties, clean.
+
+*(The first version of that check failed immediately — bot n=1 against world
+n=2. The check was wrong, not the code: the world observes inside
+`game_update` and the bot observes at its next `bot_step`, so comparing after
+the update straddles a phase boundary. Moved to between the two.)*
+
+### Breaking the circularity
+
+The old hiring test, in full:
+
+```c
+return crew_payback(w, k, hops) > price;      // price = world_crew_price(w, k)
+```
+
+and `world_crew_price` is `world_crew_payback * 45 / 100`. So the test is
+`p > 0.45p` — **true for every positive p**, at any price, whether the payback
+figure behind it was right or wrong by a factor of eight. There was no economic
+filter on crew at all; the bot hired whoever it could afford. The upgrade test
+was worse: it made no value judgement whatsoever and contained a literal
+`(void)hops;` discarding the number it had just computed.
+
+**A tautology cannot discover that a price is wrong, and the price being wrong
+is the thing under investigation.** So the rule is now written into `bot.c` as
+the section it governs:
+
+> The bot takes *facts* from `world.h` — prices, burn rates, capacities, what
+> is reachable — and never a *valuation*. It must not call
+> `world_upg_payback` or `world_crew_payback`.
+
+Its estimates are built from what the run has actually produced: prices it has
+paid, encounters it has met, which hand would have covered each, and how often
+a purchase was refused for want of room. All four counters are new; none of
+them existed to be consulted before.
+
+### And immediately, the measurement the audit could only assert
+
+| | P2 | P3 |
+|---|---:|---:|
+| upgrades bought per run | — | 0.69 |
+| **crew hired per run** | — | **0.00** |
+
+With an independent valuation, the bot hires **nobody, ever**, across 400 runs
+per difficulty. The static analysis had claimed crew were priced three to eight
+times their worth; that was arithmetic. This is a reading, and it is the first
+one possible, because until the tautology was removed the answer was fixed at
+"buy" regardless of the price. Every crew role is now a dominated option and
+P8 has to reprice all five from measured coverage.
+
+### Duplicates removed
+
+Four copies of game logic lived in `bot.c`, none of which any test could have
+reported as drifted, because each was only ever read by its own side:
+
+- `upgrade_payback` — dead; nothing called it.
+- `crew_payback` — had already diverged, missing the `net < 0` clamp.
+- `FUEL_WORTH` / `WATER_WORTH` — hand-synchronised constants.
+- a `BASE` price table — **already drifted**: water 13 against the game's 12,
+  fuel 22 against 17.
+- the `world_reachable` loop, re-implemented inside `decide_map` **without its
+  `sector >= SECTORS - 1` guard**, so it would read `node[SECTORS][m]`, one row
+  past the end of the array. Unreachable today only because arriving at the
+  Green Zone sets `ST_WON` before the map is drawn — a state-machine accident
+  rather than a bound.
+
+### Dead weight out of the contest binary
+
+`game_world`, `audio_mood_of` and `game_ui` are harness-only accessors, but
+"never called" is not "not present" without link-time garbage collection, and
+all three were being carried in the shipped executable. Now behind
+`CONVOY_INSTRUMENT`. Verified by comparing object symbol tables rather than by
+reading the size, which did not move — they are smaller than the 512-byte
+section granularity the size report rounds to:
+
+```
+windows object:  game_audio  game_daily  game_init  game_update
+harness object:  game_audio  game_daily  game_init  game_update
+                 audio_mood_of  game_ui  game_world
+```
+
+`game_daily` briefly went out with them and the Windows link failed on an
+undefined symbol — which is the linker doing the job `-Werror` did earlier in
+the phase, and an argument for building both targets on every change rather
+than only the one being worked on.
+
+### Where this leaves the band
+
+67% on THE ROAD is far outside the 40-50% band this log has used since v1. That
+band described a game measured by an agent that thirsted itself to death; it
+has no standing now and is not something to restore by making the game harder.
+It is re-derived in P5, after the bot also learns the pressures a player feels,
+and P4, P7 and P8 all move the economy underneath it first.
+
+
 ---
 
 ## Bugs found, and what found them
