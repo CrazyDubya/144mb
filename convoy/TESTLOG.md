@@ -1047,6 +1047,138 @@ Its drift here is the size of the game change as seen by a fixed observer, and
 it is small, which corroborates the measurement above.
 
 
+## P5 — the bot learns human pressure
+
+Game frozen; `bot.c` only. Three changes were proposed; one was measured and
+deleted, two kept, and a fourth was found while measuring.
+
+| difficulty | frozen `ref` | P4 `v4` | P5 `v4` |
+|---|---:|---:|---:|
+| FORGIVING | 71% | 92% | **94%** |
+| THE ROAD | 44% | 67% | **73%** |
+| UNFORGIVING | 27% | 39% | **40%** |
+
+n=400 each, zero stalls, careless play 0% on all three. `ref` unchanged from
+P4, confirming the game did not move.
+
+### Attribution, measured one at a time
+
+Three changes that all move the win rate produce one number and no attribution,
+so each was run alone over the same 400 seeds before all were enabled.
+
+| arm | THE ROAD | verdict |
+|---|---:|---|
+| baseline | 67% | — |
+| hold pressure | 67% | **byte-identical — deleted** |
+| route lookahead | **72%** | kept |
+| contract provisioning | 65% | kept, for a reason other than win rate |
+
+**Hold pressure was doubly redundant and was removed.** The plan asked for it
+on the premise that the bot never approaches capacity and so never values the
+racks. P1 had already disproved the premise — occupancy is 69% mean and 94%
+peak; the earlier "30-45%" figure was *end-of-run* cargo, read after selling
+down. Implemented anyway to follow the phase description, it then turned out to
+be structurally unreachable: speculation already requires six free slots, so
+the "is the hold tight" test could never be true. Its arm produced 268 wins
+against the baseline's 268, run for run identical. The constraint was already
+there; what was missing was the bot *valuing* the space, which P3's
+`hold_blocked` counter already does.
+
+**Route lookahead is worth five points.** `decide_map` scored one link ahead;
+a player sees the whole route drawn on screen. Scoring the chain two hops out
+is not clairvoyance, it is reading what is already displayed.
+
+**Contract provisioning costs two points and is kept anyway.** Nothing in the
+bot ever bought toward a job it had accepted — it took the contract and hoped
+the goods turned up. Delivery rate **50% → 61%**, at about three credits a run.
+A shipped mechanic going from half-working to two-thirds-working is worth more
+than a difference inside the noise band.
+
+### The finding that would have corrupted P7
+
+Scrap is the cheapest good in the game at base 6, so the bot reserved none of
+it — `keep[G_SCRAP] = 0`, commented "pure trade good" — and sold every unit.
+Scrap is also the **repair currency**. A convoy carrying none cannot fix a
+breakdown at any price.
+
+Measured with the new per-kind report: **60% of breakdowns and 52% of leaks
+were refused because there was nothing to pay with**, not because refusing was
+the better deal. Those two are the same keypress and mean opposite things.
+
+Reserving three units — one repair's worth — with no change to the game at all:
+
+| | accept before | accept after | forced before | forced after |
+|---|---:|---:|---:|---:|
+| BREAK | 3% | **29%** | 60% | 31% |
+| LEAK | 17% | **58%** | 52% | 6% |
+
+Had this gone unfixed into P7, the obvious reading of "BREAK is accepted 3% of
+the time" is "the deal is bad, make it cheaper" — and the tables would have
+been tuned against the observer's shopping habits. **The forced-decline column
+paid for itself on its first use.**
+
+It is also a real design tension, not only a bot one: making the cheapest and
+most-dumped good the repair currency means repairs are structurally hard to
+afford, for a player as much as for a bot. Noted for P7.
+
+### The state of the encounter table, as the brief for P7
+
+n=400. Target: every kind chosen both ways at least 15% of the time.
+
+**7 of 14 are real decisions:** RAID 43/56, SICK 53/47, BREAK 29/70, TOLL
+51/48, PLAGUE 29/70, CHECKPOINT 47/52, LEAK 58/41.
+
+**7 of 14 are non-decisions, and every one is "never accepted":**
+
+| kind | accept | costs |
+|---|---:|---|
+| WRECK | 2% | 1 fuel |
+| CACHE | 4% | 1 fuel |
+| SIGNAL | 4% | 1 fuel |
+| BRIDGE | 5% | 1-2 fuel |
+| TRADER | 9% | 2-3 water |
+| REFUGEE | 10% | 1-3 water |
+| RIVAL | 12% | 2-4 of a random good (48% forced) |
+
+**Every single one charges in fuel or water — the two things that end runs.**
+Four of them are the "free money" kinds the static analysis identified as pure
+gains; they are refused nineteen times in twenty, because a competent convoy
+will not spend survival margin to obtain credits. This is the structural thesis
+of P7 confirmed from the engagement side rather than derived from arithmetic,
+and it is the argument for letting some kinds pay in water and fuel rather than
+only charging in them.
+
+RIVAL is a different fault: 48% forced. It demands 2-4 units of a *random*
+good, and a convoy reserves most goods for survival, so the cost frequently
+cannot be met at all. That is a table problem, not a shopping problem.
+
+### The band, derived
+
+The 40-50% band this log has used since v1 described a game measured by an
+agent that sampled prices by loitering and thirsted itself to death. It has no
+standing. The reasoning behind it does: *below about 30% skilled the game reads
+as unfair, above about 60% the decisions stop mattering.* That is a statement
+about play, not about the observer, and it survives.
+
+Against an honest, competent agent, v4 targets:
+
+| difficulty | band | now |
+|---|---|---:|
+| FORGIVING | 60-70% | 94% |
+| THE ROAD | 42-52% | 73% |
+| UNFORGIVING | 22-32% | 40% |
+
+All three are far above. **The game is not too hard, it is much too easy for a
+competent player** — the opposite of what three releases of this log reported,
+because the reported difficulty was the instrument's handicap.
+
+The retune is *not* done here. P7 changes the encounter tables and P8 reprices
+kit and crew — which the bot currently refuses to buy at all, so making them
+worth buying will raise these numbers further still. Tuning the difficulty
+table now would be tuning twice and measuring once. It is P8b, after the
+economy underneath it stops moving.
+
+
 ---
 
 ## Bugs found, and what found them
