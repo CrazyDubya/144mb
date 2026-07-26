@@ -2310,3 +2310,88 @@ it was written. Now takes the returned y.
 
 Both found by looking at the picture. Neither would have been found by reading
 the arithmetic, which is what the arithmetic said was fine.
+
+---
+
+# v6 P2a — names, and a fog that is actually wired in
+
+## Names
+
+One byte per node indexes two 16-word tables, so 32 strings give 256 places for
+about 320 bytes. The heading is now the town; the archetype is demoted to the
+line beneath it. Every well in a run used to be called WELL.
+
+Rolled unconditionally from `rng_town` at world-gen, whether or not anything
+ever draws it — a stream whose draw count depends on the map is a stream that
+reshuffles itself when the map changes.
+
+## Fog
+
+`world_node_known` now zeroes `cond`, `stock[]` and `price[]` for unvisited
+nodes. Type, archetype, links and name survive, because all four are drawn on
+the map — and a name survives on purpose: it is not information, it is what a
+rumour will point at. "SALT CROSSING IS DRY" is a sentence; "the node at 7/2 is
+dry" is a spreadsheet.
+
+It writes into the caller's view and never into the stored Node, so `state_hash`
+does not move. The fog is the player's, not the simulation's.
+
+## The finding that mattered: the accessor had no callers
+
+An audit of all 19 foreign-node access sites found that **nothing anywhere reads
+a foreign node's price, stock or condition** — every such read is pinned to
+`w->node[w->sector][w->index]`. So fog was behaviourally inert.
+
+And it would have stayed inert, because `world_node_known` **had zero callers**.
+A clean zero-delta comparison would have proved nothing at all: it would have
+said the accessor was not load-bearing, not that the fog was correctly scoped.
+Exactly the shape of the stock result one phase earlier, where a mechanic
+shipped and measured as if it were working.
+
+The audit named the site to fix: `score_node(const World *, const Node *)` takes
+a bare pointer, "the signature most likely to bypass a future accessor, since
+the pointer is laundered through a parameter." It now takes a `const NodeView *`
+and both call sites go through `world_node_known`. A comment cannot enforce
+that rule; a parameter type can. The fields are simply not there to read.
+
+This is the same lesson as facts-not-valuations, and it was learned the same
+way: by noticing a test that could only pass.
+
+## Negative control, because a zero delta proves nothing on its own
+
+    fog price/stock/cond          d=1  50%   (unchanged)
+    ALSO fog archetype            d=1  47%   <-- control
+    restored                      d=1  50%
+
+Fogging archetype costs `score_node` its two +26 survival terms and moves the
+win rate three points. The accessor is therefore genuinely in the decision path,
+and the zero delta above is the bot legitimately not using what was hidden.
+
+## Gate
+
+    win rates      68/50/32   (P1: 68/50/32 — presentation leaked nothing)
+    stalls                0
+    -X, ASan/UBSan, -Z    clean at all three difficulties
+
+## Three layout collisions, all found by looking
+
+1. The stock pip bar drawn through SELL and the sell price.
+2. Older, and not from this release: `T_CREW_WARN` at a fixed `+82` while the
+   aboard-roster above it grows a line per hand, so any convoy carrying anyone
+   had the roster drawn through the water warning. The garage branch beside it
+   has always used `draw_outfit`'s returned bottom.
+3. `FAR CROSSING` at scale 2 drawn through the `PRICE` column heading. That
+   heading sat at `y+14` and was clear of the old archetype heading, which was
+   at most ten characters; a town name runs to fourteen. Anchoring the headings
+   to the rows they label then put them under the selected row's highlight,
+   because there were only four pixels between the tab strip and the first row.
+   So the row block moved down 14px and the panel grew to match — otherwise
+   DEPART was drawn on the desert.
+
+Three collisions, three screenshots. None would have been found by reading the
+arithmetic, which in every case said the layout was fine.
+
+## Still open in P2
+
+The location strip — folding the tabs into five town locations, moving the
+journal to the right column, and the strip-width assertion — is not done.

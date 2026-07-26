@@ -19,12 +19,20 @@ static const int8_t ARCH_MOD[ARCH_COUNT][GOODS_COUNT] = {
 
 // What can be known about a node from here.
 //
-// In this phase it hands back everything, so the whole release can be built and
-// measured against a version of this function that hides nothing; the fog is
-// switched on in its own phase, alone, where its cost to the win rate is a
-// single attributable number. What matters now is that every reader goes
-// through here from the start, because a fog added later to an accessor nobody
-// calls is not a fog.
+// What survives the fog is what the map draws: the kind of place it is, where
+// it connects, and its name. What does not is everything you would only learn
+// by standing in it -- what it charges, what it has left, and what it is going
+// through. The archetype tells you a well is a well; only arriving tells you
+// the well has run dry.
+//
+// A name survives on purpose, and it is not an oversight that it is the one
+// piece of "content" here. A name is not information -- it is what a rumour
+// points at. "SALT CROSSING IS DRY" is a sentence someone can act on; "the node
+// at 7/2 is dry" is a spreadsheet.
+//
+// This writes into the caller's view and never into the stored Node, so the
+// world itself is unchanged and the determinism hash does not move. The fog is
+// the player's, not the simulation's: the world always knew.
 void world_node_known(const World *w, int s, int n, NodeView *out) {
     const Node *nd = &w->node[s][n];
     out->known     = nd->visited;
@@ -32,7 +40,13 @@ void world_node_known(const World *w, int s, int n, NodeView *out) {
     out->archetype = nd->archetype;
     out->links     = nd->links;
     out->name      = nd->name;
-    out->cond      = nd->cond;
+
+    if (!nd->visited) {
+        out->cond = 0;
+        for (int g = 0; g < GOODS_COUNT; ++g) { out->stock[g] = 0; out->price[g] = 0; }
+        return;
+    }
+    out->cond = nd->cond;
     for (int g = 0; g < GOODS_COUNT; ++g) {
         out->stock[g] = nd->stock[g];
         out->price[g] = nd->price[g];
@@ -232,6 +246,11 @@ void world_init(World *w, uint32_t seed, int diff) {
             }
             price_node(w, nd, s);
             stock_node(w, nd);
+            // A name for every node, drawn whether or not anything ever shows
+            // it: rolling it unconditionally keeps the rng_town draw count the
+            // same on every path, and a stream whose draw count depends on the
+            // map is a stream that reshuffles itself when the map changes.
+            nd->name = (uint8_t)rng_range(&w->rng_town, 0, 255);
         }
     }
 

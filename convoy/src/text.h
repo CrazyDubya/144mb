@@ -355,6 +355,53 @@
 #define T_DEAR_HERE     "THEY PAY WELL HERE"
 #define T_SOLD_OUT      "NONE LEFT"
 
+// Town names, in two halves.
+//
+// One byte on the Node indexes both -- high nibble picks the first word, low
+// the second -- so 32 strings give 256 places for about 320 bytes of .rdata
+// against 1.35MB free. Naming is the cheapest thing this release does and the
+// one that makes the rest stick: you remember the clinic at ASH FORK, you do
+// not remember the third node in sector six.
+//
+// It also gives the word of the road something to point at. "SALT CROSSING IS
+// DRY" is a sentence a player can act on; "the node at 7/2 is dry" is a
+// spreadsheet. That is why a name survives the fog when a price does not.
+#define T_TOWN_A0  "SALT"
+#define T_TOWN_A1  "DUST"
+#define T_TOWN_A2  "IRON"
+#define T_TOWN_A3  "BONE"
+#define T_TOWN_A4  "ASH"
+#define T_TOWN_A5  "RUST"
+#define T_TOWN_A6  "LOW"
+#define T_TOWN_A7  "BLACK"
+#define T_TOWN_A8  "COLD"
+#define T_TOWN_A9  "LONG"
+#define T_TOWN_A10 "DRY"
+#define T_TOWN_A11 "RED"
+#define T_TOWN_A12 "GLASS"
+#define T_TOWN_A13 "SLOW"
+#define T_TOWN_A14 "HALF"
+#define T_TOWN_A15 "FAR"
+
+#define T_TOWN_B0  "CROSSING"
+#define T_TOWN_B1  "WELLS"
+#define T_TOWN_B2  "REACH"
+#define T_TOWN_B3  "YARD"
+#define T_TOWN_B4  "HOLLOW"
+#define T_TOWN_B5  "FLATS"
+#define T_TOWN_B6  "STATION"
+#define T_TOWN_B7  "SPUR"
+#define T_TOWN_B8  "FORK"
+#define T_TOWN_B9  "LANDING"
+#define T_TOWN_B10 "GATE"
+#define T_TOWN_B11 "CAMP"
+#define T_TOWN_B12 "BEND"
+#define T_TOWN_B13 "MILE"
+#define T_TOWN_B14 "SIDING"
+#define T_TOWN_B15 "END"
+
+extern const char *const TOWN_A[16];
+extern const char *const TOWN_B[16];
 extern const char *const GOOD_NAME[5];
 extern const char *const GOOD_USE[5];
 extern const char *const ARCH_NAME[6];

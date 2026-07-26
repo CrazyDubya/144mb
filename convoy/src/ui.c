@@ -11,6 +11,17 @@ const char *const GOOD_NAME[5] = { T_WATER, T_FUEL, T_AMMO, T_MEDS, T_SCRAP };
 const char *const GOOD_USE[5]  = {
     T_USE_WATER, T_USE_FUEL, T_USE_AMMO, T_USE_MEDS, T_USE_SCRAP
 };
+const char *const TOWN_A[16] = {
+    T_TOWN_A0, T_TOWN_A1, T_TOWN_A2,  T_TOWN_A3,  T_TOWN_A4,  T_TOWN_A5,
+    T_TOWN_A6, T_TOWN_A7, T_TOWN_A8,  T_TOWN_A9,  T_TOWN_A10, T_TOWN_A11,
+    T_TOWN_A12, T_TOWN_A13, T_TOWN_A14, T_TOWN_A15,
+};
+const char *const TOWN_B[16] = {
+    T_TOWN_B0, T_TOWN_B1, T_TOWN_B2,  T_TOWN_B3,  T_TOWN_B4,  T_TOWN_B5,
+    T_TOWN_B6, T_TOWN_B7, T_TOWN_B8,  T_TOWN_B9,  T_TOWN_B10, T_TOWN_B11,
+    T_TOWN_B12, T_TOWN_B13, T_TOWN_B14, T_TOWN_B15,
+};
+
 const char *const ARCH_NAME[6] = {
     T_ARCH_WELL, T_ARCH_REFINERY, T_ARCH_ARMOURY,
     T_ARCH_CLINIC, T_ARCH_SCRAPYARD, T_ARCH_GENERAL
@@ -632,10 +643,26 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     const int x = 26, y = 58, pw = 420, rowh = 32;
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
-    draw_panel(fb, x, y, pw, 50 + (GOODS_COUNT + 1) * rowh);
+    // 64, not 50: the row block moved down 14px to give PRICE and HELD their
+    // own line, and the depart row went with it. Left at 50 the panel ended
+    // above its own last row and DEPART was drawn on the desert.
+    draw_panel(fb, x, y, pw, 64 + (GOODS_COUNT + 1) * rowh);
 
-    draw_text(fb, x + 12, y + 10, ARCH_NAME[nd->archetype], 2, PALETTE[C_BONE]);
-    draw_text(fb, x + 12, y + 30, ARCH_DESC[nd->archetype], 1, PALETTE[C_DIM]);
+    // The town's name at scale 2, its kind demoted to the line beneath. The
+    // heading used to be the archetype, which meant every well in a run was
+    // called WELL and there was nothing to remember any of them by.
+    {
+        int hx = x + 12;
+        hx += draw_text(fb, hx, y + 10, TOWN_A[nd->name >> 4], 2,
+                        PALETTE[C_BONE]) + 8;
+        draw_text(fb, hx, y + 10, TOWN_B[nd->name & 15], 2, PALETTE[C_BONE]);
+    }
+    {
+        int sx = x + 12;
+        sx += draw_text(fb, sx, y + 30, ARCH_NAME[nd->archetype], 1,
+                        PALETTE[C_WARN]) + 8;
+        draw_text(fb, sx, y + 30, ARCH_DESC[nd->archetype], 1, PALETTE[C_DIM]);
+    }
 
     int th = draw_tabs(fb, gs, x, y + 44, pw);
 
@@ -684,7 +711,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
             draw_errand(fb, &gs->w, x, below + 30, pw);
         }
         // Departing is always available, whatever tab is open.
-        int dy = y + 48 + th + GOODS_COUNT * rowh;
+        int dy = y + 62 + th + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
         int dx = x + 10;
         dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
@@ -694,11 +721,26 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     }
 
     // Column headings, so a bare number is never left to be guessed at.
-    draw_text(fb, x + 150, y + 14, T_PRICE, 1, PALETTE[C_DIM]);
-    draw_text(fb, x + pw - 20 - text_w(T_HELD, 1), y + 14, T_HELD, 1, PALETTE[C_DIM]);
+    // Column headings sit above the first row, not up on the title line.
+    //
+    // They used to be at y+14, which was clear of the old heading because that
+    // heading was the archetype -- SCRAPYARD, ten characters. A town name at
+    // the same scale runs to fourteen (GLASS CROSSING) and drew straight
+    // through PRICE. Anchored to the rows they label, which is where they
+    // belonged anyway, and which cannot collide with a heading of any length.
+    // The row block starts 14px lower than it used to, purely to give these
+    // two their own line. They sat at y+14, beside the heading, which was
+    // clear while the heading was an archetype -- SCRAPYARD, ten characters.
+    // A town name runs to fourteen (GLASS CROSSING) and drew straight through
+    // PRICE. Anchoring them to the rows they label instead put them under the
+    // selected row's highlight, because there were only four pixels between
+    // the tab strip and the first row. So the rows moved.
+    int hy = y + 48 + th;
+    draw_text(fb, x + 150, hy, T_PRICE, 1, PALETTE[C_DIM]);
+    draw_text(fb, x + pw - 20 - text_w(T_HELD, 1), hy, T_HELD, 1, PALETTE[C_DIM]);
 
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        int ry = y + 48 + th + g * rowh;
+        int ry = y + 62 + th + g * rowh;
         if (g == gs->sel) {
             // Dark fill, not the mid-brown border colour: the row carries
             // small text and needs the contrast underneath it.
@@ -765,7 +807,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     // Departing the market: its own row, reading as "leave, onward".
     {
-        int dy = y + 48 + th + GOODS_COUNT * rowh;
+        int dy = y + 62 + th + GOODS_COUNT * rowh;
         fill_rect(fb, x + 4, dy - 4, pw - 8, rowh - 2, PALETTE[C_INK]);
         int dx = x + 10;
         dx += draw_key(fb, dx, dy - 1, G_ENTER, 2) + 8;
@@ -776,7 +818,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     // What the selected good is actually for -- the single most useful line
     // on the screen for a player who has never seen it before.
     {
-        int ty = y + 58 + th + (GOODS_COUNT + 1) * rowh;
+        int ty = y + 72 + th + (GOODS_COUNT + 1) * rowh;
         int tw = text_w(GOOD_USE[gs->sel], 1);
         // The trend arrow is the signal the whole trade route is built from,
         // and it was drawn bare -- no legend anywhere outside the help screen.
@@ -808,7 +850,7 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     const int cell = 20, cols = 15;
     int cap  = world_cargo_cap(w);
     int rows = (cap + cols - 1) / cols;
-    int cy = y + 78 + th + (GOODS_COUNT + 1) * rowh;
+    int cy = y + 92 + th + (GOODS_COUNT + 1) * rowh;
     draw_panel(fb, x, cy, cols * cell + 12, rows * cell + 12);
     int slot = 0;
     for (int n = 0; n < world_payload(w) && slot < cap; ++n, ++slot) {

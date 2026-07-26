@@ -459,8 +459,26 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 }
 
 // ---------------------------------------------------------------- map
-static int score_node(const World *w, const Node *nd) {
-    switch (nd->type) {
+// Scored from a NodeView, never from a Node.
+//
+// THE RULE THIS SIGNATURE EXISTS TO ENFORCE: the bot may know about a node it
+// has not visited exactly what the map draws -- its type and its archetype --
+// and nothing else. Not its prices, not what it has in stock, and from P4 not
+// what it is going through.
+//
+// It took a bare `const Node *` before, which reads every field of the real
+// node with nothing standing in the way. That was harmless while the bot only
+// wanted type and archetype, and it stops being harmless the moment a rumour
+// system exists: an agent that can read the truth of a claim scores perfectly
+// against information no player has, the oracle A/B that is supposed to price
+// the whole mechanic passes trivially, and the number means nothing.
+//
+// A comment cannot enforce that. A parameter type can. world_node_known fills
+// the view and zeroes what the fog hides, so the fields simply are not there
+// to read -- the same reasoning as the facts-not-valuations rule further up
+// this file, which was also learned by discovering a test that could only pass.
+static int score_node(const World *w, const NodeView *nv) {
+    switch (nv->type) {
     case NODE_GREEN:  return 1000;
     case NODE_SETTLE: {
         // A settlement is worth more when it specialises in something the
@@ -469,7 +487,7 @@ static int score_node(const World *w, const Node *nd) {
         int keep[GOODS_COUNT];
         reserves(w, keep);
         int score = 30;
-        int spec = world_arch_good(nd->archetype);
+        int spec = world_arch_good(nv->archetype);
         if (spec == G_FUEL  && w->held[G_FUEL]  <= keep[G_FUEL])  score += 26;
         if (spec == G_WATER && w->held[G_WATER] <= keep[G_WATER]) score += 26;
         if (spec == G_AMMO  && w->held[G_AMMO]  < 2)              score += 10;
@@ -497,7 +515,9 @@ static int lookahead_bonus(const World *w, int from_index) {
     for (int m = 0; m < NODES_PER; ++m) {
         if (!(links & (1u << m))) continue;
         if (!w->node[next + 1][m].active) continue;
-        int sc = score_node(w, &w->node[next + 1][m]);
+        NodeView nv;
+        world_node_known(w, next + 1, m, &nv);
+        int sc = score_node(w, &nv);
         if (sc > best) best = sc;
     }
     return best == -100000 ? 0 : best;
@@ -515,7 +535,9 @@ static int decide_map(const World *w, int map_sel, int feats) {
 
     int best = 0, best_score = -100000;
     for (int i = 0; i < n; ++i) {
-        int s = score_node(w, &w->node[w->sector + 1][cand[i]]);
+        NodeView nv;
+        world_node_known(w, w->sector + 1, cand[i], &nv);
+        int s = score_node(w, &nv);
         // A good stop that leads nowhere is worth less than a fair one that
         // opens onto a well. Discounted, because the second hop is a choice
         // not yet made and the convoy may not take it.
