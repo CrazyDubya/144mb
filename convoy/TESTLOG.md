@@ -981,6 +981,72 @@ It is re-derived in P5, after the bot also learns the pressures a player feels,
 and P4, P7 and P8 all move the economy underneath it first.
 
 
+## P4 — market spread symmetry
+
+One line. `world_sell` moved the local price by `p/8 + 1` per unit while
+`world_buy` moved it by `p/16 + 1` — selling walked the price down twice as
+fast as buying walked it up, for no stated reason. Now symmetric. The 20%
+bid-ask spread, which is the thing that actually prevents a free round trip,
+is untouched.
+
+### The arithmetic, before the change (rule 6)
+
+The round-trip margin depends on the **buy** nudge and the spread, not on how
+fast selling walks the price down, so symmetry cannot open the exploit. Worth
+proving rather than asserting, because the margin is thinner than it looks:
+
+    with the trader aboard the spread is 90%, so a round trip nets
+    0.9 * (p + p/16 + 1) - p  >  0   for p < 20.6 in exact arithmetic
+
+Only integer truncation keeps that negative — `p/16` is 0 below 16 — and water
+at base 12 and scrap at base 6 both sit inside that window. `-X` sweeps every
+good at every price 1..200 with and without the trader, before and after:
+best round trip **+0**, at a list price of 1 where the sell clamp floors the
+take. Unchanged by this phase, as predicted.
+
+### What it was worth
+
+| | P3 | P4 |
+|---|---:|---:|
+| realised ÷ headline | 77.7% | 77.8% |
+| biggest stack sold at one market | 2.23 | 2.35 |
+| units sold per run | 6.0 | **6.5** |
+| credits banked per run | 83 | **91** |
+
+| difficulty | P3 | P4 |
+|---|---:|---:|
+| FORGIVING | 92% | 92% |
+| THE ROAD | 67% | 67% |
+| UNFORGIVING | 38% | 39% |
+
+n=400, zero stalls. Win rate unchanged within noise (SE 2.5 points).
+
+**The headline ratio barely moved, and that is the finding.** 77.8% is
+dominated by the 20% bid-ask spread, not by the decay: at a typical stack of
+about two units the decay was only ever worth one or two points of realised
+value. The "a ten-unit stack realises 41% of headline" figure that motivated
+this phase was arithmetic about a sale nobody makes — the largest stack sold
+at any one market is 2.3 units.
+
+What did move is volume: 8% more units sold and 10% more credits banked,
+because a market that recovers at the same rate it is depleted is worth
+returning to. That is the real effect, and it is a tenth the size of the one
+the static analysis predicted.
+
+**Recorded as a fairness fix, not an economy recovery.** It is still right —
+an asymmetry with no reason behind it is a trap for anyone who does sell a
+large stack, and P5 is about to teach the bot to value hold space, which is
+exactly the behaviour that would have walked into it. Doing it before P5 was
+the correct order for that reason and not for the reason originally given.
+
+### Note on the control
+
+The frozen agent moved too: 72/46/27 → 71/44/27. Expected and worth stating —
+`bot_ref` is a control for *agent* changes, and this phase changes the game.
+Its drift here is the size of the game change as seen by a fixed observer, and
+it is small, which corroborates the measurement above.
+
+
 ---
 
 ## Bugs found, and what found them

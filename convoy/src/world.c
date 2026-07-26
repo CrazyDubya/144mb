@@ -775,7 +775,17 @@ void world_sell(World *w, int good) {
     INSTR(w->in.units_sold++; w->in.credits_in += take; w->in.sold_headline += p;
           if (++w->in.stack_here > w->in.biggest_stack)
               w->in.biggest_stack = w->in.stack_here);
-    int np = p - p / 8 - 1;
+    // Symmetric with the buy nudge above. Selling used to move the price twice
+    // as fast as buying -- p/8 against p/16 -- for no stated reason, so a
+    // market punished offloading a stack far harder than it punished loading
+    // one. The 20% bid-ask spread is what stops the round trip being free
+    // money; this asymmetry was never doing that job and is not needed for it.
+    //
+    // Measured effect is small, and worth saying so: the largest stack sold at
+    // any one market is about 2.6 units, so the decay barely engages and sales
+    // already realise 79% of headline. The arithmetic that made this look like
+    // a 60% loss assumed a ten-unit sale nobody makes.
+    int np = p - p / 16 - 1;
     nd->price[good] = (int16_t)(np < 1 ? 1 : np);
 }
 
