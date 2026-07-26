@@ -690,14 +690,16 @@ static void print_run(const RunResult *r) {
     printf(" acc=%ld forced=%ld c_off=%u c_acc=%u c_done=%u c_dec=%u c_lap=%u c_for=%u"
            " pl_storm=%u pl_dem=%u pl_rand=%u"
            " bought=%u sold=%u cr_in=%d cr_out=%d headline=%d stack=%u"
-           " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u",
+           " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u"
+           " alt_off=%u alt_take=%u alt_fail=%u",
            ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
            m->c_declined, m->c_lapsed, m->c_forfeit,
            m->pl_storm, m->pl_demand, m->pl_random,
            m->units_bought, m->units_sold, m->credits_in, m->credits_out,
            m->sold_headline, m->biggest_stack,
            m->cargo_samples ? (int)(m->cargo_sum * 100u / m->cargo_samples) : 0,
-           m->peak_cargo, m->min_water, m->min_fuel, m->days_thin);
+           m->peak_cargo, m->min_water, m->min_fuel, m->days_thin,
+           m->alt_offered, m->alt_taken, m->alt_failed);
     (void)ev_fired;
 #endif
     printf("\n");

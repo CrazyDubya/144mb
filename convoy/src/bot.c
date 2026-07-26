@@ -496,7 +496,13 @@ static int good_value(const Bot *b, const World *w, int g) {
 static int decide_event(const Bot *b, const World *w) {
     const Event *e = &w->event;
     if (b->refuse_all) return BTN_B;
-    if (!world_can_accept(w)) return BTN_B;
+
+    // Note the ordering. This used to return "refuse" the moment accepting was
+    // unaffordable, before the third branch was considered at all -- and a
+    // manoeuvre that costs nothing is affordable in exactly the situations
+    // where paying is not. The branch was being skipped precisely when it was
+    // the only option worth having.
+    int affordable = world_can_accept(w);
 
     int keep[GOODS_COUNT];
     reserves(w, keep);
@@ -520,9 +526,9 @@ static int decide_event(const Bot *b, const World *w) {
     // top charged twelve times the market price for a unit of fuel, which no
     // payoff in the table can clear -- so the first attempt at relaxing the
     // veto moved the accept rates by two points and changed nothing.
-    if (e->pay_good >= 0 && e->pay_qty > 0
+    if (affordable && e->pay_good >= 0 && e->pay_qty > 0
         && (e->pay_good == G_FUEL || e->pay_good == G_WATER)) {
-        if (w->held[e->pay_good] - e->pay_qty < 1) return BTN_B;  // never the last one
+        if (w->held[e->pay_good] - e->pay_qty < 1) affordable = 0;  // never the last one
     }
 
     int cost = 0;
@@ -542,9 +548,34 @@ static int decide_event(const Bot *b, const World *w) {
 
     // Losing the last of the hold ends the run, so treat that as unaffordable
     // rather than merely expensive.
-    if (e->lose_good < 0 && e->lose_qty >= world_cargo(w)) return BTN_A;
+    if (affordable && e->lose_good < 0 && e->lose_qty >= world_cargo(w)) return BTN_A;
 
-    return benefit > cost ? BTN_A : BTN_B;
+    // Three options now, scored the same way. Deliberately no per-kind logic:
+    // the rule this file has kept since the fifth encounter kind was added is
+    // that a fifteenth should need no change here, and a third *branch* should
+    // not break it either.
+    //
+    //   accept  = benefit - cost                     (certain)
+    //   decline = 0                                  (certain, the baseline)
+    //   attempt = p*(benefit - alt_cost) - (1-p)*(decline_cost + one more)
+    //
+    // `benefit` already folds in what refusing would have cost, so declining
+    // is the zero point and the other two are measured against it.
+    int ev_accept = affordable ? benefit - cost : -1000000;
+    int ev_alt    = -1000000;
+    if (e->alt_who >= 0 && world_can_attempt(w)) {
+        int alt_cost = 0;
+        if (e->alt_pay_good >= 0)
+            alt_cost = e->alt_pay_qty * good_value(b, w, e->alt_pay_good);
+        // One unit worse than declining, in whatever the refusal is priced in.
+        int extra = (e->lose_good == -2) ? 90
+                  : (e->lose_good >= 0)  ? good_value(b, w, e->lose_good) : 18;
+        int p = e->alt_odds;
+        ev_alt = (p * (benefit - alt_cost) - (100 - p) * extra) / 100;
+    }
+
+    if (ev_alt > ev_accept && ev_alt > 0) return BTN_START;
+    return (affordable && ev_accept > 0) ? BTN_A : BTN_B;
 }
 
 // ---------------------------------------------------------------- driver

@@ -39,6 +39,13 @@ static const char *const TAB_NAME[TAB_COUNT] = {
 
 // Who is who, and what they say. Three lines each: a first meeting, a warm
 // return and a cold one, picked by the regard the player has earned.
+// What each hand offers to do about it. Keyed by role, not by encounter kind:
+// fourteen bespoke lines would read better and cost fourteen strings to say
+// the same thing five ways.
+static const char *const ALT_VERB[CREW_COUNT] = {
+    T_ALT_MECHANIC, T_ALT_GUARD, T_ALT_MEDIC, T_ALT_SCOUT, T_ALT_TRADER
+};
+
 static const char *const WHO_NAME[CHAR_COUNT] = {
     T_WHO_CHIEF, T_WHO_CAPTAIN, T_WHO_TRADER, T_WHO_DOC, T_WHO_DRIFTER
 };
@@ -767,7 +774,9 @@ static const char *const EV_DECLINE[EV_KINDS] = {
 void ui_event(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
     const Event *e = &w->event;
-    const int x = 96, y = 74, pw = 448, ph = 322;
+    // Taller than it was: the third branch needs a block of its own, and the
+    // panel had ~84px of slack below it in a 480-tall frame.
+    const int x = 96, y = 62, pw = 448, ph = 396;
 
     int threat = world_event_is_threat(e->kind);
     uint32_t frame = threat ? PALETTE[C_BAD] : PALETTE[C_GOOD];
@@ -815,8 +824,8 @@ void ui_event(Framebuffer *fb, GameState *gs) {
 
     // --- accept -------------------------------------------------------
     int ay = y + 108;
-    fill_rect(fb, x + 10, ay - 6, pw - 20, 74, PALETTE[C_INK]);
-    draw_rect(fb, x + 10, ay - 6, pw - 20, 74, affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
+    fill_rect(fb, x + 10, ay - 6, pw - 20, 62, PALETTE[C_INK]);
+    draw_rect(fb, x + 10, ay - 6, pw - 20, 62, affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
 
     draw_key(fb, x + 20, ay + 6, G_KEY_Z, 2);
     int ax = x + 20 + key_w(2) + 18;
@@ -842,10 +851,10 @@ void ui_event(Framebuffer *fb, GameState *gs) {
     }
 
     // --- decline ------------------------------------------------------
-    draw_text(fb, x + 20, y + 198, EV_DECLINE[e->kind], 1, PALETTE[C_DIM]);
-    int by = y + 212;
-    fill_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_INK]);
-    draw_rect(fb, x + 10, by - 6, pw - 20, 74, PALETTE[C_DIM]);
+    draw_text(fb, x + 20, y + 186, EV_DECLINE[e->kind], 1, PALETTE[C_DIM]);
+    int by = y + 200;
+    fill_rect(fb, x + 10, by - 6, pw - 20, 62, PALETTE[C_INK]);
+    draw_rect(fb, x + 10, by - 6, pw - 20, 62, PALETTE[C_DIM]);
 
     draw_key(fb, x + 20, by + 6, G_X, 2);
     int bx = x + 20 + key_w(2) + 18;
@@ -875,6 +884,36 @@ void ui_event(Framebuffer *fb, GameState *gs) {
         }
     } else {
         draw_glyph(fb, bx, by + 10, G_MINUS, 2, PALETTE[C_DIM]);
+    }
+
+    // --- let them try it ------------------------------------------------
+    // The only place in the game a face appears on *your* side of a deal.
+    if (e->alt_who >= 0) {
+        int can = world_can_attempt(w);
+        int cy = y + 288;
+        fill_rect(fb, x + 10, cy - 6, pw - 20, 74, PALETTE[C_INK]);
+        draw_rect(fb, x + 10, cy - 6, pw - 20, 74,
+                  can ? PALETTE[C_WARN] : PALETTE[C_DIM]);
+
+        draw_portrait(fb, x + 18, cy - 2, 2, who_seed(e->alt_who >= 0 ? e->alt_who : 0), 1);
+
+        int px = x + 58;
+        draw_key(fb, px, cy + 4, G_ENTER, 2);
+        px += key_w(2) + 12;
+        px += draw_text(fb, px, cy + 10, ALT_VERB[e->alt_who], 1,
+                        can ? PALETTE[C_BONE] : PALETTE[C_DIM]) + 16;
+
+        // The odds, plainly. A gamble the player cannot price is not a choice.
+        px += draw_number(fb, px, cy + 8, e->alt_odds, 2, PALETTE[C_WARN]) + 4;
+        draw_glyph(fb, px, cy + 8, G_PCT, 2, PALETTE[C_WARN]);
+        px += glyph_w(2) + 8;
+        draw_text(fb, px, cy + 10, T_ALT_ODDS, 1, PALETTE[C_DIM]);
+
+        if (e->alt_pay_good >= 0 && e->alt_pay_qty > 0)
+            draw_stack(fb, x + 58, cy + 34, -1, e->alt_pay_good, e->alt_pay_qty,
+                       PALETTE[C_DIM]);
+        else
+            draw_text(fb, x + 58, cy + 40, T_ALT_RISK, 1, PALETTE[C_DIM]);
     }
 }
 

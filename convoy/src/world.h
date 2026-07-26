@@ -58,6 +58,20 @@ typedef struct {
     int8_t  gain_good, gain_qty;   // what accepting yields (-1 = nothing)
     int8_t  lose_good, lose_qty;   // what refusing costs (-1 good = random cargo)
     int16_t gain_credits;
+
+    // A third way through, offered by whoever is aboard.
+    //
+    // This exists because a crew role covers three of fourteen encounter kinds,
+    // so its ability fired 0.79 times in a run and every role measured
+    // net-negative even when granted free. An alt is offered on essentially
+    // every encounter instead, which is a 4.7x change in how often a hand
+    // matters without changing what it does per occasion.
+    //
+    // It cannot dominate: cheaper than accepting, so it can fail; and failing
+    // costs one more than declining would have, so it is not a free reroll.
+    int8_t  alt_who;               // CREW_* offering it, or -1 for none
+    int8_t  alt_pay_good, alt_pay_qty;
+    uint8_t alt_odds;              // percent, 35..85
 } Event;
 
 typedef struct {
@@ -271,6 +285,7 @@ int  world_hop_costs_fuel(const World *w);
 int  world_can_travel(const World *w, int next_index);
 // Fills `out` with the node indices reachable from here, returning how many.
 // Lives here rather than in the UI because it is a fact about the route.
+uint8_t world_links(const World *w);
 int  world_reachable (const World *w, int *out);
 // The good a settlement specialises in, or -1 for a general trading post.
 int  world_arch_good (int archetype);
@@ -293,6 +308,7 @@ int  world_payload   (const World *w);
 int  world_outcome   (const World *w);
 // Who is on the other side of this encounter, or CHAR_NONE.
 int  world_event_is_threat(int kind);
+int  world_event_role(int kind);
 int  world_event_char(int kind);
 
 int  world_cargo_cap (const World *w);   // grows with fitted racks
@@ -314,6 +330,10 @@ void world_travel(World *w, int next_index);
 void world_buy   (World *w, int good);
 void world_sell  (World *w, int good);
 int  world_can_accept(const World *w);
+// The third branch: attempt it. Succeeds on alt_odds, else the decline outcome
+// plus one. Returns 1 if it came off.
+int  world_attempt(World *w);
+int  world_can_attempt(const World *w);
 // Why an encounter cannot be taken: 0 fine, 1 cannot pay, 2 no room.
 int  world_accept_block(const World *w);
 void world_accept(World *w);    // pay the price

@@ -461,7 +461,8 @@ static void salvage_check(World *w) {
     w->kit_failed = -1;
     for (int u = 0; u < UPG_COUNT; ++u) {
         if (!w->upgrade[u] || !w->upg_salvaged[u]) continue;
-        if (rng_range(&w->rng_offer, 0, 99) < 4) {
+        if (w->crew[CREW_MECHANIC]) return;   // keeps the salvage running
+    if (rng_range(&w->rng_offer, 0, 99) < 4) {
             w->upgrade[u] = 0;
             w->upg_salvaged[u] = 0;
             w->kit_failed = (int8_t)u;
@@ -659,6 +660,20 @@ int world_event_is_threat(int kind) {
     }
 }
 
+// Which hand knows this kind of trouble. The same three-per-role grouping the
+// ability conditionals inside roll_event already imply, written down once so
+// the alt branch and the bot agree with the switch instead of drifting from it.
+int world_event_role(int kind) {
+    switch (kind) {
+    case EV_BREAK: case EV_LEAK: case EV_WRECK:      return CREW_MECHANIC;
+    case EV_RAID:  case EV_TOLL: case EV_CHECKPOINT: return CREW_GUARD;
+    case EV_SICK:  case EV_PLAGUE: case EV_REFUGEE:  return CREW_MEDIC;
+    case EV_BRIDGE: case EV_CACHE:                   return CREW_SCOUT;
+    case EV_TRADER: case EV_SIGNAL: case EV_RIVAL:   return CREW_TRADER;
+    default:                                         return -1;
+    }
+}
+
 int world_event_char(int kind) {
     switch (kind) {
     case EV_RAID: case EV_TOLL: case EV_CHECKPOINT: return CHAR_CHIEF;
@@ -727,10 +742,27 @@ static void drop_random_cargo(World *w, int units) {
     }
 }
 
+// Which nodes the convoy may drive to from here.
+//
+// One function, because there are two callers that must agree: world_reachable
+// offers the choice and world_can_travel enforces it. Widening one and not the
+// other let the bot select a node the game then refused to move to -- it
+// pressed travel, nothing happened, and the scout measured -37 points.
+uint8_t world_links(const World *w) {
+    uint8_t links = w->node[w->sector][w->index].links;
+    // A scout knows ways through that are not on the road. This replaces the
+    // storm negation as the scout's headline: that was worth -19 points,
+    // because it insured against a hazard competent routing already avoids for
+    // free. An extra option every hop makes the routing itself cheaper, which
+    // is what good play was doing by hand.
+    if (w->crew[CREW_SCOUT]) links = 0x0F;
+    return links;
+}
+
 int world_reachable(const World *w, int *out) {
     int n = 0;
     if (w->sector >= SECTORS - 1) return 0;
-    uint8_t links = w->node[w->sector][w->index].links;
+    uint8_t links = world_links(w);
     for (int m = 0; m < NODES_PER; ++m)
         if ((links & (1u << m)) && w->node[w->sector + 1][m].active) out[n++] = m;
     return n;
@@ -749,7 +781,7 @@ int world_can_travel(const World *w, int next_index) {
     if (w->sector >= SECTORS - 1) return 0;
     if (next_index < 0 || next_index >= NODES_PER) return 0;
     if (!w->node[w->sector + 1][next_index].active) return 0;
-    if (!(w->node[w->sector][w->index].links & (1u << next_index))) return 0;
+    if (!(world_links(w) & (1u << next_index))) return 0;
     return !world_hop_costs_fuel(w) || w->held[G_FUEL] >= 1;
 }
 
@@ -818,8 +850,20 @@ void world_travel(World *w, int next_index) {
     if (nd->type == NODE_HAZARD && !w->crew[CREW_SCOUT]) {
         // A storm eats supplies on arrival, unless someone aboard knows the
         // safe line through it.
-        if (w->held[G_WATER] > 0) w->held[G_WATER]--;
-        if (w->held[G_FUEL]  > 0) w->held[G_FUEL]--;
+        // A medic rations the convoy through a blow. Their existing water
+        // discipline only ever cancelled their own thirst, which is why a free
+        // medic measured at +4 -- the smallest positive in the game.
+        // What a storm takes, and who keeps it. A medic rations the water; a
+        // guard lashes the load down so the fuel stays aboard.
+        //
+        // Both passives are deliberately OUTSIDE the encounter tables. The
+        // guard's first version discounted what a threat cost to settle, which
+        // measured well but crowded out the guard's own third branch -- the
+        // convoy simply paid instead, and the alt was chosen 5% of the time.
+        // A passive that competes with the same hand's manoeuvre is one
+        // feature fighting another.
+        if (!w->crew[CREW_MEDIC] && w->held[G_WATER] > 0) w->held[G_WATER]--;
+        if (!w->crew[CREW_GUARD] && w->held[G_FUEL]  > 0) w->held[G_FUEL]--;
 
         // Heat and grit get into the crates. This is the one threat to the
         // seed that cannot be paid off, argued with or fought -- without it a
@@ -855,12 +899,14 @@ void world_travel(World *w, int next_index) {
             // walking into a market.
             if (world_event_is_threat(w->event.kind)) roll_event(w);
             if (w->encounters < 255) w->encounters++;
+            INSTR(if (w->event.alt_who >= 0) w->in.alt_offered++);
         }
         break;
     case NODE_EVENT:
         w->state = ST_EVENT;
         roll_event(w);
         if (w->encounters < 255) w->encounters++;
+        INSTR(if (w->event.alt_who >= 0) w->in.alt_offered++);
         break;
     default:          w->state = ST_MAP;   break;
     }
@@ -987,6 +1033,64 @@ void world_accept(World *w) {
     }
     w->credits += e->gain_credits;
     end_event(w, 0);
+}
+
+int world_can_attempt(const World *w) {
+    const Event *e = &w->event;
+    if (e->alt_who < 0) return 0;
+    if (e->alt_pay_good >= 0 && w->held[e->alt_pay_good] < e->alt_pay_qty) return 0;
+    // Room for whatever succeeding would hand over, on the same terms as
+    // accepting -- paying in full and receiving less than was shown is the one
+    // thing an encounter must never do.
+    if (e->gain_good >= 0 && e->gain_qty > 0) {
+        int freed = (e->alt_pay_good >= 0) ? e->alt_pay_qty : 0;
+        int room  = world_cargo_cap(w) - (world_cargo(w) - freed);
+        if (room < e->gain_qty) return 0;
+    }
+    return 1;
+}
+
+// Try it. On success you get the accept outcome for the alt's price; on
+// failure you get the decline outcome and one unit worse, so the attempt is
+// never a free reroll of a bad hand.
+int world_attempt(World *w) {
+    if (w->state != ST_EVENT || !world_can_attempt(w)) return 0;
+    Event *e = &w->event;
+    int who_c = world_event_char(e->kind);
+
+    INSTR(w->in.alt_taken++);
+    int roll = rng_range(&w->rng_people, 0, 99);
+    if (roll < e->alt_odds) {
+        if (e->alt_pay_good >= 0) w->held[e->alt_pay_good] -= e->alt_pay_qty;
+        if (e->gain_good >= 0) {
+            int room = world_cargo_cap(w) - world_cargo(w);
+            int q = e->gain_qty < room ? e->gain_qty : room;
+            if (q > 0) w->held[e->gain_good] += q;
+        }
+        w->credits += e->gain_credits;
+        // Handling it without robbing anyone is worth something to them.
+        if (who_c != CHAR_NONE && w->regard[who_c] < 3) w->regard[who_c]++;
+        end_event(w, 0);
+        return 1;
+    }
+
+    INSTR(w->in.alt_failed++);
+    if (who_c != CHAR_NONE && w->regard[who_c] > -3) w->regard[who_c]--;
+    // Worse than simply having refused.
+    if (e->lose_qty > 0) {
+        int take = e->lose_qty + 1;
+        if (e->lose_good == -2) {
+            while (take-- > 0 && w->payload > 0) { w->payload--; INSTR(w->in.pl_demand++); }
+        } else if (e->lose_good < 0) {
+            drop_random_cargo(w, take);
+        } else {
+            int g = e->lose_good;
+            w->held[g] -= take;
+            if (w->held[g] < 0) w->held[g] = 0;
+        }
+    }
+    end_event(w, 1);
+    return 0;
 }
 
 void world_decline(World *w) {
@@ -1216,8 +1320,43 @@ static void roll_event(World *w) {
     // protection gave exactly none in the half of the run where raiders start
     // asking for the seed -- which is the half a player buys it for. It now
     // covers the crates too: one crate back is worth more than a full hold.
+    // A guard aboard makes every threat cost less, not only the three kinds
+    // they specialise in. Always-on is the shape that measured well: the
+    // trader was the least-bad role in v4 for exactly this reason.
     if (w->upgrade[UPG_ARMOUR] && e->lose_qty > 1) {
         if (e->lose_good == -2) e->lose_qty--;
         else                    e->lose_qty = 1;
+    }
+
+    // ---- the third way through -----------------------------------------
+    //
+    // Two tiers. The hand who knows this kind of trouble offers a manoeuvre
+    // that costs nothing and usually works; anyone else aboard offers to
+    // improvise, for a unit of whatever the deal was priced in and worse odds.
+    // Matched beats improvised.
+    e->alt_who = -1;
+    {
+        int want = world_event_role(kind);
+        int who  = -1, base = 0;
+        if (want >= 0 && w->crew[want]) { who = want; base = 80; }
+        else {
+            for (int k = 0; k < CREW_COUNT; ++k)
+                if (w->crew[k]) { who = k; base = 60; break; }
+        }
+        if (who >= 0) {
+            e->alt_who      = (int8_t)who;
+            e->alt_pay_good = (base == 70) ? -1 : e->pay_good;
+            e->alt_pay_qty  = (base == 70) ? 0  : 1;
+
+            // Odds move with how the counterpart feels about you. This is the
+            // payoff the -3..+3 range has never had: until now only its sign
+            // was ever read, and only to nudge a quantity by one.
+            int who_c = world_event_char(kind);
+            int r = (who_c == CHAR_NONE) ? 0 : w->regard[who_c];
+            int odds = base + r * 8;
+            if (odds < 35) odds = 35;
+            if (odds > 85) odds = 85;
+            e->alt_odds = (uint8_t)odds;
+        }
     }
 }

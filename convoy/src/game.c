@@ -202,6 +202,9 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
     case ST_EVENT:
         if (in->pressed[BTN_A]) world_accept(w);
         if (in->pressed[BTN_B]) world_decline(w);
+        // Enter is unbound during an encounter, so the third branch needs no
+        // cursor and no reshuffling of the two keys players already know.
+        if (in->pressed[BTN_START]) world_attempt(w);
         break;
 
     case ST_DEAD:

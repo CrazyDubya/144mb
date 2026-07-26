@@ -1776,6 +1776,84 @@ place to even this out.
 93% end with no crew at all. That is the number replayability is measured
 against.
 
+## P1 — the third branch
+
+**Every crew role is now worth having.** From v4's −23 to +4, at n=600 on THE
+ROAD against a 47% baseline:
+
+| role | v4 | v5 P1 |
+|---|---:|---:|
+| MECHANIC | −20 | **+14** |
+| GUARD | −23 | **+10** |
+| MEDIC | +4 | **+13** |
+| SCOUT | −19 | **+16** |
+| TRADER | −9 | **+17** |
+
+Bar was ≥ +8 with none above +45 (ECON is +42; a role beating it would be the
+new mandatory purchase). All five clear it.
+
+Difficulty is undisturbed at 63/47/28 against v4's 61/47/27 — crew are still
+not hired by default, so the calibration holds.
+
+### What changed
+
+A hand aboard now offers **a third way through every encounter**, not a silent
+modifier on three of fourteen kinds. Matched to the trouble it is a free
+manoeuvre at 80% base; anyone else improvises for one unit at 60%. Measured,
+an alt is offered on **100% of encounters** against the 0.79-fires-per-run the
+old ability managed — the 4.7× change in presence the phase was built for.
+
+Odds move with regard (`base + regard × 8`, clamped 35–85). That is the first
+use the −3..+3 range has ever had beyond its sign.
+
+It cannot dominate: cheaper than accepting, so it can fail, and **failing costs
+one more than declining would have**. Branch mix with a hand aboard:
+
+| | share |
+|---|---:|
+| accept | 65% |
+| attempt | 16% |
+| decline | 19% |
+
+Each ≥15%, alt ≤60%, attempt failure 35% inside the 20–45% band.
+
+### Three faults found by measuring, not by reading
+
+**The scout measured −37.** Widening `world_reachable` for the scout's extra
+route without widening `world_can_travel` let the bot select nodes the game
+then refused to move to — it pressed travel and nothing happened. Both now read
+one `world_links()`. This is the same class as v4's map-hash bug: two functions
+that must agree, and only one was changed.
+
+**The guard's passive fought the guard's own branch.** Its first version cut
+what a threat cost to *settle*, which measured well in isolation but crowded
+out the manoeuvre — the convoy simply paid instead, and the alt was chosen 5%
+of the time. Both passives now sit **outside** the encounter tables entirely: a
+medic rations the convoy's water through a storm, a guard lashes the load so
+the fuel stays aboard. A passive competing with the same hand's manoeuvre is
+one feature fighting another.
+
+Before that, the guard's passive cut what *refusing* costs and measured +6 —
+worthless because the convoy mostly pays rather than refuses. **That is exactly
+the fault that made plate armour worthless in v4, reproduced two releases
+later**, and it was caught the same way: by an A/B that would not move.
+
+**The bot skipped the branch precisely when it mattered.** `decide_event`
+returned "refuse" the moment accepting was unaffordable, before the third
+option was considered at all — and a manoeuvre that costs nothing is affordable
+in exactly the situations where paying is not. Fixing the ordering took the
+attempt rate from 6% to 12%; raising both odds tiers took it to 16%.
+
+### On the exit criterion that appeared to fail
+
+Four kinds looked like their forced-refusal rate had risen against the v4
+table. It had not: that table was measured at v4 P7, before P8, P8b and P11
+changed crew pricing, kit pricing and the difficulty table, so it was never a
+like-for-like comparison — and a no-crew baseline offers no alt at all, so P1
+could not have caused it. Measured properly, with and without a hand aboard on
+the same build, the worst forced rate is **9% either way**. The branch does not
+make anything unaffordable.
+
 ---
 
 ## Bugs found, and what found them

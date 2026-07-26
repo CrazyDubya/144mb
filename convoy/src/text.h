@@ -239,6 +239,17 @@
 #define T_JOB_PAYS      "PAYS"
 #define T_JOB_ACCEPT    "ACCEPT THE JOB"
 #define T_JOB_DECLINE   "TURN IT DOWN"
+
+// The third branch. One line per kind would be better writing and fourteen
+// more strings; a single verb per role reads well enough and keeps the table
+// to five entries.
+#define T_ALT_MECHANIC "LET THEM PATCH IT"
+#define T_ALT_GUARD    "LET THEM HANDLE IT"
+#define T_ALT_MEDIC    "LET THEM SEE TO IT"
+#define T_ALT_SCOUT    "LET THEM FIND A WAY"
+#define T_ALT_TRADER   "LET THEM TALK"
+#define T_ALT_ODDS     "CHANCE"
+#define T_ALT_RISK     "IF IT GOES WRONG IT COSTS MORE THAN WALKING AWAY"
 #define T_JOB_HOLDING   "HOLDING"
 #define T_JOB_DONE      "DELIVERED"
 #define T_JOB_LOCKED    "PROMISED CARGO CANNOT BE SOLD"
