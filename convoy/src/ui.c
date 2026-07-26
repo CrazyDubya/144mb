@@ -49,12 +49,21 @@ static const char *const ALT_VERB[CREW_COUNT] = {
 static const char *const WHO_NAME[CHAR_COUNT] = {
     T_WHO_CHIEF, T_WHO_CAPTAIN, T_WHO_TRADER, T_WHO_DOC, T_WHO_DRIFTER
 };
-static const char *const WHO_LINE[CHAR_COUNT][3] = {
-    { T_CHIEF_1,   T_CHIEF_WARM,   T_CHIEF_COLD   },
-    { T_CAPTAIN_1, T_CAPTAIN_WARM, T_CAPTAIN_COLD },
-    { T_TRADER_1,  T_TRADER_WARM,  T_TRADER_COLD  },
-    { T_DOC_1,     T_DOC_WARM,     T_DOC_COLD     },
-    { T_DRIFTER_1, T_DRIFTER_WARM, T_DRIFTER_COLD },
+// Eight slots, not three: the first three are the stranger on the road, the
+// rest are the same person once they are driving for you. Widening the array
+// was a one-token change, which is the whole reason the table idiom is used.
+enum { LN_FIRST, LN_WARM, LN_COLD, LN_JOIN, LN_GOOD, LN_BAD, LN_ASK, LN_LEAVE };
+static const char *const WHO_LINE[CHAR_COUNT][8] = {
+    { T_CHIEF_1,   T_CHIEF_WARM,   T_CHIEF_COLD,
+      T_CHIEF_JOIN, T_CHIEF_GOOD, T_CHIEF_BAD, T_CHIEF_ASK, T_CHIEF_LEAVE },
+    { T_CAPTAIN_1, T_CAPTAIN_WARM, T_CAPTAIN_COLD,
+      T_CAPTAIN_JOIN, T_CAPTAIN_GOOD, T_CAPTAIN_BAD, T_CAPTAIN_ASK, T_CAPTAIN_LEAVE },
+    { T_TRADER_1,  T_TRADER_WARM,  T_TRADER_COLD,
+      T_TRADER_JOIN, T_TRADER_GOOD, T_TRADER_BAD, T_TRADER_ASK, T_TRADER_LEAVE },
+    { T_DOC_1,     T_DOC_WARM,     T_DOC_COLD,
+      T_DOC_JOIN, T_DOC_GOOD, T_DOC_BAD, T_DOC_ASK, T_DOC_LEAVE },
+    { T_DRIFTER_1, T_DRIFTER_WARM, T_DRIFTER_COLD,
+      T_DRIFTER_JOIN, T_DRIFTER_GOOD, T_DRIFTER_BAD, T_DRIFTER_ASK, T_DRIFTER_LEAVE },
 };
 
 // Portraits are generated, so a character's face is just a seed -- but with
@@ -729,7 +738,36 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
                           PALETTE[C_GOOD]) + 6;
         draw_text(fb, lx, cy + rows * cell + 14, T_PAYLOAD_SAFE, 1, PALETTE[C_DIM]);
     }
+
+    // Somebody aboard has something to say. Placed after the hold, in the
+    // clear space under it -- the first attempt put the line four pixels below
+    // the goods tooltip and the portrait on top of the water row.
+    {
+        const Errand *er = &w->errand;
+        int say = -1, slot = LN_GOOD;
+        if (er->state == ERR_OFFERED) { say = CHAR_OF_ROLE[er->who]; slot = LN_ASK; }
+        else {
+            for (int k = 0; k < CREW_COUNT; ++k) {
+                if (!w->crew[k]) continue;
+                int c = CHAR_OF_ROLE[k];
+                // Whoever is unhappiest speaks; if all are content, the first
+                // hand aboard does.
+                if (say < 0 || w->regard[c] < w->regard[say]) say = c;
+            }
+            if (say >= 0)
+                slot = (w->regard[say] <= -2) ? LN_LEAVE
+                     : (w->regard[say] <  0)  ? LN_BAD : LN_GOOD;
+        }
+        if (say >= 0) {
+            int vy = cy + rows * cell + 34;
+            draw_portrait(fb, x + 6, vy - 6, 1, who_seed(say),
+                          w->regard[say] > 0 ? 1 : (w->regard[say] < 0 ? -1 : 0));
+            draw_text(fb, x + 30, vy, WHO_LINE[say][slot], 1,
+                      PALETTE[(slot == LN_BAD || slot == LN_LEAVE) ? C_BAD : C_WARN]);
+        }
+    }
 }
+
 
 // ---------------------------------------------------------------- event
 // Draws a signed quantity of a good: "-<icon>x<n>" or "+<icon>x<n>".
