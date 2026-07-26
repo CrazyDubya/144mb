@@ -1537,16 +1537,30 @@ static void roll_event(World *w) {
     e->alt_who = -1;
     {
         int want = world_event_role(kind);
-        int who  = -1, base = 0;
-        if (want >= 0 && w->crew[want]) { who = want; base = 80; }
+        int who  = -1, base = 0, matched = 0;
+        if (want >= 0 && w->crew[want]) { who = want; base = 80; matched = 1; }
         else {
             for (int k = 0; k < CREW_COUNT; ++k)
                 if (w->crew[k]) { who = k; base = 60; break; }
         }
         if (who >= 0) {
             e->alt_who      = (int8_t)who;
-            e->alt_pay_good = (base == 70) ? -1 : e->pay_good;
-            e->alt_pay_qty  = (base == 70) ? 0  : 1;
+            // A flag, not `base == 70`.
+            //
+            // That test is what used to be here, and base is only ever 80 or
+            // 60, so it was never true: both tiers charged a unit and the
+            // specialist's manoeuvre -- free by design, and described as free
+            // in three separate comments -- shipped in v5 costing exactly what
+            // the improvised one did. The two tiers differed only in odds.
+            //
+            // The 70 was the number this branch carried in the plan before the
+            // odds were retuned to 80/60. Nothing failed when it drifted,
+            // because a condition that is merely never true throws no warning
+            // and breaks no test; it just quietly deletes the feature. Hence a
+            // flag set where the tier is chosen, which cannot drift away from
+            // the thing it describes.
+            e->alt_pay_good = matched ? -1 : e->pay_good;
+            e->alt_pay_qty  = matched ?  0 : 1;
 
             // Odds move with how the counterpart feels about you. This is the
             // payoff the -3..+3 range has never had: until now only its sign

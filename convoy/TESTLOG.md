@@ -2120,3 +2120,68 @@ derived:
 
 Runs with a hand aboard: 7% -> 17%. This is the fourth time in two releases that
 a number blamed on the game turned out to be the observer's arithmetic.
+
+---
+
+# v6 P0 / P0b — foundations, and a branch that was never taken
+
+## P0: the fifth stream, proved inert
+
+`rng_town` added; the v6 rule is that nothing in the town layer draws from any
+other stream. `Node` grew to carry a condition, a name and stock; `World` grew
+daylight, a service flag and four rumour slots. `world_node_known()` landed as
+the fog accessor, hiding nothing yet.
+
+**Inertness proof: 1,200 BOT lines (400 seeds x 3 difficulties), byte-identical
+to the v5 tag.** Sanitizers clean, `-Z` clean, `-X` clean. exe unchanged at
+115,200.
+
+The accessor lands three phases before the fog it will enforce, and it lives in
+`world.c` rather than `ui.c` on purpose: a rule enforced only where a panel is
+drawn is a rule the test bot never meets, and the bot is what every number here
+is made with. A fog added later to an accessor nobody calls is not a fog.
+
+## P0b: `base == 70`
+
+```c
+e->alt_pay_good = (base == 70) ? -1 : e->pay_good;
+e->alt_pay_qty  = (base == 70) ? 0  : 1;
+```
+
+`base` is only ever 80 (matched specialist) or 60 (improvised). **The test was
+never true.** Both tiers charged a unit, so the specialist's manoeuvre -- free
+by design, and described as free in three separate comments -- shipped in v5
+costing exactly what the improvised one did. The two tiers differed only in odds.
+
+70 was the number the branch carried in the v5 plan, before the odds were
+retuned to 80/60. Nothing failed when it drifted. **A condition that is merely
+never true throws no warning and breaks no test; it quietly deletes the
+feature.** The fix is a `matched` flag set where the tier is chosen, which
+cannot drift away from the thing it describes.
+
+### What it was worth: almost nothing
+
+| role | v5 (shipped) | P0b (as designed) |
+|---|---|---|
+| MECHANIC | +11 | +11 |
+| GUARD    |  +8 |  +8 |
+| MEDIC    | +11 | +12 |
+| SCOUT    | +16 | +16 |
+| TRADER   | +18 | +19 |
+
+n=600, NORMAL, baseline 48%. Two roles moved one point; three did not move at
+all. Both inside noise at this n.
+
+**Worth recording precisely because it is a null result.** The matched tier only
+fires on the 3-of-14 kinds a specialist covers, so waiving one unit reaches
+about a fifth of manoeuvres, and one unit is small against what the branch is
+worth. The bug was real, the design intent had genuinely never shipped, and
+correcting it changed the balance by nothing measurable.
+
+The v5 numbers were therefore never wrong -- they measured the binary as it
+actually behaved, and the published artifact's description ("cheap and it can
+fail") was true of both tiers. What had diverged was the intent and the
+comments, not the result.
+
+Branch mix after the fix (n=600, `-C 3`): alt offered 1,536, taken 23% of
+offers, failing 34% of attempts (bar 20-45%). Worst `forced%` 7% (bar <=9%).
