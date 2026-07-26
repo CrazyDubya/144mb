@@ -73,6 +73,15 @@ STILLS = [
      "succeeding are not the same thing."),
 ]
 
+# Every released binary, so the bar can show growth rather than one number.
+# Sizes taken from each release's own README at its tag.
+VERSIONS = [
+    ("v1", 82944,  "the shape of a game"),
+    ("v2", 94208,  "an economy with reasons"),
+    ("v3", 108544, "a payload, characters, difficulty"),
+    ("v4", 110592, "numbers that can be trusted"),
+]
+
 FACTS = [
     ("14", "encounter kinds, all live choices"),
     ("6", "crates you cannot sell"),
@@ -97,6 +106,36 @@ def main():
             '  <figcaption><b>%s</b>%s</figcaption>\n'
             '</figure>' % (src, title, title, caption))
 
+    # Two bars, deliberately.
+    #
+    # The top one is true to scale: every band is the bytes that release added,
+    # as a fraction of the whole disk. At this size the later versions are
+    # slivers -- which is the honest picture and the entire point of the
+    # project, so it must not be exaggerated. An earlier version floored each
+    # band to a visible minimum and the total then read 8.4% against an actual
+    # 7.50%, overstating the one number the page exists to report.
+    #
+    # The second bar expands the used portion to full width so the growth
+    # between releases is legible. Same data, stated scale, no distortion of
+    # the first.
+    COLOURS = ["#6b7f52", "#8a6a3e", "#a4553a", "#c07a3e"]
+    bands, zoom, vkey, prev = [], [], [], 0
+    for i, (name, size, blurb) in enumerate(VERSIONS):
+        grew = size - prev
+        bands.append('<i style="width:%.4f%%;background:%s" title="%s +%s bytes"></i>'
+                     % (grew * 100.0 / LIMIT, COLOURS[i], name, "{:,}".format(grew)))
+        zoom.append('<i style="width:%.3f%%;background:%s"></i>'
+                    % (grew * 100.0 / BYTES_USED, COLOURS[i]))
+        vkey.append(
+            '<div><em style="background:%s"></em>'
+            '<b>%s</b> %s<s> &middot; %s bytes%s</s></div>'
+            % (COLOURS[i], name, blurb, "{:,}".format(size),
+               "" if i == 0 else " &nbsp;+%s" % "{:,}".format(grew)))
+        prev = size
+    bands_html = "".join(bands)
+    zoom_html  = "".join(zoom)
+    vkey_html  = "\n".join(vkey)
+
     facts_html = "\n".join(
         '<div class="fact"><span class="fig">%s</span><span class="lbl">%s</span></div>'
         % (n, l) for n, l in FACTS)
@@ -108,6 +147,9 @@ def main():
         "left": "{:,}".format(LIMIT - BYTES_USED),
         "pct": "%.2f" % pct,
         "barpct": "%.3f" % max(pct, 0.45),   # keep the sliver visible
+        "bands": bands_html,
+        "zoom": zoom_html,
+        "vkey": vkey_html,
         "stills": "\n".join(stills_html),
         "facts": facts_html,
         "win": win,
@@ -192,13 +234,33 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
   .bar-nums b { color: var(--text); font-size: 22px; font-weight: 600; }
   .bar {
     height: 26px; background: var(--surface);
-    border: 1px solid var(--rule); position: relative; overflow: hidden;
+    border: 1px solid var(--rule); display: flex; overflow: hidden;
   }
-  .bar span {
-    position: absolute; inset: 0 auto 0 0; background: var(--accent);
-    width: %(barpct)s%%;
-  }
+  .bar i { display: block; height: 100%%; }
+  .bar i.free { flex: 1 1 auto; background: transparent; }
   .bar-foot { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* Each release is a band, so the bar reads as growth rather than a total.
+     At this scale every version is a sliver, which is the point -- but a
+     sliver nobody can see is not evidence, so each has a minimum width. */
+  .zoomlab {
+    font-size: 11px; color: var(--muted); margin: 18px 0 6px;
+    text-transform: uppercase; letter-spacing: .14em;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .bar.zoom { height: 16px; }
+
+  .vkey {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px;
+    font-size: 12px; color: var(--muted);
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .vkey div { display: flex; align-items: center; gap: 7px; }
+  .vkey em {
+    width: 11px; height: 11px; border-radius: 2px; flex: none; font-style: normal;
+  }
+  .vkey b { color: var(--text); font-weight: 600; }
+  .vkey s { color: var(--muted); text-decoration: none; opacity: .75; }
 
   h2 {
     font-size: 13px; text-transform: uppercase; letter-spacing: .18em;
@@ -275,8 +337,12 @@ TEMPLATE = r"""<title>Convoy &mdash; a game that fits on a floppy disk</title>
         <span><b>%(used)s</b> bytes used</span>
         <span>%(pct)s%% of the disk</span>
       </div>
-      <div class="bar"><span></span></div>
+      <div class="bar">%(bands)s<i class="free"></i></div>
       <div class="bar-foot">%(left)s bytes still free of %(limit)s</div>
+
+      <div class="zoomlab">the used sliver, expanded &mdash; growth by release</div>
+      <div class="bar zoom">%(zoom)s</div>
+      <div class="vkey">%(vkey)s</div>
     </div>
   </header>
 
