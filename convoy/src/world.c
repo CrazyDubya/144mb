@@ -54,12 +54,22 @@ static void contract_tick(World *w);
 static void roll_offers(World *w);
 
 // ---------------------------------------------------------------- difficulty
-// Three settings, each leaning on a different failure. Easy is not "the same
-// game with more credits": it is a game where fuel is the only thing that will
-// actually kill you, because the water margin and the storms are both slack.
-// Hard makes all three bite at once and, more importantly, makes the payload
-// genuinely hard to bring in whole -- which is the difference between arriving
-// and succeeding.
+// Three settings. Easy is not "the same game with more credits": every field
+// moves, and hard makes the payload genuinely hard to bring in whole, which is
+// the difference between arriving and succeeding.
+//
+// This used to claim each setting leaned on a different failure -- easy and
+// normal thirst-led, hard fuel-led -- and that was measured and true at the
+// time. It is no longer, and the reason is worth keeping: the old asymmetry
+// was substantially an artifact of the test bot's water reserve, which sampled
+// a single day's parity and collapsed to two units whenever the parity was
+// wrong. Against an agent that provisions both resources honestly, deaths sit
+// near 50/50 on all three settings however the starting stock is skewed --
+// starving water or fuel moves the win rate without moving the mix.
+//
+// Recorded rather than recreated. Contorting the table to reproduce a split
+// that only ever existed because the observer was broken would be tuning to an
+// artifact.
 typedef struct {
     int16_t credits;        // starting capital
     int8_t  water, fuel;    // starting stock
@@ -71,9 +81,9 @@ typedef struct {
 
 static const DiffRule DIFF[DIFF_COUNT] = {
     /*                 cr   w   f  fscale  spoil  storm  settle */
-    /* EASY   */ {    180, 12,  8,      1,    22,     10,     52 },
-    /* NORMAL */ {    155, 10,  6,      2,    35,     15,     48 },
-    /* HARD   */ {    135,  9,  6,      3,    45,     18,     44 },
+    /* EASY   */ {    140, 9,  6,      1,    28,     13,     47 },
+    /* NORMAL */ {    130, 8,  5,      2,    35,     15,     44 },
+    /* HARD   */ {    120, 7,  5,      3,    42,     20,     40 },
 };
 
 int world_score(const World *w) {

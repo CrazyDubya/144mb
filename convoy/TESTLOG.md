@@ -1433,6 +1433,61 @@ a role covers before it will pay for it, and crew are offered from sector 5 on,
 by which point a run has met one or two encounters. That is defensible
 behaviour, not a fault, and the number is honest.
 
+## P8b — the difficulty table, retuned against a settled economy
+
+| difficulty | band | P8 | P8b |
+|---|---|---:|---:|
+| FORGIVING | 60-70% | 97% | **70%** |
+| THE ROAD | 42-52% | 80% | **43%** |
+| UNFORGIVING | 22-32% | 56% | **27%** |
+
+n=400, zero stalls, careless play 0% on all three.
+
+Held until last on purpose: P7 changed the encounter tables and P8 the crew
+economy, and retuning difficulty before those settled would have been tuning
+twice and measuring once.
+
+| | cr | water | fuel | fuel scale | spoil | storm | settle |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| FORGIVING | 140 | 9 | 6 | 1 | 28 | 13 | 47 |
+| THE ROAD | 130 | 8 | 5 | 2 | 35 | 15 | 44 |
+| UNFORGIVING | 120 | 7 | 5 | 3 | 42 | 20 | 40 |
+
+**Settlement density is no longer the strongest lever.** P1 measured it as the
+single biggest one; sweeping it alone now moves THE ROAD only from 80% to 73%
+across 48 down to 32. Starting stock and the fuel price curve do most of the
+work, because a competent agent that provisions correctly is limited by what it
+can carry and afford rather than by how often it can stop.
+
+### A design property that turned out to be an artifact
+
+The table's comment claimed each setting leaned on a different failure: easy
+and normal thirst-led, hard fuel-led. That was measured and true in v3.
+
+It is not true now, and cannot be made true by skewing the starting stock. With
+water tight and fuel plentiful, or the reverse, or the fuel curve doubled, the
+death mix stays within a few points of 50/50 on every setting — only the win
+rate moves.
+
+The old asymmetry was substantially an artifact of the bot's water reserve,
+which sampled a single day's parity and collapsed to two units when the parity
+was wrong (see P3). Against an agent that provisions both resources honestly,
+the two failures balance.
+
+**Recorded rather than recreated.** Contorting the table to reproduce a split
+that existed because the observer was broken would be tuning to an artifact —
+the exact failure this release has spent nine phases removing.
+
+### Process
+
+A probe script edited the table with `sed`, produced a trailing-comma syntax
+error, built into `/dev/null`, and reported **73% for five very different
+configurations** — every one of them measuring the previous binary. Caught
+because five identical numbers from five different inputs is not a result.
+Rewritten with `set -e`, an unsilenced build, and an assertion that the edit
+changed the file. **Fourth instance this release of a tool reporting success
+while doing nothing.**
+
 ---
 
 ## Bugs found, and what found them
