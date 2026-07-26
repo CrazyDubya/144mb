@@ -117,6 +117,7 @@ void world_init(World *w, uint32_t seed, int diff) {
     w->rng_map   = mix32(w->seed ^ 0x9E3779B9u);
     w->rng_offer = mix32(w->seed ^ 0x85EBCA6Bu);
     w->rng_event = mix32(w->seed ^ 0xC2B2AE35u);
+    w->rng_people= mix32(w->seed ^ 0x27D4EB2Fu);
     w->diff = (uint8_t)(diff < 0 ? 0 : (diff >= DIFF_COUNT ? DIFF_COUNT - 1 : diff));
     const DiffRule *D = &DIFF[w->diff];
 
@@ -797,6 +798,16 @@ void world_travel(World *w, int next_index) {
         if (w->held[G_FUEL]  < w->in.min_fuel)  w->in.min_fuel  = (uint8_t)w->held[G_FUEL];
         if (w->held[G_WATER] <= 2 || w->held[G_FUEL] <= 2) w->in.days_thin++;
         w->in.stack_here = 0;
+        for (int c = 0; c < CHAR_COUNT; ++c) {
+            w->in.char_regard_end[c] = w->regard[c];
+            // The gate Phase 2 will use, recorded now so its supply can be
+            // measured before it is designed.
+            if (w->met[c] >= 2 && w->regard[c] >= 2) w->in.char_recruit[c] = 1;
+            if (w->met[c] >= 1 && w->regard[c] >= 1) w->in.gate_any[0] = 1;
+            if (w->met[c] >= 2 && w->regard[c] >= 1) w->in.gate_any[1] = 1;
+            if (w->met[c] >= 1 && w->regard[c] >= 2) w->in.gate_any[2] = 1;
+            if (w->met[c] >= 2 && w->regard[c] >= 2) w->in.gate_any[3] = 1;
+        }
     });
 
     w->sector++;
@@ -1190,6 +1201,8 @@ static void roll_event(World *w) {
         int who = world_event_char(kind);
         if (who != CHAR_NONE) {
             w->met[who]++;
+            INSTR(w->in.char_met[who] = 1;
+                  if (w->met[who] >= 2) w->in.char_met2[who] = 1);
             int r = w->regard[who];
             if (r > 0 && e->pay_qty  > 0) e->pay_qty--;
             if (r < 0 && e->pay_qty  > 0) e->pay_qty++;

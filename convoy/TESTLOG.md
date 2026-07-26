@@ -1708,6 +1708,74 @@ The per-role counter added this phase indexed `crew_offered[w->offer_crew]`
 outside the branch that sets it. `offer_crew` is `0xFF` when nobody is looking
 for work, so a five-element array was being written at index 255.
 
+# v5 — the people you pick up
+
+Crew were shipped in v4 measured and unfixed: every role is net-negative even
+when granted free, because a role covers 3 of 14 encounter kinds and encounters
+fire 3.7 times per run, so its ability fires **0.79 times a run**. v5 does not
+reprice them. It changes when they act (a third branch on every encounter) and
+where they come from (recruited from the five recurring characters).
+
+## P0 — instrument, freeze, prove inert
+
+No gameplay change, and that is the exit criterion: **1,200 BOT lines
+byte-identical** to the pre-phase build across three difficulties. An unread
+RNG stream and unwritten counters must be provably inert, not presumed so.
+
+Adds `rng_people`, a fourth stream. Every v5 feature — alt-branch success
+rolls, errand generation, recruit offers, who speaks at a stop — draws from it
+and never from `rng_event` or `rng_offer`. v4 established the cost of getting
+this wrong: one extra draw in `roll_event` reshuffles every later market offer
+for that seed, and the resulting numbers still look entirely plausible.
+
+### The supply of meetings, measured before the gate was designed
+
+n=800, THE ROAD:
+
+| character | met | met twice | mean end regard |
+|---|---:|---:|---:|
+| VULTURE | 51% | 18% | +0.04 |
+| MARLOW | 23% | **2%** | +0.00 |
+| OKONJO | 39% | 9% | +0.01 |
+| SISTER RAE | 39% | 8% | −0.02 |
+| THE WALKER | 51% | 14% | +0.23 |
+
+The gate the plan proposed — met twice and regard ≥ +2 — passes in **15% of
+runs against a 60-80% target.** Designing Phase 2 around it would have produced
+an empty crew board in six runs out of seven and looked like a balance problem.
+
+Four candidate gates, measured together:
+
+| gate | runs with anyone recruitable |
+|---|---:|
+| met≥1, regard≥1 | **65%** |
+| met≥2, regard≥1 | 21% |
+| met≥1, regard≥2 | 15% |
+| met≥2, regard≥2 | 15% |
+
+**`met≥1, regard≥1` is the gate**, and it is a reading rather than a taste.
+
+### Two structural problems this exposed, for Phase 2
+
+**Regard barely moves.** Mean end regard is +0.00 to +0.23 on a ±3 scale. The
+±1 per interaction cancels almost exactly, because accepting and declining are
+each right about half the time. A gate reading regard is reading noise unless
+the shifts get larger or the sign becomes less symmetric — which is the same
+conclusion the anti-farming rule arrives at from the other direction.
+
+**The character/encounter mapping is badly uneven.** Marlow owns 1 of 14 kinds
+(EV_RIVAL); Vulture and the Walker own 3 each. She is met in 23% of runs and
+twice in **2%** — and under the "enemies cost more" decision she needs a
+*higher* gate than anyone. As it stands Marlow is unrecruitable in practice.
+Three kinds (BREAK, BRIDGE, LEAK) are mapped to nobody and are the obvious
+place to even this out.
+
+### Baseline
+
+`CREWSET` entropy **0.39 bits of 5.00**, modal set `0x00` at **93%** of runs —
+93% end with no crew at all. That is the number replayability is measured
+against.
+
 ---
 
 ## Bugs found, and what found them

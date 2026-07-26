@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>   // offsetof, for the determinism hash
+#include <math.h>     // log, for the crew-set entropy
 
 // ---------------------------------------------------------------- png
 static uint32_t crc_table[256];
@@ -585,6 +586,62 @@ static void role_report(const RoleTotals *t) {
                t->uoff[u] ? t->ubuy[u] * 100 / t->uoff[u] : 0);
 }
 
+// Who the road introduces, how often twice, and where regard ends up. The
+// recruitment gate in v5 reads exactly these, so they are measured before it
+// is designed rather than after it disappoints.
+typedef struct {
+    long met[CHAR_COUNT], met2[CHAR_COUNT], recruit[CHAR_COUNT];
+    long regard_sum[CHAR_COUNT];
+    long crewset[1 << CREW_COUNT];
+    long gate[4];
+} PeopleTotals;
+
+static void people_add(PeopleTotals *t, const World *w) {
+    for (int c = 0; c < CHAR_COUNT; ++c) {
+        t->met[c]     += w->in.char_met[c];
+        t->met2[c]    += w->in.char_met2[c];
+        t->recruit[c] += w->in.char_recruit[c];
+        t->regard_sum[c] += w->in.char_regard_end[c];
+    }
+    for (int g = 0; g < 4; ++g) t->gate[g] += w->in.gate_any[g];
+    int mask = 0;
+    for (int k = 0; k < CREW_COUNT; ++k) if (w->crew[k]) mask |= 1 << k;
+    t->crewset[mask]++;
+}
+
+static void people_report(const PeopleTotals *t, int runs) {
+    static const char *const CN[CHAR_COUNT] =
+        { "VULTURE", "MARLOW", "OKONJO", "SISTER RAE", "THE WALKER" };
+    int any_recruit = 0;
+    for (int c = 0; c < CHAR_COUNT; ++c) {
+        printf("PEOPLE %-11s met %3ld%%  twice %3ld%%  recruitable %3ld%%  "
+               "mean regard %+.2f\n",
+               CN[c], t->met[c] * 100 / runs, t->met2[c] * 100 / runs,
+               t->recruit[c] * 100 / runs, (double)t->regard_sum[c] / runs);
+        any_recruit += (int)t->recruit[c];
+    }
+    (void)any_recruit;
+
+    // How varied the crew a run ends with actually is. Entropy in bits over the
+    // 32 possible sets: 0 means every run ends the same way, which is what a
+    // dominated system looks like from the outside.
+    double h = 0.0; long modal = 0; int modal_set = 0;
+    for (int m = 0; m < (1 << CREW_COUNT); ++m) {
+        if (!t->crewset[m]) continue;
+        double pr = (double)t->crewset[m] / runs;
+        h -= pr * (log(pr) / log(2.0));
+        if (t->crewset[m] > modal) { modal = t->crewset[m]; modal_set = m; }
+    }
+    static const char *const GN[4] =
+        { "met>=1 regard>=1", "met>=2 regard>=1",
+          "met>=1 regard>=2", "met>=2 regard>=2" };
+    for (int g = 0; g < 4; ++g)
+        printf("GATE  %-18s any character passes: %3ld%% of runs\n",
+               GN[g], t->gate[g] * 100 / runs);
+    printf("CREWSET entropy %.2f bits of 5.00   modal set 0x%02x at %ld%%\n",
+           h, modal_set, modal * 100 / runs);
+}
+
 static void kind_report(const KindTotals *t, int runs) {
     printf("KIND  %-11s %8s %8s %8s %8s %8s\n",
            "encounter", "fired", "per_run", "accept%", "refuse%", "forced%");
@@ -744,8 +801,10 @@ int main(int argc, char **argv) {
 #ifdef CONVOY_INSTRUMENT
         KindTotals kt[EV_KINDS];
         RoleTotals rt;
+        PeopleTotals pt;
         memset(kt, 0, sizeof kt);
         memset(&rt, 0, sizeof rt);
+        memset(&pt, 0, sizeof pt);
 #endif
         for (int sd = lo; sd <= hi; ++sd) {
             RunResult r;
@@ -773,7 +832,7 @@ int main(int argc, char **argv) {
             }
 
             print_run(&r);
-            INSTR(kind_add(kt, &r.w); role_add(&rt, &r.w));
+            INSTR(kind_add(kt, &r.w); role_add(&rt, &r.w); people_add(&pt, &r.w));
             ++runs;
             if      (r.w.state == ST_WON)  ++won;
             else if (r.w.state == ST_DEAD) ++dead;
@@ -783,7 +842,8 @@ int main(int argc, char **argv) {
         if (sweep_n > 0) {
             printf("SWEEP n=%d diff=%d won=%d dead=%d stalled=%d win_pct=%d\n",
                    runs, diff, won, dead, stalled, runs ? won * 100 / runs : 0);
-            if (kinds) INSTR(kind_report(kt, runs); role_report(&rt));
+            if (kinds) INSTR(kind_report(kt, runs); role_report(&rt);
+                             people_report(&pt, runs));
         }
         // A stall is always a bug, never a balance result, so it fails the run
         // rather than quietly appearing in a column.

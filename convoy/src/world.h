@@ -167,6 +167,22 @@ typedef struct {
     uint16_t cargo_samples;
     uint16_t peak_cargo;
 
+    // Who the road actually introduced, and how it was left. The BOT line
+    // prints only the sum of regard, which cancels a +3 against a -3 and hides
+    // exactly the distribution a recruitment gate would read.
+    uint8_t  char_met[CHAR_COUNT];       // met at least once this run
+    uint8_t  char_met2[CHAR_COUNT];      // ...at least twice
+    // Four candidate gates, measured together so Phase 2 picks from data
+    // instead of taste. g[0]=met1/reg1, g[1]=met2/reg1, g[2]=met1/reg2,
+    // g[3]=met2/reg2 (the one originally planned).
+    uint8_t  char_recruit[CHAR_COUNT];   // gate condition was true at some point
+    uint8_t  gate_any[4];                // any character passed gate i this run
+    int8_t   char_regard_end[CHAR_COUNT];
+
+    // Reserved so Metrics grows once rather than every phase.
+    uint16_t alt_offered, alt_taken, alt_failed;
+    uint16_t err_offered, err_taken, err_done, err_failed, crew_left;
+
     uint8_t  min_water, min_fuel;
     uint16_t days_thin;       // days ending with water or fuel at 2 or less
 } Metrics;
@@ -189,6 +205,12 @@ typedef struct {
     uint32_t rng_map;      // route layout and prices: world_init only
     uint32_t rng_offer;    // market offers, contracts, salvage failure
     uint32_t rng_event;    // encounters, storm spoilage, random cargo loss
+    // People: recruit offers, errands, who speaks at a stop, and whether a
+    // crew manoeuvre comes off. Separate from the three above for the reason
+    // v4 proved expensively -- a single extra draw in roll_event reshuffles
+    // every later market offer for that seed, and the resulting numbers still
+    // look entirely plausible. Nothing reads this yet.
+    uint32_t rng_people;
     Node     node[SECTORS][NODES_PER];
 
     int sector, index;          // where the convoy is
