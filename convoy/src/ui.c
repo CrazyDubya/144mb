@@ -84,7 +84,12 @@ int ui_tab_rows(const GameState *gs, int tab) {
     case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
     case TAB_JOURNAL:   return 0;              // a record, not a menu
     case TAB_GARAGE:    return gs->w.offer_upg  < UPG_COUNT  ? 1 : 0;
-    case TAB_CREW:      return gs->w.offer_crew < CREW_COUNT ? 1 : 0;
+    // A hire offer OR a favour being asked. Only the hire was counted, so a
+    // hand asking for something produced a tab whose Z and X were both live
+    // and whose row count was zero -- the cursor could not land, and nothing
+    // told the player the keys did anything.
+    case TAB_CREW:      return (gs->w.offer_crew < CREW_COUNT
+                                || gs->w.errand.state == ERR_OFFERED) ? 1 : 0;
     default:            return 0;
     }
 }
@@ -115,6 +120,63 @@ int ui_tab_live(const GameState *gs, int tab) {
 // Everyone met so far, how often, and where you stand with them. The regard
 // line is the point: it tells the player that the choices they made at an
 // encounter are still being carried around.
+// An errand, and the reason this function exists at all.
+//
+// Z and X have been bound to accepting and declining an errand since v5
+// (game.c), and nothing has ever drawn a prompt for either. Worse,
+// ui_tab_rows(TAB_CREW) returned a row only for a HIRE offer, so a hand asking
+// a favour produced a tab with two live keys and no visible control -- the same
+// fault as the trend legend whose strings existed and were never drawn, and the
+// six T_ERR_* strings below had been sitting unreferenced since the day they
+// were written.
+//
+// A binding a player cannot see is not a mechanic. It is a secret.
+static void draw_errand(Framebuffer *fb, const World *w, int x, int y, int pw) {
+    const Errand *e = &w->errand;
+    if (e->state == ERR_NONE || e->state == ERR_DONE) return;
+    (void)pw;
+
+    int who = CHAR_OF_ROLE[e->who];
+    int ly  = y;
+
+    // What is being asked, in their words.
+    int hx = x + 14;
+    hx += draw_text(fb, hx, ly, WHO_NAME[who], 1, PALETTE[C_BONE]) + 6;
+    draw_text(fb, hx, ly, e->state == ERR_OFFERED ? T_ERR_ASKS : T_ERR_DOING, 1,
+              PALETTE[e->state == ERR_OFFERED ? C_WARN : C_DIM]);
+    ly += 16;
+
+    // The terms. A visit costs route, a carry costs hold space -- and the
+    // difference is the whole reason both kinds exist, so they do not share
+    // a sentence.
+    int tx = x + 14;
+    if (e->state == ERR_VISIT || (e->state == ERR_OFFERED && e->qty == 0)) {
+        tx += draw_text(fb, tx, ly, T_ERR_VISIT, 1, PALETTE[C_BONE]) + 6;
+        tx += draw_text(fb, tx, ly, ARCH_NAME[e->arg], 1, PALETTE[C_GOOD]) + 10;
+    } else {
+        tx += draw_text(fb, tx, ly, T_ERR_CARRY, 1, PALETTE[C_BONE]) + 6;
+        tx += draw_number(fb, tx, ly - 2, e->qty, 1, PALETTE[C_GOOD]) + 4;
+        tx += draw_text(fb, tx, ly, GOOD_NAME[e->arg], 1, PALETTE[C_GOOD]) + 10;
+    }
+    tx += draw_text(fb, tx, ly, T_ERR_BY, 1, PALETTE[C_DIM]) + 6;
+    draw_number(fb, tx, ly - 2, e->by_sector, 1, PALETTE[C_DIM]);
+    ly += 18;
+
+    // The controls. Only when there is something to press them for.
+    if (e->state == ERR_OFFERED) {
+        int kx = x + 14;
+        kx += draw_key(fb, kx, ly - 4, G_KEY_Z, 2) + 4;
+        kx += draw_text(fb, kx, ly, T_JOB_ACCEPT, 1, PALETTE[C_BONE]) + 14;
+        kx += draw_key(fb, kx, ly - 4, G_X, 2) + 4;
+        draw_text(fb, kx, ly, T_JOB_DECLINE, 1, PALETTE[C_DIM]);
+    } else if (w->warned) {
+        // The desertion warning was a flag nobody could read.
+        int qx = x + 14;
+        qx += draw_text(fb, qx, ly, WHO_NAME[who], 1, PALETTE[C_BAD]) + 6;
+        draw_text(fb, qx, ly, T_ERR_QUIT, 1, PALETTE[C_BAD]);
+    }
+}
+
 static void draw_journal(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
     const World *w = &gs->w;
     (void)pw;
@@ -604,15 +666,22 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
             draw_garage_extra(fb, gs, x, y + 44 + th, pw, below + 6);
         }
         else if (gs->tab == TAB_CREW) {
-            draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew, CREW_COUNT,
-                        CREW_NAME, CREW_DESC, gs->w.crew,
+            int below = draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew,
+                        CREW_COUNT, CREW_NAME, CREW_DESC, gs->w.crew,
                         gs->w.offer_crew < CREW_COUNT
                             ? world_crew_price(&gs->w, gs->w.offer_crew) : 0,
                         T_NO_CREW, T_HIRE, T_HIRED);
             // The standing cost of every hand aboard, stated where it is felt.
-            // Sits directly under the hire prompt: any lower and it collides
-            // with the depart row at the foot of the panel.
-            draw_text(fb, x + 14, y + 44 + th + 82, T_CREW_WARN, 1, PALETTE[C_BAD]);
+            //
+            // From draw_outfit's returned bottom, not from a constant. It used
+            // to sit at a fixed +82, and the aboard-list grows by a line per
+            // hand -- so a convoy carrying anyone had the roster drawn straight
+            // through this warning. The garage branch above has always taken
+            // the returned y; this one was written with a number that happened
+            // to be right for an empty crew, which was the only crew there was
+            // when it was written.
+            draw_text(fb, x + 14, below + 10, T_CREW_WARN, 1, PALETTE[C_BAD]);
+            draw_errand(fb, &gs->w, x, below + 30, pw);
         }
         // Departing is always available, whatever tab is open.
         int dy = y + 48 + th + GOODS_COUNT * rowh;
@@ -653,6 +722,37 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
             // A stall pays less than it charges. Hiding that behind the listed
             // price would make every sale a small unpleasant surprise.
             draw_number(fb, kx, ry + 5, world_sell_price(w, g), 1, PALETTE[C_WARN]);
+        }
+
+        // What they still have, left of what you are carrying.
+        //
+        // Two quantities on one row needs the difference to be obvious at a
+        // glance, so they do not share a treatment: theirs is a small depth
+        // bar, yours is a number. A player reads "how much is left here"
+        // positionally and "how much do I have" numerically, and never has to
+        // work out which column is which.
+        //
+        // Sits between the name and the price, at x+72. The first attempt put
+        // it at pw-104, reasoning that the selected row's inline BUY/SELL keys
+        // ended around x+320 and the held number began near x+380. They do not:
+        // the screenshot showed the pips drawn straight through SELL and the
+        // sell price. The gap on the left is real and measurable -- the longest
+        // good name is SCRAP at about 30px from x+34 -- so the bar goes where
+        // nothing else has a claim, and the row now reads left to right as
+        // name, what is left, price, trend, what you carry.
+        {
+            int st = nd->stock[g], sx = x + 72;
+            if (st <= 0) {
+                draw_text(fb, sx, ry + 5, T_SOLD_OUT, 1, PALETTE[C_BAD]);
+            } else {
+                // Six pips, one per two units, so a deep shelf and a thin one
+                // are told apart without reading a number.
+                for (int i = 0; i < 6; ++i) {
+                    int on = st > i * 2;
+                    fill_rect(fb, sx + i * 6, ry + 4, 4, 10,
+                              PALETTE[on ? (st <= 2 ? C_WARN : C_GOOD) : C_BORDER]);
+                }
+            }
         }
 
         // Held quantity, right side.

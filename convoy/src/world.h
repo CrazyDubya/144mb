@@ -426,6 +426,10 @@ int  world_arch_good (int archetype);
 // What may be known about a node from where the convoy is standing. Every
 // reader of a node other than the one underfoot must come through here.
 void world_node_known(const World *w, int s, int n, NodeView *out);
+// Units of a good the market underfoot will still sell. Zero means the shelf is
+// empty and a buy will do nothing -- which anything pressing BUY must check,
+// because world_buy fails silently and an unchecked retry never terminates.
+int  world_stock(const World *w, int good);
 // -1 if this market is notably cheap for the good, +1 if notably dear, 0 if
 // it is about what the player has seen elsewhere.
 int  world_price_bias(const World *w, int good);

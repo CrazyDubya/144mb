@@ -353,6 +353,7 @@
 
 #define T_CHEAP_HERE    "CHEAP HERE"
 #define T_DEAR_HERE     "THEY PAY WELL HERE"
+#define T_SOLD_OUT      "NONE LEFT"
 
 extern const char *const GOOD_NAME[5];
 extern const char *const GOOD_USE[5];

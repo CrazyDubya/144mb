@@ -692,7 +692,8 @@ static void print_run(const RunResult *r) {
            " bought=%u sold=%u cr_in=%d cr_out=%d headline=%d stack=%u"
            " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u"
            " alt_off=%u alt_take=%u alt_fail=%u"
-           " err_off=%u err_take=%u err_done=%u err_fail=%u left=%u",
+           " err_off=%u err_take=%u err_done=%u err_fail=%u left=%u"
+           " sout=%u sblock=%u",
            ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
            m->c_declined, m->c_lapsed, m->c_forfeit,
            m->pl_storm, m->pl_demand, m->pl_random,
@@ -702,7 +703,10 @@ static void print_run(const RunResult *r) {
            m->peak_cargo, m->min_water, m->min_fuel, m->days_thin,
            m->alt_offered, m->alt_taken, m->alt_failed,
            m->err_offered, m->err_taken, m->err_done, m->err_failed,
-           m->crew_left);
+           m->crew_left,
+           (unsigned)(m->stock_out[0] + m->stock_out[1] + m->stock_out[2]
+                    + m->stock_out[3] + m->stock_out[4]),
+           m->bought_blocked);
     (void)ev_fired;
 #endif
     printf("\n");

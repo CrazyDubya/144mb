@@ -372,6 +372,18 @@ static int decide_trade(Bot *b, const World *w, int sel) {
     // A purchase is only worth walking the cursor to if it can actually
     // happen. Without the room check the bot presses BUY at a full hold
     // forever, which is exactly how the 13-hop route deadlocked it.
+    //
+    // Finite stock adds a second way for a buy to fail silently, so every
+    // branch below that presses BUY now also asks world_stock. This is the
+    // same deadlock wearing different clothes: world_buy returns without
+    // acting, decide_trade re-derives from scratch on the next keypress with
+    // no memory that anything failed, picks the same good, and presses A again
+    // to the 4,000-step cap. A stall is always a bug and never a balance
+    // result, and a stalled sweep measures nothing at all.
+    //
+    // Note what the bot must NOT do here: treat "still short" as "press
+    // again". Assembling a cargo across several towns is the feature; a
+    // partial fill is the correct outcome, not a failure to retry harder.
     int room = cargo < world_cargo_cap(w);
     // A full hold that wanted to buy is the only honest evidence that more
     // slots would be worth paying for. Counted here rather than assumed, so
@@ -380,14 +392,16 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
-    if (room && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL]) {
+    if (room && world_stock(w, G_FUEL) > 0
+        && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL]) {
         int act = step_to(sel, G_FUEL, BTN_A);
         if (act == BTN_A) b->bought_here[G_FUEL] = 1;
         return act;
     }
 
     // 3. Then water.
-    if (room && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER]) {
+    if (room && world_stock(w, G_WATER) > 0
+        && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER]) {
         int act = step_to(sel, G_WATER, BTN_A);
         if (act == BTN_A) b->bought_here[G_WATER] = 1;
         return act;
@@ -401,6 +415,7 @@ static int decide_trade(Bot *b, const World *w, int sel) {
             int need = contract_short(w, g);
             if (need <= 0) continue;
             if (!room || w->credits < nd->price[g]) continue;
+            if (world_stock(w, g) < 1) continue;   // shelf empty; take what we got
             // Only where it is not absurdly dear: a job bought at any price is
             // a job that cost more than it pays.
             int avg = avg_price(b, g);
@@ -417,6 +432,7 @@ static int decide_trade(Bot *b, const World *w, int sel) {
         int spec = local_spec;
         for (int g = 0; g < GOODS_COUNT; ++g) {
             if (g == G_FUEL || g == G_WATER) continue;   // survival stock, handled above
+            if (world_stock(w, g) < 1) continue;
 
             // A settlement's own speciality is cheap here by construction, so
             // it is worth loading even before enough markets have been seen to

@@ -12,6 +12,16 @@
 // Caveat: it calls world_crew_price and world_upg_price, so a phase that
 // reprices kit WILL move it. It is a control for changes to the agent, not an
 // absolute yardstick.
+//
+// Edited once since being frozen, in v6 P1, to add three world_stock guards to
+// its buy paths -- and recorded here because an unexplained edit to a control
+// is worse than no control. It is not a strategy change: finite stock makes
+// world_buy fail silently, and an agent that presses BUY at an empty stall
+// runs to the step cap and stalls. A frozen reference that cannot finish a run
+// measures nothing.
+//
+// The consequence is that -A ref is NOT a valid control for P1 itself, only
+// for the phases after it. Both arms of P1 had to change for either to run.
 // convoy -- a price-aware test bot.
 //
 // This is NOT part of the game. It is compiled only into the headless harness,
@@ -203,14 +213,16 @@ static int decide_trade(BotRef *b, const World *w, int sel) {
 
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
-    if (room && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL]) {
+    if (room && world_stock(w, G_FUEL) > 0
+        && w->held[G_FUEL] < keep[G_FUEL] && w->credits >= nd->price[G_FUEL]) {
         int act = step_to(sel, G_FUEL, BTN_A);
         if (act == BTN_A) b->bought_here[G_FUEL] = 1;
         return act;
     }
 
     // 3. Then water.
-    if (room && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER]) {
+    if (room && world_stock(w, G_WATER) > 0
+        && w->held[G_WATER] < keep[G_WATER] && w->credits >= nd->price[G_WATER]) {
         int act = step_to(sel, G_WATER, BTN_A);
         if (act == BTN_A) b->bought_here[G_WATER] = 1;
         return act;
@@ -222,6 +234,7 @@ static int decide_trade(BotRef *b, const World *w, int sel) {
         int spec = local_spec;
         for (int g = 0; g < GOODS_COUNT; ++g) {
             if (g == G_FUEL || g == G_WATER) continue;   // survival stock, handled above
+            if (world_stock(w, g) < 1) continue;
 
             // A settlement's own speciality is cheap here by construction, so
             // it is worth loading even before enough markets have been seen to

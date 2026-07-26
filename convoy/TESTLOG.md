@@ -2185,3 +2185,128 @@ comments, not the result.
 
 Branch mix after the fix (n=600, `-C 3`): alt offered 1,536, taken 23% of
 offers, failing 34% of attempts (bar 20-45%). Worst `forced%` 7% (bar <=9%).
+
+---
+
+# v6 P1 — finite stock
+
+The market was an infinite tap: a well would sell you thirty water if you could
+carry it, so an archetype was a price and nothing else, and one stop could
+assemble a whole cargo. Stock makes the archetype a quantity too.
+
+Derived from `ARCH_MOD`, never a second table — the most repeated bug in this
+project is two tables that must agree while only one gets edited (the two price
+tables removed in v4, `world_reachable` against `world_can_travel`, the water
+ration copied into the bot). A place that is cheap in a thing is cheap because
+it has the thing; one number says both.
+
+## It shipped as decoration, and the counter said so
+
+First parameterisation (`base = 7 - mod/12`, survival floor 4):
+
+    dry-shelf runs   6%    (bar: 10-40%)
+    buys blocked     0.00/run
+
+**The floor was the binding number, not the formula.** The worst import base was
+`7 - 38/12 = 4`, the noise band ran 2..5, and the clamp lifted nearly all of it
+straight back to 4 — erasing the archetype gradient at exactly the end where it
+needed to bite.
+
+Split per good on the failing build, n=400:
+
+| good | exhaustions/run | runs with any |
+|---|---|---|
+| water |  0.025 |  9 |
+| fuel  |  0.028 | 10 |
+| ammo  |  0.000 | **0** |
+| meds  |  0.000 | **0** |
+| scrap |  0.013 |  5 |
+
+Ammo and meds never ran dry in 400 runs. The reason is structural: the bot buys
+in bulk only through speculation, speculation targets the local speciality, and
+**the speciality is the deepest shelf by construction**. The limit had been put
+exactly where nobody was buying. Every exhaustion that did happen was a survival
+good at a place that does not make it.
+
+So the lever is the import end of the gradient, not the whole curve: steepen it
+and the survival shelves thin while the speciality nobody exhausts deepens.
+
+## Seven parameterisations
+
+| divisor | floor | dry-shelf | win 0/1/2 | stalls | thirst share |
+|---|---|---|---|---|---|
+| /12 | 4 |  6.0% | 68/50/32 | 0 | 70.9% |
+| /12 | 3 | 10.0% | 68/50/32 | 0 | 70.9% |
+| /6  | 3 | 16.2% | 68/50/32 | 0 | 70.9% |
+| /6  | 2 | 32.5% | 67/50/33 | 0 | 70.9% |
+| /9  | 2 | 17.2% | 68/50/32 | 0 | 70.9% |
+| **/8** | **2** | **21.5%** | **68/50/32** | 0 | **70.9%** |
+| /8  | 1 | 25.2% | 68/50/32 | 0 | 71.1% |
+
+Floor 1 also lands in band and measured no harm, and was rejected anyway: it
+makes a settlement that sells one unit of water a legal stop, which voids the
+guarantee the clamp exists to give. Rejected on the comment's own terms rather
+than on a number.
+
+## Shipped: `/8`, floor 2
+
+    dry-shelf runs        21.5%    (bar 10-40%)
+    stalls                    0    all three difficulties
+    win rates          68/50/32    (v5: 66/47/30)
+    thirst share of deaths 70.9%   (+0.0 points)
+    bought per run        11.61    (was 11.56 -- nothing became unbuyable)
+    biggest stack sold     1.76    (v5: 2.6)
+
+`-X` clean, sanitizers clean, `-Z` clean at all three difficulties. n=1200
+stability check: 20.9% dry-shelf, and 25.2 / 21.5 / 19.8% per difficulty — the
+whole band sits inside 10-40 at every setting.
+
+Win rates run 2-3 points above the 66/47/30 contract. Banked deliberately and
+retuned in P7: tuning against an economy that is still moving tunes noise.
+
+## A counter that measures its own guard
+
+`sblock` (buys refused for want of stock) reads 0.00/run at every
+parameterisation, and will keep doing so. The bot's `world_stock` guards mean it
+never presses BUY at an empty shelf, so that counter measures the guard, not the
+constraint. `sout` is the honest metric. Recording this so nobody later reads a
+zero there as evidence the mechanic is inert.
+
+## Suspicious result, checked rather than assumed
+
+NORMAL win/death counts came back identical (201/141/58) across five variants.
+That is the stale-binary signature this log has recorded six times. It was
+genuine cancellation: md5sums differ per variant, 103 of 400 run lines differ
+between two of them, and exactly two seeds flip outcome in opposite directions
+(seed 50 THIRST->WON, seed 361 WON->THIRST).
+
+## The frozen agent was edited
+
+`bot_ref.c` took three `world_stock` guards. An agent that presses BUY at an
+empty stall runs to the step cap and stalls, and a frozen reference that cannot
+finish a run measures nothing. Recorded because an unexplained edit to a control
+is worse than no control — and note the consequence: **`-A ref` is not a valid
+control for P1 itself**, only for the phases after it. Both arms had to change
+for either to run.
+
+## UI, and two collisions found by looking
+
+Stock draws as a six-pip depth bar per market row. Theirs is a bar, yours is a
+number: a player reads "how much is left here" positionally and "how much do I
+have" numerically, and never has to work out which column is which.
+
+First attempt put the bar at `pw-104`, reasoning that the selected row's inline
+BUY/SELL keys ended near x+320. **They do not** — the screenshot showed the pips
+drawn straight through SELL and the sell price. Moved to x+72, between the name
+and the price, where the gap is real and measurable.
+
+Screenshotting that then exposed a second, older collision on the crew tab:
+`T_CREW_WARN` was drawn at a fixed `y + 44 + th + 82` while the aboard-roster
+above it grows a line per hand — so any convoy carrying anyone had the roster
+drawn through the water-ration warning. The garage branch beside it has always
+used `draw_outfit`'s returned bottom. This one was written with a constant that
+happened to be right for an empty crew, which was the only crew there was when
+it was written. Now takes the returned y.
+
+Both found by looking at the picture. Neither would have been found by reading
+the arithmetic, which is what the arithmetic said was fine.

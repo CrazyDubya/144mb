@@ -130,6 +130,58 @@ static void price_node(World *w, Node *n, int sector) {
     }
 }
 
+// How much a settlement will actually part with.
+//
+// Until now every market was an infinite tap: a well would sell you thirty
+// water if you could carry it, so an archetype was a price and nothing else,
+// and one stop could assemble a whole cargo. Stock makes the archetype a
+// quantity too, which is what makes a route a supply chain rather than a
+// shopping trip.
+//
+// DERIVED FROM ARCH_MOD, NOT FROM A SECOND TABLE. This project's most repeated
+// bug is two tables that have to agree while only one gets edited -- the two
+// price tables removed in v4, world_reachable against world_can_travel, the
+// water ration copied into the bot. A place that is cheap in a thing is cheap
+// because it has the thing; one number should say both.
+//
+//   -48 (what it makes)  -> 13 units      +24 (what it must import) -> 4
+//     0 (general post)   ->  7 units      +38 (the dearest import)  -> 3
+//
+// The divisor is 8 and not something gentler because at /12 the mechanic did
+// not bind: shelves ran dry in 6% of runs and no buy was ever refused. Measured
+// per good, every exhaustion that did happen was water or fuel at a place that
+// does not make them -- ammo and meds ran dry in zero runs out of 400, because
+// the bot buys in bulk only through speculation, speculation targets the local
+// speciality, and the speciality is the deepest shelf here by construction.
+// The lever is therefore the import end of the gradient, not the whole curve.
+static void stock_node(World *w, Node *n) {
+    for (int g = 0; g < GOODS_COUNT; ++g) {
+        int base = 7 - ARCH_MOD[n->archetype][g] / 8;
+        int s = base * rng_range(&w->rng_town, 60, 140) / 100;
+
+        // The survival floor, and it must stay the LAST thing applied here --
+        // conditions will bend these numbers in a later phase, and if a dry
+        // town could take water to zero underneath this clamp it would starve
+        // runs to death while reading as a difficulty result. No settlement on
+        // any route can fail to sell a convoy its next few hops.
+        //
+        // Safe only because travel is forward-only, so scarcity never
+        // compounds: a thin town is always followed by a fresh one. That is
+        // the load-bearing reason backtracking stays out of scope.
+        // Value lowered 4 -> 2; POSITION unchanged, and it must stay last.
+        // At 4 this clamp was the binding number for every import shelf -- the
+        // worst import base was 7-38/12 = 4, so the noise band ran 2..5 and the
+        // clamp lifted nearly all of it straight back to 4. The archetype
+        // gradient was being erased at exactly the end where it needed to bite,
+        // which is why the mechanic shipped reading as decoration. At 1 the
+        // guarantee stops being one, so 2: a thin town still covers a hop.
+        if (g == G_WATER || g == G_FUEL) { if (s < 2) s = 2; }
+        else if (s < 1) s = 1;
+
+        n->stock[g] = (uint8_t)(s > 30 ? 30 : s);
+    }
+}
+
 void world_init(World *w, uint32_t seed, int diff) {
     for (int i = 0; i < (int)sizeof *w; ++i) ((uint8_t *)w)[i] = 0;
     w->seed = seed ? seed : 1u;
@@ -179,6 +231,7 @@ void world_init(World *w, uint32_t seed, int diff) {
                 nd->archetype = ARCH_GENERAL;
             }
             price_node(w, nd, s);
+            stock_node(w, nd);
         }
     }
 
@@ -1114,15 +1167,27 @@ void world_travel(World *w, int next_index) {
 // Trades move the local price permanently. Sell into a market and it stays
 // depressed for the rest of the run: routes burn out behind the player, which
 // is what forces the push outward.
+// What this settlement still has on the shelf. A fact about the market the
+// player is standing in, so the bot may read it -- and must, because a buy that
+// fails silently is one the bot will retry forever.
+int world_stock(const World *w, int good) {
+    const Node *nd = &w->node[w->sector][w->index];
+    if (nd->type != NODE_SETTLE) return 0;
+    return nd->stock[good];
+}
+
 void world_buy(World *w, int good) {
     Node *nd = &w->node[w->sector][w->index];
     if (nd->type != NODE_SETTLE) return;
+    if (nd->stock[good] < 1) { INSTR(w->in.bought_blocked++); return; }
     int p = nd->price[good];
     if (w->credits < p || world_cargo(w) >= world_cargo_cap(w)) return;
 
     w->credits -= p;
     w->held[good]++;
-    INSTR(w->in.units_bought++; w->in.credits_out += p);
+    nd->stock[good]--;
+    INSTR(w->in.units_bought++; w->in.credits_out += p;
+          if (nd->stock[good] == 0) w->in.stock_out[good]++);
     nd->price[good] = (int16_t)(p + p / 16 + 1);
 }
 
@@ -1168,6 +1233,14 @@ void world_sell(World *w, int good) {
     // any one market is about 2.6 units, so the decay barely engages and sales
     // already realise 79% of headline. The arithmetic that made this look like
     // a 60% loss assumed a ten-unit sale nobody makes.
+    // Selling adds to their shelf, which is what finally makes the nudge above
+    // mean something. The comment on the buy side has said since v4 that routes
+    // burn out behind the player; with an infinite tap that was mostly a claim,
+    // because the largest stack anyone sold was 2.6 units and the decay barely
+    // engaged. Dumping water into a well now visibly deepens a market that was
+    // already deep, and the price follows.
+    if (nd->stock[good] < 30) nd->stock[good]++;
+
     int np = p - p / 16 - 1;
     nd->price[good] = (int16_t)(np < 1 ? 1 : np);
 }
