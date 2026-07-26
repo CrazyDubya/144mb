@@ -258,7 +258,11 @@ static void draw_contracts(Framebuffer *fb, GameState *gs, int x, int y, int pw)
         int ky = py + 22;
         int kx = x + 14;
         kx += draw_key(fb, kx, ky - 6, G_KEY_Z, 2) + 8;
-        draw_text(fb, kx, ky, T_JOB_ACCEPT, 1, PALETTE[C_BONE]);
+        kx += draw_text(fb, kx, ky, T_JOB_ACCEPT, 1, PALETTE[C_BONE]) + 20;
+        // Refusing is a thing you can now do, so it has to be a thing you can
+        // see. A binding with no prompt is a binding nobody presses.
+        kx += draw_key(fb, kx, ky - 6, G_X, 2) + 8;
+        draw_text(fb, kx, ky, T_JOB_DECLINE, 1, PALETTE[C_DIM]);
     } else {
         // Progress, and a reminder that this cargo is spoken for.
         int ky = py + 22;

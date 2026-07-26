@@ -1179,6 +1179,70 @@ table now would be tuning twice and measuring once. It is P8b, after the
 economy underneath it stops moving.
 
 
+## P6 — contracts as a real mechanic
+
+P2 stopped the board jamming on an *offered* job. This phase deals with the
+second jam and gives refusing a name.
+
+| difficulty | P5 | P6 |
+|---|---:|---:|
+| FORGIVING | 94% | 95% |
+| THE ROAD | 73% | 72% |
+| UNFORGIVING | 40% | 40% |
+
+n=400, zero stalls. Unchanged within noise, which is the expected shape: this
+phase makes a mechanic work rather than making the run easier.
+
+### The second jam
+
+`by_sector` is an *earliest* delivery point, not a deadline, so a taken job
+that never found its cargo simply stayed taken -- and since the board only
+posts when it is clear, one such job disabled contracts for the rest of the
+run. A taken job now lapses three sectors past the earliest place it could have
+been handed over.
+
+Measured, it fires **0.09** times per run: smaller than a 63% delivery rate
+suggests, because most undelivered jobs are still in hand when the run ends
+rather than sitting on the board blocking it. Worth fixing anyway -- the failure
+it prevents is total for the rest of a run, not marginal.
+
+### Refusing is now a thing you can do
+
+`X` on the contracts tab declines. The help screen has advertised
+"X SELL / REFUSE" since v1 while three of the five tabs silently ignored it.
+The panel says so too: a binding with no prompt is a binding nobody presses.
+
+### Every offer now has a known fate
+
+n=200, THE ROAD:
+
+| fate | per run |
+|---|---:|
+| offered | 2.54 |
+| — accepted | 1.03 |
+| — — delivered | 0.65 |
+| — — forfeited | 0.09 |
+| — declined at the board | 1.50 |
+| — lapsed on departure | 0.00 |
+
+Residual: **+0.00**.
+
+The counter was one bucket called `expired` until it was split three ways, and
+the split is the point: a job the player refused, one they walked away from,
+and one they took and could not deliver mean three different things about the
+mechanic and were indistinguishable in a single number. This log has now been
+caught by that shape four times -- forced versus chosen declines, offered versus
+taken jams, and twice on tools reporting success while doing nothing.
+
+**The decline did not raise throughput**, and that is worth stating plainly:
+offers went 2.50 -> 2.54, inside noise, because P2's lapse-on-departure
+had already unjammed the board. What moved is `lapsed` -> **0.00**: refusals
+are now deliberate rather than accidental. Its value is agency and consistency,
+not volume.
+
+Offers per run stand at 2.54 against **1.48** at the v4 epoch — a 72% rise
+across P2 and P6 — while the delivery rate is 63% of accepted.
+
 ---
 
 ## Bugs found, and what found them

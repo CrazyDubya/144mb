@@ -140,7 +140,13 @@ typedef struct {
     uint16_t ev_accepted[EV_KINDS]; // ...and was paid
     uint16_t ev_forced[EV_KINDS];   // ...and could not be paid, so was refused
 
-    uint16_t c_offered, c_accepted, c_completed, c_expired;
+    // Four distinct fates, deliberately not one "expired" bucket: a job the
+    // player refused, one they walked away from, and one they took and could
+    // not deliver mean three different things about the mechanic.
+    uint16_t c_offered, c_accepted, c_completed;
+    uint16_t c_declined;    // refused at the board
+    uint16_t c_lapsed;      // left on the board when the convoy departed
+    uint16_t c_forfeit;     // taken, then carried past any hope of delivery
 
     uint16_t pl_storm, pl_demand, pl_random;   // crates lost, by cause
 
@@ -247,6 +253,7 @@ int  world_price_bias(const World *w, int good);
 // profitable -- the buy nudges the price up and you sell into your own nudge.
 int  world_sell_price(const World *w, int good);
 void world_contract_accept(World *w);
+void world_contract_decline(World *w);
 // Units of `good` promised to an accepted contract, so nothing sells them out
 // from under the job.
 int  world_committed (const World *w, int good);

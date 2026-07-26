@@ -176,6 +176,10 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
             if (in->pressed[BTN_B]) world_sell(w, gs->sel);
         } else if (gs->tab == TAB_CONTRACTS) {
             if (in->pressed[BTN_A]) world_contract_accept(w);
+            // X refuses, as it does on the market screen. The help screen has
+            // advertised "X SELL / REFUSE" from the start, but the contracts
+            // tab was one of three where X silently did nothing.
+            if (in->pressed[BTN_B]) world_contract_decline(w);
         } else if (gs->tab == TAB_GARAGE) {
             if (in->pressed[BTN_A]) world_buy_upgrade(w);
         } else if (gs->tab == TAB_CREW) {

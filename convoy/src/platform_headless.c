@@ -306,11 +306,13 @@ typedef struct {
     int   daily;           // --daily: take today's fixed map, via the menu
     int   force_upg;       // -U n: fit upgrade n from the start, or -1
     int   feats;           // -M n: which human pressures the bot feels
+    int   shot_tab;        // -S n: photograph the first frame showing tab n
 } RunOpts;
 
 typedef struct {
     uint32_t seed, map, trace;
     int      steps, journal_tab;
+    int      shot_done;
     World    w;            // the whole thing, copied at the end
 } RunResult;
 
@@ -434,6 +436,31 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
 
         if (o->trace_hash) {
             res->trace = fnv(&res->trace, 0, state_hash(game_world(mem)));
+        }
+
+        // Photograph a named tab the first time it is open. The journal shot
+        // below was hardcoded to one tab at one step, which meant finding the
+        // right step by hand for every screen -- and a panel that is only ever
+        // looked at by luck is a panel whose overflow nobody notices.
+        if (o->shot_tab >= 0 && !res->shot_done && w->state == ST_TRADE) {
+            for (int k = 0; k < TAB_COUNT; ++k) {
+                int t = 0;
+                game_ui(mem, NULL, NULL, &t, NULL);
+                if (t == o->shot_tab) break;
+                memset(&in, 0, sizeof in);
+                in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
+                game_update(mem, &in, fb);
+                memset(&in, 0, sizeof in);
+                game_update(mem, &in, fb);
+            }
+            int t = 0;
+            game_ui(mem, NULL, NULL, &t, NULL);
+            if (t == o->shot_tab) {
+                char path[512];
+                snprintf(path, sizeof path, "%s/tab%d.png", o->outdir, o->shot_tab);
+                write_png(path, pixels, FB_W, FB_H);
+                res->shot_done = 1;
+            }
         }
 
         if (o->journal_at && steps == o->journal_at && w->state == ST_TRADE) {
@@ -561,11 +588,12 @@ static void print_run(const RunResult *r) {
         ev_acc    += m->ev_accepted[k];
         ev_forced += m->ev_forced[k];
     }
-    printf(" acc=%ld forced=%ld c_off=%u c_acc=%u c_done=%u"
+    printf(" acc=%ld forced=%ld c_off=%u c_acc=%u c_done=%u c_dec=%u c_lap=%u c_for=%u"
            " pl_storm=%u pl_dem=%u pl_rand=%u"
            " bought=%u sold=%u cr_in=%d cr_out=%d headline=%d stack=%u"
            " hold_mean=%d hold_peak=%u minw=%u minf=%u thin=%u",
            ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
+           m->c_declined, m->c_lapsed, m->c_forfeit,
            m->pl_storm, m->pl_demand, m->pl_random,
            m->units_bought, m->units_sold, m->credits_in, m->credits_out,
            m->sold_headline, m->biggest_stack,
@@ -603,6 +631,7 @@ int main(int argc, char **argv) {
     int         force_upg = -1;       // -U n fits an upgrade regardless of choice
     int         feats = BOT_ALL;      // -M n selects which pressures the bot feels
     int         kinds = 0;            // -K reports per-encounter-kind behaviour
+    int         shot_tab = -1;        // -S n photographs the first frame of tab n
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -627,6 +656,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-U") && i + 1 < argc) force_upg = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-K")) kinds = 1;
+        else if (!strcmp(argv[i], "-S") && i + 1 < argc) shot_tab = atoi(argv[++i]);
     }
 
     GameMemory mem = {0};
@@ -640,7 +670,7 @@ int main(int argc, char **argv) {
 
     RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
                     every, verbose, outdir, determinism, use_ref, daily,
-                    force_upg, feats };
+                    force_upg, feats, shot_tab };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player

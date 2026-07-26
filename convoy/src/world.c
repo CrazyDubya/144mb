@@ -474,6 +474,16 @@ void world_contract_accept(World *w) {
     INSTR(w->in.c_accepted++);
 }
 
+// Turning a job down. Until now the only thing a player could do with an offer
+// was take it or walk away, and walking away was indistinguishable from not
+// having looked -- so a board with a job on it that nobody wanted read exactly
+// like a board with nothing to offer.
+void world_contract_decline(World *w) {
+    if (w->job.state != CONTRACT_OFFERED) return;
+    w->job.state = CONTRACT_NONE;
+    INSTR(w->in.c_declined++);
+}
+
 // Called on arrival at a settlement: pay out a delivery if it can be made,
 // then post a new offer if the board is empty.
 static void contract_tick(World *w) {
@@ -488,6 +498,19 @@ static void contract_tick(World *w) {
         w->job_paid      = j->reward;
         j->state = CONTRACT_NONE;
         INSTR(w->in.c_completed++);
+    }
+
+    // A job carried well past the point it could have been delivered lapses.
+    // by_sector is an *earliest* delivery point, not a deadline, so a taken
+    // job that never found its cargo simply stayed taken -- and since the
+    // board only posts when it is clear, one such job disabled contracts for
+    // the rest of the run. With delivery at 61% of accepted, that was around
+    // two runs in five ending with a permanently dead job board. The window is
+    // generous: three sectors past the earliest place it could have been
+    // handed over.
+    if (j->state == CONTRACT_TAKEN && w->sector > j->by_sector + 2) {
+        j->state = CONTRACT_NONE;
+        INSTR(w->in.c_forfeit++);
     }
 
     if (j->state != CONTRACT_NONE) return;
@@ -655,7 +678,7 @@ void world_travel(World *w, int next_index) {
     // measured, 1.48 offers per run against 13 settlements visited.
     if (w->job.state == CONTRACT_OFFERED) {
         w->job.state = CONTRACT_NONE;
-        INSTR(w->in.c_expired++);
+        INSTR(w->in.c_lapsed++);
     }
 
     salvage_check(w);

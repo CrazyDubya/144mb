@@ -93,6 +93,16 @@ static int contract_worth_taking(const World *w) {
     return 1;
 }
 
+// ...and worth turning down otherwise. Declining used to be indistinguishable
+// from ignoring, so an offer the convoy could not carry sat on the board until
+// it drove away. Refusing it there and then lets the same settlement's board
+// clear and the next town post something it *can* carry.
+static int contract_worth_declining(const World *w) {
+    const Contract *j = &w->job;
+    if (j->state != CONTRACT_OFFERED) return 0;
+    return !contract_worth_taking(w);
+}
+
 // ------------------------------------------------- what a fitting is worth
 //
 // THE RULE THIS SECTION EXISTS TO ENFORCE: the bot takes *facts* from world.h
@@ -540,6 +550,10 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         if (contract_worth_taking(w)) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;   // tabs cycle forward
             return BTN_A;
+        }
+        if ((b->feats & BOT_CONTRACT) && contract_worth_declining(w)) {
+            if (tab != TAB_CONTRACTS) return BTN_RIGHT;
+            return BTN_B;
         }
         if (upgrade_worth_buying(b, w)) {
             if (tab != TAB_GARAGE) return BTN_RIGHT;
