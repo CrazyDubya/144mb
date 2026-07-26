@@ -62,7 +62,16 @@ static void strip_probe(int right, int limit) {
 
 static const char *const TAB_NAME[TAB_COUNT] = {
     T_TAB_MARKET, 0 /* the works, named per archetype */, T_TAB_CREW,
-    T_TAB_CONTRACTS, T_TAB_JOURNAL
+    T_TAB_CONTRACTS, 0 /* the situation, named per town */
+};
+
+const char *const COND_NAME[7] = {
+    "", T_COND_SIEGE, T_COND_SICK, T_COND_BOOM,
+    T_COND_EMPTY, T_COND_CARTEL, T_COND_DRY,
+};
+const char *const COND_DESC[7] = {
+    "", T_COND_SIEGE_D, T_COND_SICK_D, T_COND_BOOM_D,
+    T_COND_EMPTY_D, T_COND_CARTEL_D, T_COND_DRY_D,
 };
 
 const char *const SVC_NAME[6] = {
@@ -85,6 +94,8 @@ const char *const WORKS_NAME[6] = {
 static const char *tab_name(const GameState *gs, int t) {
     if (t == TAB_GARAGE)
         return WORKS_NAME[gs->w.node[gs->w.sector][gs->w.index].archetype];
+    if (t == TAB_SITUATION)
+        return COND_NAME[gs->w.node[gs->w.sector][gs->w.index].cond];
     return TAB_NAME[t];
 }
 
@@ -133,7 +144,9 @@ int ui_tab_rows(const GameState *gs, int tab) {
     case TAB_MARKET:    return GOODS_COUNT;
     // One row, and only when there is something to press it for.
     case TAB_CONTRACTS: return gs->w.job.state == CONTRACT_OFFERED ? 1 : 0;
-    case TAB_JOURNAL:   return 0;              // a record, not a menu
+    // One row when there is something happening you can walk into.
+    case TAB_SITUATION: return gs->w.node[gs->w.sector][gs->w.index].cond
+                             != COND_NONE ? 1 : 0;
     case TAB_GARAGE:    return (gs->w.offer_upg < UPG_COUNT
                                 || world_service_kind(&gs->w) != SVC_NONE) ? 1 : 0;
     // A hire offer OR a favour being asked. Only the hire was counted, so a
@@ -171,7 +184,9 @@ int ui_tab_live(const GameState *gs, int tab) {
     // occupying one of five slots in a strip that now names places. It lives in
     // the right column instead, where it is visible at every stop rather than
     // one the player remembered to open.
-    if (tab == TAB_JOURNAL) return 0;
+    // The situation exists when the town has one.
+    if (tab == TAB_SITUATION)
+        return gs->w.node[gs->w.sector][gs->w.index].cond != COND_NONE;
     return 0;
 }
 
@@ -236,33 +251,10 @@ static int draw_errand(Framebuffer *fb, const World *w, int x, int y, int pw) {
     return ly + 26;
 }
 
-static void draw_journal(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
-    const World *w = &gs->w;
-    (void)pw;
-    int any = 0, ly = y + 8;
-
-    for (int i = 0; i < CHAR_COUNT; ++i) {
-        if (!w->met[i]) continue;
-        any = 1;
-        draw_portrait(fb, x + 14, ly, 2, who_seed(i),
-                      w->regard[i] > 0 ? 1 : (w->regard[i] < 0 ? -1 : 0));
-        draw_text(fb, x + 56, ly + 4, WHO_NAME[i], 1, PALETTE[C_BONE]);
-
-        int rx = x + 56;
-        rx += draw_number(fb, rx, ly + 20, w->met[i], 1, PALETTE[C_DIM]) + 6;
-        draw_text(fb, rx, ly + 20, w->met[i] == 1 ? T_TIME : T_TIMES, 1,
-                  PALETTE[C_DIM]);
-
-        const char *r = w->regard[i] > 0 ? T_REGARD_GOOD
-                      : w->regard[i] < 0 ? T_REGARD_BAD : T_REGARD_NEUT;
-        draw_text(fb, x + 190, ly + 12, r, 1,
-                  PALETTE[w->regard[i] > 0 ? C_GOOD
-                        : w->regard[i] < 0 ? C_BAD : C_DIM]);
-        ly += 40;
-    }
-    if (!any) draw_text(fb, x + 14, y + 12, T_NOBODY_YET, 1, PALETTE[C_DIM]);
-}
-
+// draw_journal was deleted here. It drew the tab that no longer exists; the
+// watchlist in the right column replaced it in P2d and does the job better,
+// and a second copy of the same list kept alive "just in case" is how two
+// answers to one question get into this codebase.
 static int tab_count_live(const GameState *gs) {
     int n = 0;
     for (int t = 0; t < TAB_COUNT; ++t) n += ui_tab_live(gs, t);
@@ -739,7 +731,7 @@ int ui_watchlist_rows = 0;   // the harness checks this instead of tab reachabil
 static int draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw) {
     int any = 0;
     for (int i = 0; i < CHAR_COUNT; ++i) if (w->met[i]) { any = 1; break; }
-    if (!any) return y;
+    if (!any) return y - 8;
 
     // A panel behind it. Without one the column is drawn straight onto the
     // sky, and the standing lines -- which are coloured, and the point of the
@@ -779,6 +771,106 @@ static int draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw)
     return ly + 4;
 }
 
+
+// What is going on here, and the one thing you can do about it.
+//
+// The choice itself is an Event. That is not a shortcut -- it is what makes the
+// situation cost nothing to build and nothing to measure. Routing it through
+// world_accept / world_decline / world_attempt buys the v5 third branch, the
+// two-reason split in world_accept_block, the whole encounter panel, the
+// ev_fired / ev_accepted / ev_forced counters, and -- most of all -- the bot's
+// decide_event, which is written so that a fifteenth kind needs no change in
+// it. A parallel resolution path would have needed every one of those rebuilt,
+// and would have given the harness nothing to read.
+static void draw_situation(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
+    const World *w = &gs->w;
+    int c = w->node[w->sector][w->index].cond;
+    if (c == COND_NONE) return;
+    (void)pw;
+
+    draw_text(fb, x + 14, y + 6,  COND_NAME[c], 2, PALETTE[C_WARN]);
+    draw_text(fb, x + 14, y + 30, COND_DESC[c], 1, PALETTE[C_DIM]);
+
+    int kx = x + 14;
+    kx += draw_key(fb, kx, y + 52, G_KEY_Z, 2) + 6;
+    draw_text(fb, kx, y + 58, T_SIT_ENTER, 1, PALETTE[C_BONE]);
+}
+
+
+// What people have said about the road ahead.
+//
+// Shown with the teller's face and how sure they sounded, because that is how
+// a player judges a rumour: you judge a source the way you judge a person. The
+// band is derived straight from the confidence the world computed, so it never
+// overstates -- the claim can be wrong, the account of how well it was known
+// cannot.
+static int draw_word(Framebuffer *fb, const World *w, int x, int y, int cw) {
+    if (w->heard_n == 0) return y;
+    draw_panel(fb, x, y, cw, 20 + w->heard_n * 30);
+    draw_text(fb, x + 10, y + 8, T_WORD_TITLE, 1, PALETTE[C_DIM]);
+
+    int ly = y + 24;
+    for (int i = 0; i < w->heard_n; ++i) {
+        const Rumour *r = &w->heard[i];
+        if (r->src >= 0)
+            draw_portrait(fb, x + 8, ly, 1, who_seed(r->src),
+                          w->regard[r->src] > 0 ? 1 : (w->regard[r->src] < 0 ? -1 : 0));
+
+        // The claim, in the shape somebody would actually say it.
+        int tx = x + 30;
+        const char *place = TOWN_A[w->node[r->sector][r->index].name >> 4];
+        tx += draw_text(fb, tx, ly, place, 1, PALETTE[C_BONE]) + 5;
+        switch (r->claim) {
+        // Name the good. Without it the line read "IRON CHEAP ON" and simply
+        // stopped, which is a sentence with its object missing.
+        case CL_PRICE:
+            tx += draw_text(fb, tx, ly, T_WORD_CHEAP, 1, PALETTE[C_DIM]) + 5;
+            draw_text(fb, tx, ly, GOOD_NAME[r->arg], 1, PALETTE[C_GOOD]);
+            break;
+        case CL_STOCK:
+            tx += draw_text(fb, tx, ly, T_WORD_SPARE, 1, PALETTE[C_DIM]) + 5;
+            draw_text(fb, tx, ly, GOOD_NAME[r->arg], 1, PALETTE[C_GOOD]);
+            break;
+        case CL_COND:  {
+            int cx = tx;
+            cx += draw_text(fb, cx, ly, T_WORD_IS, 1, PALETTE[C_DIM]) + 5;
+            draw_text(fb, cx, ly, COND_NAME[r->arg], 1, PALETTE[C_WARN]);
+            break;
+        }
+        default:       draw_text(fb, tx, ly, T_WORD_TROUBLE, 1, PALETTE[C_BAD]); break;
+        }
+
+        const char *band = r->conf >= 70 ? T_WORD_SURE
+                         : r->conf >= 45 ? T_WORD_HEARD : T_WORD_RECKON;
+        draw_text(fb, x + 30, ly + 12,
+                  r->src >= 0 ? band : T_WORD_ROOM, 1,
+                  PALETTE[r->conf >= 70 ? C_GOOD : (r->conf >= 45 ? C_WARN : C_DIM)]);
+        ly += 30;
+    }
+    return ly + 4;
+}
+
+
+// What happened on the way in. Transient, unlike the rest of this column, which
+// is why it sits at the top of it where the eye lands first.
+static int draw_notices(Framebuffer *fb, const World *w, int x, int y, int cw) {
+    int n = (w->kit_failed >= 0) + (w->job_paid > 0);
+    if (!n) return y;
+    draw_panel(fb, x, y, cw, 8 + n * 26);
+    int ly = y + 8;
+    if (w->job_paid > 0) {
+        draw_text(fb, x + 10, ly, T_JOB_DONE, 1, PALETTE[C_GOOD]);
+        draw_number(fb, x + 10, ly + 12, w->job_paid, 1, PALETTE[C_WARN]);
+        ly += 26;
+    }
+    if (w->kit_failed >= 0) {
+        draw_text(fb, x + 10, ly, UPG_NAME[w->kit_failed], 1, PALETTE[C_BAD]);
+        draw_text(fb, x + 10, ly + 12, T_KIT_BROKE, 1, PALETTE[C_BAD]);
+        ly += 26;
+    }
+    return ly + 4;
+}
+
 // ---------------------------------------------------------------- trade
 void ui_trade(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
@@ -787,7 +879,9 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     const int x = 26, y = 58, pw = 420, rowh = 32;
     // The right column. 180px wide starting at 452, empty since the game had a
     // trade screen at all.
-    int rcol = draw_watchlist(fb, w, 452, y + 4, 180);
+    int rcol = draw_notices(fb, w, 452, y + 4, 180);
+    rcol = draw_watchlist(fb, w, 452, rcol + 8, 180);
+    rcol = draw_word(fb, w, 452, rcol + 8, 180);
     draw_road_ahead(fb, w, 452, rcol + 8, 180);
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
@@ -814,37 +908,9 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     int th = draw_tabs(fb, gs, x, y + 44, pw);
 
-    // Arrival notices, right-aligned on the title line.
-    //
-    // Both used to be drawn at y+32, two pixels below the archetype line at
-    // y+30 -- six pixels of ink each, so they overlapped it completely and
-    // rendered as a red-on-grey mush. Nobody caught it in a screenshot because
-    // it needs the right seed AND the right step: kit has to fail, or a job has
-    // to pay out, on the frame you happened to photograph. The text-overlap
-    // probe found 41 instances of it in a hundred seeds.
-    //
-    // They go on the title line because that is where the space actually is:
-    // the town name ends around x+180 and the panel runs to x+420.
-    {
-        int ny = y + 14;
-        if (w->kit_failed >= 0) {
-            int tw = text_w(UPG_NAME[w->kit_failed], 1) + 8 + text_w(T_KIT_BROKE, 1);
-            int px = x + pw - 12 - tw;
-            px += draw_text(fb, px, ny, UPG_NAME[w->kit_failed], 1, PALETTE[C_BAD]) + 8;
-            draw_text(fb, px, ny, T_KIT_BROKE, 1, PALETTE[C_BAD]);
-            ny += 12;   // if both fire, they stack rather than share a line
-        }
-        if (w->job_paid > 0) {
-            int tw = text_w(T_JOB_DONE, 1) + 8 + number_w(w->job_paid, 1);
-            int px = x + pw - 12 - tw;
-            px += draw_text(fb, px, ny, T_JOB_DONE, 1, PALETTE[C_GOOD]) + 8;
-            draw_number(fb, px, ny, w->job_paid, 1, PALETTE[C_WARN]);
-        }
-    }
-
     if (gs->tab != TAB_MARKET) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
-        else if (gs->tab == TAB_JOURNAL) draw_journal(fb, gs, x, y + 44 + th, pw);
+        else if (gs->tab == TAB_SITUATION) draw_situation(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_GARAGE) {
             // The local trade goes FIRST, above the forecourt list.
             //

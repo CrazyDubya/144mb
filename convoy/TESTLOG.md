@@ -2670,3 +2670,100 @@ Final: **0 overlaps across 900 seeds x 3 difficulties.**
     overlaps               0   n=300 x 3
     STRIP        240 / 360
     -X, ASan/UBSan, -Z  clean
+
+---
+
+# v6 P5 — word of the road, and the number it did not reach
+
+Rumours ship. They are generated from `rng_town`, held four at a time on the
+World in FIFO order, expire the moment their sector is behind you, and are
+shown in the right column with the teller's face and how sure they sounded.
+
+Confidence is honest and stated in words, never a number:
+
+    SWEARS TO IT   conf >= 70
+    HEARD IT SAID  45-69
+    RECKONS        < 45
+
+`conf` is v5's regard finally reading its full range: 40 for a stranger, +15 if
+they are aboard, +/- 8 per point of regard, +20 if the subject is their business
+(a scout on roads, a trader on prices), -12 two sectors out. **The claim may
+lie; the confidence never does.** A game that misrepresents how well it knows
+something teaches a player to discard all of its information, true parts
+included.
+
+Falsehood shares the distribution of truth: the slot is chosen first — which
+node, which kind of claim — and only then is the argument picked to make the
+claim hold or fail against the real node. Generated any other way, lies acquire
+a shape, and a player who learns the shape has a perfect oracle with extra steps.
+
+## The exit criterion was not met, and that is the result
+
+The bar set in advance: **a perfect oracle must be worth >= +8 points**, or the
+claims carry nothing actionable.
+
+    every rumour forced TRUE      39%
+    honest                        39%
+    every rumour forced FALSE     38%
+    bot ignores rumours entirely  40%
+
+**Zero.** And acting on the information measured one point *worse* than
+ignoring it.
+
+The `-I` flag was verified rather than assumed — it forces 100% true and 0%
+true exactly, on 253 rumours across 120 seeds — so this is not a dead switch.
+Three separate claim sets were tried:
+
+| claim set | oracle value |
+|---|---|
+| uniform over price / stock / condition / road | 0 |
+| biased 70% toward water and fuel | 0 |
+| biased toward what the map does *not* imply | 0 |
+
+## Why: it is the map, not the claims
+
+The first two failures were mine, and the second one is embarrassing in a
+specific way. This file's own design note says *"a rumour may only claim what
+the fog hides"* — and then price and stock claims were drawn as often as any
+other. But the archetype is drawn on the map, a well **is** where water is
+cheap, and `score_node` already prefers a well when the tank is low. Telling
+anybody that water is cheap at the well is the map read aloud. I wrote the rule
+and then broke it in the same function.
+
+Reweighting to the genuinely hidden claims — a well gone dry, which trouble sits
+on an encounter node — did not move the number either, and that is the real
+finding:
+
+**A hop offers two or three nodes in the next sector and they are near enough
+interchangeable that knowing more about one cannot pay.**
+
+This is v5's crew problem wearing a different hat. There, an ability that fired
+0.79 times a run could not matter however strong it was. Here, a choice between
+near-identical options cannot be informed however good the information is. Both
+are cases of a mechanic being structurally unable to reach the outcome, and in
+both the instinct is to tune the mechanic when the fault is in what surrounds it.
+
+Fixing it means making sectors differ — a change to route generation, not to
+rumours. That is not this phase's to make, and it is written down here rather
+than tuned at until a number appeared.
+
+## What shipped
+
+The bot no longer routes on rumours; `rumour_bonus` is kept, unused, with the
+measurements in a comment above it so the next attempt starts from the evidence
+rather than from scratch. The rumours themselves stay: they are ~1.5KB of
+strings, they put a face and a standing on the road ahead, and they are the
+third system in which regard does real work. What they are not, by measurement,
+is a mechanical advantage — and that is recorded rather than implied.
+
+## Five more collisions
+
+The overlap probe found the arrival notices in three successive homes: through
+the archetype line at y+32, through the town name when right-aligned on the
+title line (a name runs to fourteen characters at double scale), and through the
+archetype line again when stacked. **Twenty-four frames in four hundred seeds at
+one difficulty and none at the other two.** The panel has no room; they now live
+in the right column, which is what that column is for.
+
+    -Y overlap sweep, n=200 x 3 difficulties   0
+    ASan/UBSan, -X, -Z                     clean

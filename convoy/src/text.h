@@ -200,6 +200,43 @@
 // The watchlist, stated as a plan rather than a number. "REGARD +2" is a stat;
 // "ONE MORE GOOD TURN" tells a player what to do with the rest of their run.
 // The local trade. Each names what the place does, not what the menu does.
+// What a town is going through. Eight characters is the hard cap and it is
+// measured, not guessed: the strip gate reports the widest tab row any frame
+// drew, and a ninth character puts a five-location strip through the "< >"
+// hint. QUARANTINE and ABANDONED were the first two names and neither fits.
+// Word of the road. A band in words, never a number: a percentage turns a
+// rumour into an expected-value sum and the mechanic dies. Three words is
+// enough to act on and not enough to solve.
+//
+// The band is HONEST even when the claim is not. The game may let someone lie
+// to you; it does not misrepresent how much they seemed to know. A game that
+// lies about its own confidence teaches a player to discard all of its
+// information, the true parts included.
+#define T_WORD_TITLE    "WORD"
+#define T_WORD_SURE     "SWEARS TO IT"
+#define T_WORD_HEARD    "HEARD IT SAID"
+#define T_WORD_RECKON   "RECKONS"
+#define T_WORD_ROOM     "TALK IN THE ROOM"
+#define T_WORD_CHEAP    "CHEAP ON"
+#define T_WORD_SPARE    "HAS SPARE"
+#define T_WORD_IS       "IS"
+#define T_WORD_TROUBLE  "TROUBLE ON THE ROAD"
+
+#define T_SIT_ENTER     "GO AND SEE"
+#define T_COND_SIEGE    "SIEGE"
+#define T_COND_SICK     "SICK"
+#define T_COND_BOOM     "BOOM"
+#define T_COND_EMPTY    "EMPTY"
+#define T_COND_CARTEL   "CARTEL"
+#define T_COND_DRY      "DRY"
+
+#define T_COND_SIEGE_D  "RAIDERS ON THE FENCE FOUR DAYS NOW"
+#define T_COND_SICK_D   "SOMETHING IS GOING ROUND. THEY WANT MEDS"
+#define T_COND_BOOM_D   "A STRIKE. EVERYONE IS BUYING"
+#define T_COND_EMPTY_D  "HALF THE DOORS ARE OFF THEIR HINGES"
+#define T_COND_CARTEL_D "ONE FAMILY SETS EVERY PRICE HERE"
+#define T_COND_DRY_D    "THE WELL CAME UP SALT LAST MONTH"
+
 #define T_SVC_WELL      "FILL THE TANKS"
 #define T_SVC_REFINERY  "RUN A BLEND"
 #define T_SVC_CLINIC    "SEE TO THE CREW"
@@ -441,6 +478,8 @@
 #define T_TOWN_B15 "END"
 
 extern const char *const WORKS_NAME[6];
+extern const char *const COND_NAME[7];
+extern const char *const COND_DESC[7];
 extern const char *const SVC_NAME[6];
 extern const char *const SVC_DESC[6];
 extern const char *const TOWN_A[16];

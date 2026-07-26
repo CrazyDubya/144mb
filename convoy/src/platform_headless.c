@@ -411,6 +411,7 @@ typedef struct {
     int   force_upg;       // -U n: fit upgrade n from the start, or -1
     int   force_crew;      // -C n: put crew n aboard from the start, or -1
     int   force_svc;       // -V n: apply service n's effect free each stop, or -1
+    int   rum_force;       // -I 1 all rumours true, -I 2 all false, 0 honest
     int   feats;           // -M n: which human pressures the bot feels
     int   shot_tab;        // -S n: photograph the first frame showing tab n
 } RunOpts;
@@ -510,6 +511,10 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
                 World *mw = (World *)(uintptr_t)w;
                 mw->svc_forced = (uint8_t)(o->force_svc + 1);
             }
+            if (o->rum_force) {
+                World *mw = (World *)(uintptr_t)w;
+                mw->rum_force = (uint8_t)o->rum_force;
+            }
             if (o->force_crew >= 0 && o->force_crew < CREW_COUNT) {
                 World *mw = (World *)(uintptr_t)w;
                 mw->crew[o->force_crew] = 1;
@@ -584,17 +589,10 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
             }
         }
 
+        // No tab to walk to any more -- the watchlist is drawn in the right
+        // column on every trade frame. The walk is gone; the photograph and the
+        // assertion that it drew are not.
         if (o->journal_at && steps == o->journal_at && w->state == ST_TRADE) {
-            for (int k = 0; k < TAB_COUNT; ++k) {
-                int t = 0;
-                game_ui(mem, NULL, NULL, &t, NULL);
-                if (t == TAB_JOURNAL) break;
-                memset(&in, 0, sizeof in);
-                in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
-                frame_update(mem, &in, fb);
-                memset(&in, 0, sizeof in);
-                frame_update(mem, &in, fb);
-            }
             game_ui(mem, NULL, NULL, &res->journal_tab, NULL);
             char path[512];
             snprintf(path, sizeof path, "%s/journal.png", o->outdir);
@@ -804,7 +802,8 @@ static void print_run(const RunResult *r) {
            " alt_off=%u alt_take=%u alt_fail=%u"
            " err_off=%u err_take=%u err_done=%u err_fail=%u left=%u"
            " sout=%u sblock=%u svc=%u"
-           " sv0=%u sv1=%u sv2=%u sv3=%u sv4=%u",
+           " sv0=%u sv1=%u sv2=%u sv3=%u sv4=%u"
+           " rum=%u rumt=%u sit=%u",
            ev_acc, ev_forced, m->c_offered, m->c_accepted, m->c_completed,
            m->c_declined, m->c_lapsed, m->c_forfeit,
            m->pl_storm, m->pl_demand, m->pl_random,
@@ -821,7 +820,8 @@ static void print_run(const RunResult *r) {
            (unsigned)(m->svc_used[0] + m->svc_used[1] + m->svc_used[2]
                     + m->svc_used[3] + m->svc_used[4] + m->svc_used[5]),
            m->svc_used[0], m->svc_used[1], m->svc_used[2],
-           m->svc_used[3], m->svc_used[4]);
+           m->svc_used[3], m->svc_used[4],
+           m->rum_offered, m->rum_true, m->sit_entered);
     (void)ev_fired;
 #endif
     printf("\n");
@@ -844,6 +844,7 @@ int main(int argc, char **argv) {
     // the tab can actually be reached -- which for a while it could not.
     int         journal_at = 0;
     int         force_svc  = -1;
+    int         rum_force  = 0;
     int         diff = DIFF_NORMAL;   // -D selects a difficulty for a sweep
     int         refuse_all = 0;       // -R makes the bot decline every encounter
     int         end_shot = 0;         // -E dumps the summary screen after the run
@@ -891,6 +892,11 @@ int main(int argc, char **argv) {
         // to buy it. Same tool as -U and -C, same reason -- a take rate
         // measures the bot's arithmetic, a granted A/B measures the design.
         else if (!strcmp(argv[i], "-V") && i + 1 < argc) force_svc = atoi(argv[++i]);
+        // -I 1 makes every rumour true, -I 2 makes every rumour false. The gap
+        // is what perfect information is worth; both arms must be run on the
+        // SAME build, because rumours change routing, routing changes which
+        // encounters fire, and a cross-build delta is not the rumour's.
+        else if (!strcmp(argv[i], "-I") && i + 1 < argc) rum_force = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-C") && i + 1 < argc) force_crew = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-K")) kinds = 1;
@@ -946,7 +952,7 @@ int main(int argc, char **argv) {
 
     RunOpts opt ={ bot_float, refuse_all, journal_at, end_shot, 
                     every, verbose, outdir, determinism, use_ref, daily,
-                    force_upg, force_crew, force_svc, feats, shot_tab };
+                    force_upg, force_crew, force_svc, rum_force, feats, shot_tab };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player

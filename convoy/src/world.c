@@ -129,6 +129,54 @@ int world_score(const World *w) {
          + (w->state == ST_WON ? 1000 : 0);
 }
 
+// ---------------------------------------------------------------- conditions
+//
+// What each condition does to a market, as percentages applied to stock and to
+// price. Rolled at world-gen and hidden until arrival: the world always knew.
+//
+// The rule that matters is the ORDER. These are applied inside stock_node,
+// before the water/fuel floor -- get it backwards and COND_DRY takes a town's
+// water to zero underneath the clamp, which starves runs to death while
+// reading as a difficulty result. COND_DRY therefore moves price and not
+// stock, for the same reason.
+typedef struct {
+    int8_t stock_pct[GOODS_COUNT];   // percent shift on what they will part with
+    int8_t price_pct[GOODS_COUNT];
+} CondRule;
+
+static const CondRule COND[COND_COUNT] = {
+/*                    stock: w    f    a    m    s        price: w    f    a    m    s   */
+/* NONE     */ { {    0,   0,   0,   0,   0 }, {   0,   0,   0,   0,   0 } },
+/* SIEGE    */ { {  +20, +30, -70,   0, +10 }, { -15, -20, +60, +10, -10 } },
+/* SICK     */ { {    0,   0,   0, -60,   0 }, { +10,   0,   0, +70,   0 } },
+/* BOOM     */ { {  +40, +40, +30, +30, +40 }, { +25, +20, +15, +15, +20 } },
+/* EMPTY    */ { {  -50, -50, -40, -50, +30 }, { +20, +20,   0, +20, -30 } },
+/* CARTEL   */ { {  +30, +30, +20, +20, +20 }, { +30, +30, +30, +30, +30 } },
+/* DRY      */ { {    0,   0,   0,   0,   0 }, { +90,   0,   0,   0,   0 } },
+};
+
+// How often a town is going through something. Around half: much more and it
+// is wallpaper, much less and most towns are still price rows.
+static void cond_node(World *w, Node *n, int sector) {
+    if (n->type != NODE_SETTLE) { n->cond = COND_NONE; return; }
+    int r = rng_range(&w->rng_town, 0, 99);
+    if (r >= 50) { n->cond = COND_NONE; return; }
+
+    // Weighted by archetype and by how far east you are. A well going dry is a
+    // story about a well; the road getting emptier the further out you go is
+    // the shape of the whole run.
+    int pick = rng_range(&w->rng_town, 0, 99);
+    int late = sector * 100 / (SECTORS - 1);
+    if (n->archetype == ARCH_WELL && pick < 30)          n->cond = COND_DRY;
+    else if (n->archetype == ARCH_CLINIC && pick < 35)   n->cond = COND_SICK;
+    else if (n->archetype == ARCH_ARMOURY && pick < 35)  n->cond = COND_SIEGE;
+    else if (pick < 20 + late / 4)                       n->cond = COND_EMPTY;
+    else if (pick < 45)                                  n->cond = COND_SIEGE;
+    else if (pick < 62)                                  n->cond = COND_CARTEL;
+    else if (pick < 80)                                  n->cond = COND_BOOM;
+    else                                                 n->cond = COND_SICK;
+}
+
 // ---------------------------------------------------------------- setup
 static void price_node(World *w, Node *n, int sector) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
@@ -140,6 +188,7 @@ static void price_node(World *w, Node *n, int sector) {
         // Fuel gets dearer the further east you go, so the run gets harder to
         // afford exactly as it gets harder to survive.
         if (g == G_FUEL) p = p * (100 + sector * DIFF[w->diff].fuel_scale) / 100;
+        p = p * (100 + COND[n->cond].price_pct[g]) / 100;
         n->price[g] = (int16_t)(p < 1 ? 1 : p);
     }
 }
@@ -172,6 +221,9 @@ static void stock_node(World *w, Node *n) {
     for (int g = 0; g < GOODS_COUNT; ++g) {
         int base = 7 - ARCH_MOD[n->archetype][g] / 8;
         int s = base * rng_range(&w->rng_town, 60, 140) / 100;
+
+        // The condition, BEFORE the floor below. See the note on COND.
+        s = s * (100 + COND[n->cond].stock_pct[g]) / 100;
 
         // The survival floor, and it must stay the LAST thing applied here --
         // conditions will bend these numbers in a later phase, and if a dry
@@ -244,6 +296,8 @@ void world_init(World *w, uint32_t seed, int diff) {
             } else {
                 nd->archetype = ARCH_GENERAL;
             }
+            // Before both, because both read it.
+            cond_node(w, nd, s);
             price_node(w, nd, s);
             stock_node(w, nd);
             // A name for every node, drawn whether or not anything ever shows
@@ -1194,6 +1248,286 @@ void world_service(World *w) {
     }
 }
 
+// The one thing you can do about what this town is going through.
+//
+// Built as an Event, and rolled on arrival rather than stored per node -- no
+// Event on every Node, and correct under the fog for free, since a situation
+// nobody has walked into has not happened yet.
+//
+// Drawn entirely from rng_town. The four older streams must not move: an extra
+// draw in rng_event here would reshuffle every later encounter for the seed and
+// the numbers would still look plausible.
+void world_situation_enter(World *w) {
+    Node *nd = &w->node[w->sector][w->index];
+    if (nd->cond == COND_NONE || w->sit_done) return;
+    Event *e = &w->event;
+    for (unsigned i = 0; i < sizeof *e; ++i) ((uint8_t *)e)[i] = 0;
+    e->gain_good = -1; e->lose_good = -1; e->alt_who = -1;
+
+    int deep = w->sector * 100 / (SECTORS - 1);
+    switch (nd->cond) {
+    case COND_SIEGE:    // they need ammo and will pay for it
+        e->kind = EV_TOLL;
+        e->pay_good = G_AMMO;  e->pay_qty = 2;
+        e->gain_credits = 14 + deep / 6;
+        e->lose_good = G_WATER; e->lose_qty = 1;
+        break;
+    case COND_SICK:     // meds, or they will not let you near the well
+        e->kind = EV_PLAGUE;
+        e->pay_good = G_MEDS;  e->pay_qty = 1;
+        e->gain_credits = 10 + deep / 6;
+        e->lose_good = G_WATER; e->lose_qty = 2;
+        break;
+    case COND_BOOM:     // everyone is buying; sell into it
+        e->kind = EV_TRADER;
+        e->pay_good = G_SCRAP; e->pay_qty = 2;
+        e->gain_credits = 16 + deep / 6;
+        e->lose_good = -1;     e->lose_qty = 1;
+        break;
+    case COND_EMPTY:    // pick the place over
+        e->kind = EV_CACHE;
+        e->pay_good = G_FUEL;  e->pay_qty = 1;
+        e->gain_good = G_SCRAP; e->gain_qty = 2;
+        e->lose_good = -1;     e->lose_qty = 0;
+        break;
+    case COND_CARTEL:   // pay the family, or they take a cut anyway
+        e->kind = EV_CHECKPOINT;
+        e->pay_good = G_AMMO;  e->pay_qty = 1;
+        e->gain_credits = 9;
+        e->lose_good = -1;     e->lose_qty = 2;   // random cargo
+        break;
+    case COND_DRY:      // haul water up for them
+        e->kind = EV_REFUGEE;
+        e->pay_good = G_WATER; e->pay_qty = 2;
+        e->gain_credits = 18 + deep / 4;
+        e->lose_good = -1;     e->lose_qty = 1;
+        break;
+    default: return;
+    }
+
+    // The third branch, on the same terms as any encounter: whoever is aboard
+    // offers to try it their way. Matched to the trouble is free and likely;
+    // anyone else improvises for a unit and worse odds.
+    {
+        int want = world_event_role(e->kind);
+        int who = -1, base = 0, matched = 0;
+        if (want >= 0 && w->crew[want]) { who = want; base = 80; matched = 1; }
+        else for (int k = 0; k < CREW_COUNT; ++k)
+                 if (w->crew[k]) { who = k; base = 60; break; }
+        if (who >= 0) {
+            e->alt_who      = (int8_t)who;
+            e->alt_pay_good = matched ? -1 : e->pay_good;
+            e->alt_pay_qty  = matched ?  0 : 1;
+            int odds = base + rng_range(&w->rng_town, 0, 10) - 5;
+            e->alt_odds = (uint8_t)(odds < 35 ? 35 : (odds > 85 ? 85 : odds));
+        }
+    }
+
+    w->sit_done = 1;
+    INSTR(w->in.sit_entered++);
+    w->after_event = ST_TRADE;
+    w->state = ST_EVENT;
+}
+
+// ---------------------------------------------------------------- word
+//
+// A rumour may only claim what the fog hides. The map already draws node type
+// and archetype, so "there is a storm at X" is not information, it is the map
+// read aloud -- and a claim set that duplicates the map is noise wearing a hat.
+// So: price, stock, condition, and which kind of trouble an encounter node
+// holds. All four are things you would otherwise only learn by arriving.
+
+// How much the teller is worth listening to. Honest, and shown honestly.
+//
+// This is where v5's regard finally reads its full range rather than its sign.
+// A hand aboard who thinks well of you and knows the subject is near certain;
+// a stranger in a room is a coin flip and a bit, which is worth exactly as much
+// as it sounds.
+static int rumour_conf(const World *w, int src, int claim, int dist) {
+    int conf = 40;                                   // a stranger
+    if (src >= 0) {
+        int role = ROLE_OF_CHAR[src];
+        if (role >= 0 && w->crew[role]) conf += 15;  // aboard
+        conf += w->regard[src] * 8;                  // -24 .. +24
+
+        // Standing on the subject. A scout knows roads, a trader knows prices.
+        int domain = -1;
+        switch (claim) {
+        case CL_ROAD:  domain = CREW_SCOUT;    break;
+        case CL_PRICE: domain = CREW_TRADER;   break;
+        case CL_STOCK: domain = CREW_TRADER;   break;
+        case CL_COND:  domain = CREW_MEDIC;    break;
+        default: break;
+        }
+        if (domain >= 0 && role == domain) conf += 20;
+    }
+    // Your own market experience helps you read a claim about prices. Costs no
+    // new state: seen_n is the same running sample world_price_bias uses.
+    if (claim == CL_PRICE && w->seen_n[0] >= 4) conf += 5;
+    if (dist == 2) conf -= 12;                       // two sectors out is hearsay
+
+    // Floored at 35, not lower. A claim that is right one time in five is
+    // noise, and noise teaches a player to ignore the whole system including
+    // the parts that were true.
+    return conf < 35 ? 35 : (conf > 92 ? 92 : conf);
+}
+
+// Somebody talks, at most once a stop.
+static void rumour_tick(World *w) {
+    if (rng_range(&w->rng_town, 0, 99) >= 55) return;
+
+    // Who is talking. Someone aboard, else someone met, else the room.
+    int src = -1, pool[CHAR_COUNT], n = 0;
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        int role = ROLE_OF_CHAR[i];
+        if (role >= 0 && w->crew[role]) pool[n++] = i;
+    }
+    if (!n) for (int i = 0; i < CHAR_COUNT; ++i) if (w->met[i]) pool[n++] = i;
+    int pick = rng_range(&w->rng_town, 0, CHAR_COUNT - 1);   // drawn regardless
+    if (n) src = pool[pick % n];
+
+    // Which node it is about: one or two sectors on.
+    int dist = 1 + rng_range(&w->rng_town, 0, 1);
+    int s = w->sector + dist;
+    int idx = rng_range(&w->rng_town, 0, NODES_PER - 1);
+    // Weighted, not uniform, and this is the correction for a mistake made in
+    // this very file's design note.
+    //
+    // "A rumour may only claim what the fog hides" -- and then price and stock
+    // claims were drawn as often as the rest. But the archetype is drawn on the
+    // map, a well IS where water is cheap, and score_node already prefers a
+    // well when the tank is low. Telling anyone that water is cheap at the well
+    // is the map read aloud. Forcing every rumour true and then every rumour
+    // false moved the win rate by exactly zero points, three arms identical to
+    // the digit, because most of what was being said was already known.
+    //
+    // The informative claims are the ones the archetype does NOT imply: a well
+    // that has gone dry, a boom town, which trouble is sitting on an event
+    // node. Those get 70% of the weight between them.
+    int croll = rng_range(&w->rng_town, 0, 99);
+    int claim = croll < 40 ? CL_COND
+              : croll < 70 ? CL_ROAD
+              : croll < 88 ? CL_STOCK : CL_PRICE;
+    int truth_roll = rng_range(&w->rng_town, 0, 99);
+    int argroll = rng_range(&w->rng_town, 0, 99);
+    if (s >= SECTORS - 1) return;
+    const Node *nd = &w->node[s][idx];
+    if (!nd->active) return;
+
+    // A claim has to be about something that could be true of that node.
+    if ((claim == CL_PRICE || claim == CL_STOCK || claim == CL_COND)
+        && nd->type != NODE_SETTLE) claim = CL_ROAD;
+    if (claim == CL_ROAD && nd->type != NODE_EVENT) {
+        if (nd->type != NODE_SETTLE) return;
+        claim = CL_PRICE;
+    }
+
+    int conf = rumour_conf(w, src, claim, dist);
+    int truth = truth_roll < conf;
+    if (w->rum_force == 1) truth = 1;
+    else if (w->rum_force == 2) truth = 0;
+
+    // The argument. Generate the SLOT first, then read the truth -- and when
+    // lying, emit a different value for that same slot.
+    //
+    // This is the most important line in the phase. If false rumours came from
+    // their own path they would acquire a shape, and a player who learns the
+    // shape has a perfect oracle with extra steps. A lie has to be the sort of
+    // thing the truth would have been.
+    // A claim is true when it is true OF THE NODE. That sounds obvious and the
+    // first version did not do it: `truth` was rolled and stored, and then the
+    // argument was drawn at random anyway, so a price claim was neither right
+    // nor wrong about anything. The oracle arms came back identical to the
+    // digit -- all-true, honest and all-false all 39% -- because there was
+    // nothing for perfect information to be perfect about.
+    //
+    // So the slot is chosen first (which node, which kind of claim), and then
+    // the argument is picked to make the claim hold or fail against the real
+    // node. A lie is the sort of thing the truth would have been, which is what
+    // stops false rumours acquiring a shape a player could learn.
+    // Claims lean hard on water and fuel, because those are what runs turn on:
+    // seven of ten convoys die of thirst and the rest are stranded. The first
+    // version drew the good uniformly, so most rumours were about ammo or meds
+    // -- true or false, they changed nothing, and a perfect oracle measured
+    // zero points. Information is only worth something when it is about the
+    // thing that kills you.
+    int surv = (argroll % 100) < 70;
+    int g0 = surv ? (argroll & 1 ? G_WATER : G_FUEL) : (argroll % GOODS_COUNT);
+
+    int arg = 0;
+    switch (claim) {
+    case CL_PRICE: {
+        // "They are cheap in X." True when the node really is under the mean
+        // the convoy has seen; false when it is not.
+        int want = -1, fallback = -1;
+        for (int t = 0; t < GOODS_COUNT; ++t) {
+            int g = (g0 + t) % GOODS_COUNT;
+            int mean = w->seen_n[g] > 0 ? (int)(w->seen_sum[g] / w->seen_n[g]) : 0;
+            if (mean <= 0) { if (fallback < 0) fallback = g; continue; }
+            int cheap = nd->price[g] * 100 < mean * 90;
+            if (cheap == truth) { want = g; break; }
+        }
+        if (want < 0) want = fallback >= 0 ? fallback : (argroll % GOODS_COUNT);
+        arg = want;
+        break;
+    }
+    case CL_STOCK: {
+        // "They have X to spare." True when the shelf is deep, false when thin.
+        int want = -1;
+        for (int t = 0; t < GOODS_COUNT; ++t) {
+            int g = (g0 + t) % GOODS_COUNT;
+            int deep = nd->stock[g] >= 6;
+            if (deep == truth) { want = g; break; }
+        }
+        arg = want < 0 ? (argroll % GOODS_COUNT) : want;
+        break;
+    }
+    case CL_COND:
+        arg = truth ? nd->cond
+                    : (uint8_t)(1 + (nd->cond + 1 + argroll % (COND_COUNT - 1))
+                                    % (COND_COUNT - 1));
+        break;
+    case CL_ROAD:
+        arg = truth ? EV_RAID : (uint8_t)(argroll % EV_KINDS);
+        break;
+    default: break;
+    }
+
+    Rumour r;
+    r.sector = (uint8_t)s; r.index = (uint8_t)idx;
+    r.claim = (uint8_t)claim; r.arg = (uint8_t)arg;
+    r.src = (int8_t)src; r.conf = (uint8_t)conf; r.truth = (uint8_t)truth;
+
+    // FIFO, four slots. You cannot bank a map.
+    if (w->heard_n < RUMOUR_SLOTS) w->heard[w->heard_n++] = r;
+    else {
+        for (int i = 1; i < RUMOUR_SLOTS; ++i) w->heard[i - 1] = w->heard[i];
+        w->heard[RUMOUR_SLOTS - 1] = r;
+    }
+    INSTR(w->in.rum_offered++;
+          if (truth) w->in.rum_true++;
+          { int band = conf >= 70 ? 0 : (conf >= 45 ? 1 : 2);
+            w->in.rum_band[band]++;
+            if (truth) w->in.rum_band_true[band]++; });
+}
+
+// Drop anything about a sector already behind you. Forward-only travel makes
+// expiry free -- there is nothing to age, only something to pass.
+static void rumour_expire(World *w) {
+    int k = 0;
+    for (int i = 0; i < w->heard_n; ++i)
+        if (w->heard[i].sector > w->sector) w->heard[k++] = w->heard[i];
+    w->heard_n = (uint8_t)k;
+}
+
+// What the convoy has been told about a node, or NULL.
+const Rumour *world_rumour_for(const World *w, int s, int n) {
+    for (int i = 0; i < w->heard_n; ++i)
+        if (w->heard[i].sector == s && w->heard[i].index == n)
+            return &w->heard[i];
+    return 0;
+}
+
 // ---------------------------------------------------------------- travel
 void world_travel(World *w, int next_index) {
     if (!world_can_travel(w, next_index)) {
@@ -1228,6 +1562,8 @@ void world_travel(World *w, int next_index) {
     }
 
     w->svc_used = 0;    // a new town, a new favour to ask of it
+    w->sit_done = 0;
+    rumour_expire(w);
     salvage_check(w);
 
     // Sampled once per hop rather than per keypress, so the mean is over the
@@ -1295,6 +1631,12 @@ void world_travel(World *w, int next_index) {
     case NODE_SETTLE:
         w->state = ST_TRADE; observe_market(w); contract_tick(w);
         errand_tick(w); roll_offers(w); world_service_forced(w);
+        // Somebody talks. Listening is free and automatic -- there is no key to
+        // press, because the decision a rumour asks for is not "do I listen"
+        // but "do I believe", and belief is expressed by routing. It also keeps
+        // the measured quantity honest: a take rate that is 100% by
+        // construction measures nothing.
+        rumour_tick(w);
         // Someone is waiting for you in the market. Encounters used to live
         // only on encounter nodes, which put the story in direct competition
         // with trading: the profitable route is the one through settlements,

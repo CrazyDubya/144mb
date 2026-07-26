@@ -34,9 +34,9 @@ entertainment value — in that order.
 |---|---|---|---|
 | [convoy](convoy/) | v4 complete | 110,592 | 7.50% |
 | [deepscan](deepscan/) | beta | 143,360 | 9.72% |
-| [switchyard](switchyard/) | beta | 142,848 | 9.69% |
+| [switchyard](switchyard/) | beta | 143,360 | 9.72% |
 | [last-light](last-light/) | beta | 141,824 | 9.62% |
-| [microcolony](microcolony/) | beta | 142,848 | 9.69% |
+| [microcolony](microcolony/) | beta | 143,360 | 9.72% |
 | [ten-paces](ten-paces/) | beta | 143,872 | 9.76% |
 
 ## Building

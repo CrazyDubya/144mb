@@ -12,7 +12,10 @@
 #include "cutscene_fwd.h"
 
 // Tabs on the settlement screen. Switched with left/right.
-enum { TAB_MARKET, TAB_GARAGE, TAB_CREW, TAB_CONTRACTS, TAB_JOURNAL, TAB_COUNT };
+// The town's locations. TAB_JOURNAL was the fifth; the journal moved to the
+// right column in P2d because it was never a place you walk to, and the slot it
+// freed is what the situation now occupies.
+enum { TAB_MARKET, TAB_GARAGE, TAB_CREW, TAB_CONTRACTS, TAB_SITUATION, TAB_COUNT };
 
 typedef struct {
     World      w;

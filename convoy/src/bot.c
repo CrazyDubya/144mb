@@ -572,7 +572,97 @@ static int lookahead_bonus(const World *w, int from_index) {
     return best == -100000 ? 0 : best;
 }
 
-static int decide_map(const World *w, int map_sel, int feats) {
+
+// What somebody said about a node, weighted by how much they seemed to know.
+//
+// DELIBERATELY UNUSED BY decide_map, AND KEPT SO THE NEXT ATTEMPT STARTS HERE.
+//
+// Word of the road is lore that measured, mechanically, as nothing:
+//
+//     every rumour forced TRUE     39%
+//     honest                       39%
+//     every rumour forced FALSE    38%
+//     bot ignores rumours entirely 40%
+//
+// A perfect oracle is worth zero points, and acting on the information is
+// slightly worse than ignoring it. Three separate claim sets were tried --
+// uniform, biased toward survival goods, and biased toward what the map does
+// not already imply -- and none of them moved the number.
+//
+// The reason is not the claims, it is the map. A hop offers two or three nodes
+// in the next sector, and they are near enough interchangeable that knowing
+// more about one cannot pay: score_node already prefers a well when the tank is
+// low, and the archetype is drawn on screen. This is v5's crew problem wearing
+// a different hat -- there, an ability that fired 0.79 times a run could not
+// matter however strong it was; here, a choice between near-identical options
+// cannot be informed however good the information is.
+//
+// Fixing it means making sectors differ, which is a change to route generation
+// and not to rumours, so it is not this phase's to make. Recorded rather than
+// tuned until a number appeared.
+//
+// THE RULE, still worth keeping: this reads `claim`, `arg` and `conf` -- everything the panel shows
+// a player -- and never `truth`. A bot that can see whether a rumour is true
+// scores perfectly against information nobody has, and the -I 1 against -I 0
+// oracle test, which is the number this whole phase is judged on, would pass
+// without the mechanic working at all.
+//
+// It is the facts-not-valuations rule again in different clothes, and like that
+// one it is written down here because the version of this file that broke it
+// would have looked completely reasonable.
+static int rumour_bonus(const Bot *b, const World *w, int s, int n) {
+    const Rumour *r = world_rumour_for(w, s, n);
+    if (!r) return 0;
+
+    int keep[GOODS_COUNT];
+    reserves(w, keep);
+    int raw = 0;
+    switch (r->claim) {
+    // Weighted by how badly the convoy needs the thing being talked about.
+    // A shelf of water two hops out is worth crossing the map for when the
+    // tank is low and worth nothing at all when it is full -- and since thirst
+    // ends seven runs in ten, that gap is where the value of listening lives.
+    case CL_PRICE:
+        raw = (w->held[r->arg] <= keep[r->arg]) ? 70 : 10;
+        if (w->held[r->arg] <= keep[r->arg] / 2) raw = 120;
+        break;
+    case CL_STOCK:
+        raw = (w->held[r->arg] <= keep[r->arg]) ? 80 : 8;
+        if (w->held[r->arg] <= keep[r->arg] / 2) raw = 140;
+        break;
+    case CL_COND:
+        // The claims that actually carry information, because the map does not
+        // imply them. A well is a well whatever has happened to it; only word
+        // of mouth tells you this one came up salt last month.
+        raw = (r->arg == COND_BOOM)   ?  60
+            : (r->arg == COND_DRY)    ? (w->held[G_WATER] <= keep[G_WATER] ? -140 : -50)
+            : (r->arg == COND_EMPTY)  ? -90
+            : (r->arg == COND_SIEGE)  ? -30
+            : (r->arg == COND_CARTEL) ? -40 : -20;
+        break;
+    case CL_ROAD:
+        // Which trouble, not that there is trouble -- the map already draws an
+        // encounter node. Worth avoiding by much more when the convoy cannot
+        // pay whatever that kind asks for.
+        raw = -30;
+        if (r->arg == EV_RAID || r->arg == EV_TOLL || r->arg == EV_CHECKPOINT)
+            raw = w->held[G_AMMO] < 2 ? -110 : -25;
+        else if (r->arg == EV_BREAK || r->arg == EV_LEAK)
+            raw = w->held[G_SCRAP] < 2 ? -90 : -20;
+        else if (r->arg == EV_SICK || r->arg == EV_PLAGUE)
+            raw = w->held[G_MEDS] < 1 ? -90 : -20;
+        else if (r->arg == EV_CACHE || r->arg == EV_SIGNAL)
+            raw = +50;
+        break;
+    default: return 0;
+    }
+    (void)b;
+    // Scaled by stated confidence, which is the only thing separating a friend
+    // who knows the road from a stranger with an opinion.
+    return raw * r->conf / 100;
+}
+
+static int decide_map(const Bot *b, const World *w, int map_sel, int feats) {
     // world_reachable, not a copy of it. The copy that used to be here omitted
     // the `sector >= SECTORS - 1` guard, so at the last sector it would have
     // read node[SECTORS][m] -- one row past the end of the array. Unreachable
@@ -586,7 +676,11 @@ static int decide_map(const World *w, int map_sel, int feats) {
     for (int i = 0; i < n; ++i) {
         NodeView nv;
         world_node_known(w, w->sector + 1, cand[i], &nv);
+        // NOT + rumour_bonus. See the note on that function: acting on word of
+        // the road measured worse than ignoring it, and a perfect oracle
+        // measured worth nothing at all.
         int s = score_node(w, &nv);
+        (void)rumour_bonus;
         // A good stop that leads nowhere is worth less than a fair one that
         // opens onto a well. Discounted, because the second hop is a choice
         // not yet made and the convoy may not take it.
@@ -771,6 +865,14 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         // per-archetype rules: five bespoke tests would let one service be
         // undervalued to zero and read as "players do not want it", which is
         // exactly how UPG_HOLD hid behind a healthy win rate for a release.
+        // Walk into the situation, always. It is free to enter and the real
+        // decision is the encounter behind it, which decide_event already
+        // knows how to weigh -- so there is nothing to judge here and nothing
+        // for this file to learn when a seventh condition is added.
+        if (w->node[w->sector][w->index].cond != COND_NONE && !w->sit_done) {
+            if (tab != TAB_SITUATION) return BTN_RIGHT;
+            return BTN_A;
+        }
         if (service_worth_taking(b, w)) {
             if (tab != TAB_GARAGE) return BTN_RIGHT;
             return w->offer_upg < UPG_COUNT ? BTN_B : BTN_A;
@@ -785,7 +887,7 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         }
         if (tab != TAB_MARKET) return BTN_RIGHT;
         return decide_trade(b, w, sel);
-    case ST_MAP:   return decide_map(w, map_sel, b->feats);
+    case ST_MAP:   return decide_map(b, w, map_sel, b->feats);
     case ST_EVENT: return decide_event(b, w);
     default:       return -1;    // run is over
     }

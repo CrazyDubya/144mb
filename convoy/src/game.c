@@ -180,6 +180,12 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
             // advertised "X SELL / REFUSE" from the start, but the contracts
             // tab was one of three where X silently did nothing.
             if (in->pressed[BTN_B]) world_contract_decline(w);
+        } else if (gs->tab == TAB_SITUATION) {
+            // Walking into it is free. If it could cost, a player would need a
+            // preview of what they were paying for and so would the bot; the
+            // decision this asks for is inside the encounter, not in front of
+            // it.
+            if (in->pressed[BTN_A]) world_situation_enter(w);
         } else if (gs->tab == TAB_GARAGE) {
             // The forecourt sells kit; the works does the local trade. Z takes
             // whichever is actually on offer, and the offer takes precedence

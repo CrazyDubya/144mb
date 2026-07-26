@@ -76,9 +76,14 @@ typedef struct {
 
 // What a settlement is going through when you get there. Rolled at world-gen
 // and hidden until arrival: the world always knew, the fog is the player's.
+// Names are capped at eight characters, and that is measured rather than
+// chosen: the tab strip gate reports the widest row any frame drew, and a
+// ninth character runs a five-location strip through the "< >" hint.
+// QUARANTINE and ABANDONED were the first two names here; neither fits, which
+// is why they are SICK and EMPTY.
 enum {
-    COND_NONE = 0, COND_SIEGE, COND_QUARANTINE, COND_BOOM,
-    COND_ABANDONED, COND_CARTEL, COND_DRY, COND_COUNT
+    COND_NONE = 0, COND_SIEGE, COND_SICK, COND_BOOM,
+    COND_EMPTY, COND_CARTEL, COND_DRY, COND_COUNT
 };
 
 typedef struct {
@@ -402,6 +407,12 @@ typedef struct {
     // town cost a call each. Reset on arrival.
     uint8_t  calls_left;
     uint8_t  svc_used;      // the local trade is a once-per-stop thing
+    uint8_t  sit_done;      // this town's situation has been walked into
+    // Harness-only: 1 forces every rumour true, 2 forces every rumour false.
+    // The gap between those two arms is what a perfect oracle is worth, and it
+    // is the number this phase is judged on -- if it is small, the claims carry
+    // nothing actionable and no amount of tuning the confidence bands helps.
+    uint8_t  rum_force;
     uint8_t  escort;        // hops of hired guns still with you
     // Harness-only forced-policy arm: archetype+1, or 0. Grants that service
     // free at every stop that offers it, so its worth can be measured apart
@@ -480,6 +491,10 @@ int  world_service_price(const World *w);
 int  world_can_service  (const World *w);
 void world_service      (World *w);
 void world_service_forced(World *w);
+void world_situation_enter(World *w);
+// What somebody has said about a node, or NULL. The bot may read claim, conf
+// and arg -- all three are on screen -- and must NEVER read truth.
+const Rumour *world_rumour_for(const World *w, int s, int n);
 int  world_water_burn(const World *w);   // per day, given crew and tanks
 int  world_water_burn_on(const World *w, int day);
 int  world_crew_drinks_on(const World *w, int day);
