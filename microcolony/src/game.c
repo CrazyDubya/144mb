@@ -1,5 +1,6 @@
 #include "game.h"
 #include "scene_pixels.h"
+#include "story_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -18,7 +19,7 @@ static const unsigned required[6]={
 static struct {
     uint8_t cell[CELLS],next[CELLS],quarantine[CELLS];
     uint32_t rng;
-    int cx,cy,tick,stable,mission,budget,selected,light,ph,current,toxin;
+    int cx,cy,tick,mission_tick,stable,mission,budget,selected,light,ph,current,toxin;
     int count[SPECIES],history[6][64],history_at,collapse,won,lost;
     unsigned used;
 } g;
@@ -34,7 +35,7 @@ static void recount(void){
 }
 static void populate(void){
     memset(g.cell,0,sizeof g.cell);memset(g.next,0,sizeof g.next);memset(g.quarantine,0,sizeof g.quarantine);
-    g.stable=0;g.collapse=0;g.budget=32;g.used=0;g.selected=0;g.light=50;g.ph=50;g.current=0;g.toxin=g.mission==1?70:g.mission==2?35:g.mission==5?55:10;
+    g.stable=0;g.mission_tick=0;g.collapse=0;g.budget=32;g.used=0;g.selected=0;g.light=50;g.ph=50;g.current=0;g.toxin=g.mission==1?70:g.mission==2?35:g.mission==5?55:10;
     for(int i=0;i<CELLS;i++){int r=(int)(rnd()%100);int k=EMPTY;
         if(r<28)k=PRODUCER;else if(r<38)k=GRAZER;else if(r<43)k=PREDATOR;
         else if(r<51)k=DECOMPOSER;else if(r<55)k=PARASITE;else if(r<59)k=SPORE;
@@ -102,7 +103,7 @@ static void apply_tool(int use){
     recount();
 }
 void game_tick(const Input*in){
-    if(in->pressed[START]){game_init(g.rng+1);return;}if(g.won||g.lost)return;g.tick++;
+    if(in->pressed[START]){game_init(g.rng+1);return;}if(g.won||g.lost)return;g.tick++;g.mission_tick++;
     if(in->pressed[LEFT]&&g.cx>0)g.cx--;if(in->pressed[RIGHT]&&g.cx<GW-1)g.cx++;
     if(in->pressed[UP]&&g.cy>0)g.cy--;if(in->pressed[DOWN]&&g.cy<GH-1)g.cy++;
     if(in->pressed[A])apply_tool(USE_NUTRIENT);if(in->pressed[B])apply_tool(USE_ANTIBIOTIC);
@@ -112,7 +113,7 @@ void game_tick(const Input*in){
 }
 
 void game_draw(Framebuffer*f){
-    int scene=g.mission<6?g.mission:5;scene_frame(f,scene,68);circle(f,320,245,213,0x00517b6a);
+    int scene=g.mission<6?g.mission:5;if(g.won)story_frame(f,2,112);else if(g.selected==TOOL_SPECIES)story_frame(f,1,68);else if(g.mission==0&&g.mission_tick<120)story_frame(f,0,72);else scene_frame(f,scene,68);circle(f,320,245,213,0x00517b6a);
     for(int y=0;y<GH;y++)for(int x=0;x<GW;x++){int at=y*GW+x,k=g.cell[at];if(!k)continue;static const uint32_t color[SPECIES]={0,0x005edb72,0x00e6c45b,0x00e65d67,0x00a977d8,0x00d35eb5,0x007bdde6};int px=60+x*13,py=72+y*13;circle(f,px,py,2+k/2,color[k]);if(g.quarantine[at])pixel(f,px+5,py-5,0x00ffffff);}
     rect(f,57+g.cx*13,69+g.cy*13,9,2,0x00ffffff);rect(f,60+g.cx*13,66+g.cy*13,2,9,0x00ffffff);
     rect(f,10,40,g.stable*2,7,0x0065d890);rect(f,10,50,g.toxin*2,5,0x00cf5060);

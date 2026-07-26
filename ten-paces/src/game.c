@@ -1,5 +1,6 @@
 #include "game.h"
 #include "scene_pixels.h"
+#include "story_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -13,7 +14,7 @@ static struct{
     uint32_t rng;int plan[3],enemy[3],slot,phase,clock,beat,px,ex,php,ehp;
     int paim,eaim,pdive,edive,pammo,eammo,pcover,ecover,lamp,smoke;
     int pmorale,emorale,temper,round,stage,reputation,spared,killed,ally;
-    int civilians,won,lost,tick;Bullet bullet[8];
+    int civilians,intro,won,lost,tick;Bullet bullet[8];
 }g;
 
 static uint32_t rnd(void){g.rng=g.rng*1664525u+1013904223u;return g.rng;}
@@ -41,7 +42,7 @@ static void begin_encounter(void){
     g.px=105;g.ex=535;g.php=4+(g.ally?1:0);g.ehp=hp[g.stage];g.paim=g.eaim=0;
     g.pdive=g.edive=0;g.pammo=6;g.eammo=6;g.pcover=g.ecover=2;g.lamp=1;g.smoke=0;
     g.pmorale=3;g.emorale=2+g.stage/2;g.temper=(int)(rnd()%4);g.phase=0;g.clock=0;g.beat=0;g.slot=0;
-    g.civilians=(g.stage==0||g.stage==4||g.stage==6)?2:0;memset(g.plan,0,sizeof g.plan);memset(g.bullet,0,sizeof g.bullet);roll_enemy();
+    g.civilians=(g.stage==0||g.stage==4||g.stage==6)?2:0;g.intro=120;memset(g.plan,0,sizeof g.plan);memset(g.bullet,0,sizeof g.bullet);roll_enemy();
 }
 void game_init(uint32_t seed){memset(&g,0,sizeof g);g.rng=seed;g.reputation=1;begin_encounter();}
 
@@ -80,7 +81,7 @@ static void finish_encounter(int spared){
     if(g.stage>=8)g.won=1;else begin_encounter();
 }
 void game_tick(const Input*in){
-    if(in->pressed[START]){game_init(g.rng+1);return;}if(g.won||g.lost)return;g.tick++;
+    if(in->pressed[START]){game_init(g.rng+1);return;}if(g.won||g.lost)return;g.tick++;if(g.intro>0)g.intro--;
     if(g.pdive>0)g.pdive--;if(g.edive>0)g.edive--;if(g.smoke>0)g.smoke--;
     if(g.phase==0){
         if(in->pressed[LEFT]&&g.slot>0)g.slot--;if(in->pressed[RIGHT]&&g.slot<2)g.slot++;
@@ -104,7 +105,7 @@ static void cowboy(Framebuffer*f,int x,int hp,uint32_t c,int dive,int cover){
     for(int i=0;i<hp;i++)rect(f,x-14+i*10,y+45,7,5,0x00db3e4c);if(cover)rect(f,x-28,y+15,56,20,0x00634b32);
 }
 void game_draw(Framebuffer*f){
-    int scene=g.won?5:g.lost?4:(g.stage<4?g.stage:g.stage==7?5:4);scene_frame(f,scene,92);
+    int scene=g.won?5:g.lost?4:(g.stage<4?g.stage:g.stage==7?5:4);if(g.won)story_frame(f,2,120);else if(g.intro>0)story_frame(f,g.stage?1:0,82);else scene_frame(f,scene,92);
     if(!g.lamp)rect(f,0,0,640,480,0x00101520);rect(f,0,390,640,90,0x00614a35);
     cowboy(f,g.px,g.php,0x003e7188,g.pdive>0,g.pcover);cowboy(f,g.ex,g.ehp,0x008c3441,g.edive>0,g.ecover);
     for(int i=0;i<8;i++)if(g.bullet[i].live)line(f,g.bullet[i].x-8,g.bullet[i].owner?328:338,g.bullet[i].x+8,g.bullet[i].owner?328:338,0x00fff3b0);

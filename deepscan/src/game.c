@@ -1,5 +1,6 @@
 #include "game.h"
 #include "scene_pixels.h"
+#include "story_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -93,8 +94,8 @@ static void organism(Framebuffer*f,int x,int y,int type,uint32_t color){
     else{line(f,x-r,y-r,x+r,y+r,color);line(f,x+r,y-r,x-r,y+r,color);}
 }
 void game_draw(Framebuffer*f){
-    if(g.briefing){scene_frame(f,g.contract,115);rect(f,70,90,500,300,0x00101822);return;}
-    int band=g.y/300;if(band>4)band=4;int scene=g.won?5:band;scene_frame(f,scene,74);
+    if(g.briefing){story_frame(f,0,120);rect(f,70,90,500,300,0x00101822);return;}
+    int band=g.y/300;if(band>4)band=4;if(g.won)story_frame(f,2,130);else if(g.ascending)story_frame(f,1,70);else scene_frame(f,band,74);
     int camera=g.y-240;if(camera<0)camera=0;if(camera>WORLD_H-480)camera=WORLD_H-480;
     for(int yy=(camera/100)*100;yy<camera+480;yy+=100)rect(f,0,yy-camera,640,1,0x00234858);
     for(int i=0;i<CONTACTS;i++){Contact*c=&g.contact[i];int sy=c->y-camera;if(sy<20||sy>460)continue;int d=absi(c->x-g.x)+absi(c->y-g.y);int visible=(g.lights&&d<125)||(g.ping&&absi(d-g.ping)<25*g.ping_strength);if(visible)organism(f,c->x,sy,c->type,c->type>=8?0x00ef5368:0x007ee8d4);}

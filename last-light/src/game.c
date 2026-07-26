@@ -1,5 +1,6 @@
 #include "game.h"
 #include "scene_pixels.h"
+#include "story_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -109,7 +110,7 @@ void game_tick(const Input*in){
 
 void game_draw(Framebuffer*f){
     int scene=g.won?4:g.lost?5:g.day?0:(!g.contact.genuine?3:g.night<4?1:2);
-    scene_frame(f,scene,g.day?125:82);
+    if(g.day)story_frame(f,0,118);else if(g.station==CHART)story_frame(f,1,76);else if(g.station==JOURNAL)story_frame(f,2,76);else scene_frame(f,scene,82);
     for(int y=275;y<450;y+=17)line(f,0,y,640,y+((y+g.tick/8)%13)-6,0x001d3b50);
     for(int i=0;i<75;i++){int x=(i*83+g.tick*3)%680-20,y=(i*47+g.tick*5)%430;line(f,x,y,x-8,y+16,0x0033485a);}
     if(!g.day&&!g.won&&!g.lost){

@@ -1,5 +1,6 @@
 #include "game.h"
 #include "scene_pixels.h"
+#include "story_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -72,7 +73,7 @@ void game_tick(const Input*in){
 }
 
 void game_draw(Framebuffer*f){
-    int sh=g.shift<8?g.shift:7,scene=g.crash?5:(sh<5?sh:sh==7?3:5);scene_frame(f,scene,72);
+    int sh=g.shift<8?g.shift:7,scene=g.crash?5:(sh<5?sh:sh==7?3:5);if(g.won)story_frame(f,2,115);else if(g.incident)story_frame(f,1,70);else if(g.shift_tick<90)story_frame(f,0,75);else scene_frame(f,scene,72);
     for(int x=0;x<640;x+=20){rect(f,x,228,10,4,0x006b7068);rect(f,x,248,10,4,0x006b7068);}
     for(int y=50;y<440;y+=20){rect(f,310,y,4,10,0x006b7068);rect(f,330,y,4,10,0x006b7068);}
     rect(f,0,234,640,12,0x00969b91);rect(f,316,40,12,400,0x00969b91);
