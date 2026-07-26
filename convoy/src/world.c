@@ -908,9 +908,28 @@ static void roll_event(World *w) {
         break;
 
     case EV_WRECK:
-        e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_good = G_SCRAP; e->gain_qty = (int8_t)rng_range(&w->rng_event, 3, 6);
-        if (w->crew[CREW_MECHANIC]) e->gain_qty += 2;   // knows what is worth taking
+        // Reversed: parts in, fuel out. It used to charge a unit of fuel for
+        // three to six scrap -- about 17 credits for 27, and 51 for 27 once
+        // fuel was scarce enough to matter -- which made it the only kind that
+        // was a genuinely bad trade rather than merely unaffordable, at 12%
+        // accepted. Raising the salvage made it worse, not better: a bigger
+        // reward needs more free slots than a hold at 69% occupancy has, so
+        // forced refusals tripled while acceptance stood still.
+        //
+        // Every encounter in this table charged in the two resources that end
+        // runs and paid in credits worth about 3% of the final score. This is
+        // the first that runs the other way: you spend parts stripping the
+        // wreck and come away with what is left in its tank. It is a real
+        // decision precisely because the answer changes -- scrap is worth more
+        // as trade goods when the convoy is flush, and worth nothing at all
+        // compared to fuel when it is not.
+        // One to two, not two to three: breakdowns already draw on the same
+        // small scrap stock, and asking for three left the convoy unable to
+        // pay 55% of the time -- affordable-in-principle content that is
+        // unaffordable in practice is the failure this whole phase is about.
+        e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
+        e->gain_good = G_FUEL; e->gain_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
+        if (w->crew[CREW_MECHANIC]) e->gain_qty += 1;   // knows where the lines run
         e->lose_qty = 0;
         break;
 
@@ -921,7 +940,10 @@ static void roll_event(World *w) {
         break;
 
     case EV_BREAK:
-        e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng_event, 2, 3);
+        // Scrap is now spoken for twice over -- a breakdown and a wreck both
+        // draw on the same two or three units -- and asking for three left the
+        // convoy unable to pay 38% of the time.
+        e->pay_good = G_SCRAP; e->pay_qty = (int8_t)rng_range(&w->rng_event, 1, 2);
         e->lose_good = G_FUEL;  e->lose_qty = 2;
         if (w->crew[CREW_MECHANIC]) e->pay_qty = 0;
         break;
@@ -941,7 +963,12 @@ static void roll_event(World *w) {
 
     case EV_CACHE:
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_good = (int8_t)(rng_range(&w->rng_event, 0, 1) ? G_AMMO : G_MEDS);
+        // A buried cache can hold water, which is the other half of letting
+        // this table return survival margin rather than only charge in it.
+        {
+            int roll = rng_range(&w->rng_event, 0, 2);
+            e->gain_good = (int8_t)(roll == 0 ? G_AMMO : roll == 1 ? G_MEDS : G_WATER);
+        }
         e->gain_qty  = (int8_t)rng_range(&w->rng_event, 2, 4);
         if (w->crew[CREW_SCOUT]) e->gain_qty += 2;      // knows where to dig
         e->lose_qty  = 0;
@@ -956,9 +983,20 @@ static void roll_event(World *w) {
 
     case EV_RIVAL: {
         // A straight swap. Both sides think they are winning.
+        //
+        // It used to name a good at random, and 43% of the time that was
+        // something the convoy did not have two of -- so the commonest outcome
+        // was not a refusal but an inability, which reads the same on screen
+        // and means the opposite. A rival eyes what you are actually carrying.
         int give = rng_range(&w->rng_event, 0, GOODS_COUNT - 1);
+        for (int t = 0; t < GOODS_COUNT; ++t) {
+            if (w->held[give] >= 2) break;
+            give = (give + 1) % GOODS_COUNT;
+        }
         int take = (give + 1 + rng_range(&w->rng_event, 0, GOODS_COUNT - 2)) % GOODS_COUNT;
-        e->pay_good  = (int8_t)give; e->pay_qty  = (int8_t)rng_range(&w->rng_event, 2, 4);
+        int want = rng_range(&w->rng_event, 2, 4);
+        if (want > w->held[give]) want = w->held[give];   // never more than is aboard
+        e->pay_good  = (int8_t)give; e->pay_qty  = (int8_t)want;
         e->gain_good = (int8_t)take; e->gain_qty = (int8_t)rng_range(&w->rng_event, 2, 4);
         if (w->crew[CREW_TRADER]) e->gain_qty++;      // drives a bargain
         e->lose_qty = 0;
@@ -991,8 +1029,11 @@ static void roll_event(World *w) {
         break;
 
     default: // EV_SIGNAL
+        // Accepted 87% of the time: a unit of fuel for ninety-odd credits is
+        // not a decision, it is a formality. Trimmed until chasing the tip is
+        // worth it when fuel is plentiful and a real question when it is not.
         e->pay_good = G_FUEL;  e->pay_qty = 1;
-        e->gain_credits = (int16_t)(rng_range(&w->rng_event, 35, 80) + depth * 6);
+        e->gain_credits = (int16_t)(rng_range(&w->rng_event, 25, 50) + depth * 4);
         if (w->crew[CREW_TRADER]) e->gain_credits += 40;  // knows what a tip is worth
         e->lose_qty = 0;
         break;

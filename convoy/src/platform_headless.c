@@ -632,6 +632,7 @@ int main(int argc, char **argv) {
     int         feats = BOT_ALL;      // -M n selects which pressures the bot feels
     int         kinds = 0;            // -K reports per-encounter-kind behaviour
     int         shot_tab = -1;        // -S n photographs the first frame of tab n
+    int         quick = 0;            // -Q shrinks the drawn area for sweeps
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -657,6 +658,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-K")) kinds = 1;
         else if (!strcmp(argv[i], "-S") && i + 1 < argc) shot_tab = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-Q")) quick = 1;
     }
 
     GameMemory mem = {0};
@@ -665,6 +667,21 @@ int main(int argc, char **argv) {
 
     uint32_t *pixels = (uint32_t *)calloc((size_t)FB_W * FB_H, sizeof(uint32_t));
     Framebuffer fb = { pixels, FB_W, FB_H };
+
+    // A balance sweep never looks at a pixel, but the core draws a full
+    // 640x480 frame twice per step regardless -- about 25 billion pixel writes
+    // for a 400-seed arm, which is where nearly all the wall clock goes.
+    //
+    // -Q shrinks the *logical* size while keeping the full allocation, so
+    // every primitive clips almost everything away and nothing can write out
+    // of bounds. It is only sound because no game logic reads the framebuffer
+    // dimensions: game.c touches fb->w exactly once, in a draw call. The
+    // acceptance test is that a -Q sweep produces byte-identical BOT lines to
+    // a full-size one -- which also proves the render path cannot influence a
+    // balance number.
+    if (quick && every <= 0 && shot_tab < 0 && !journal_at && !end_shot) {
+        fb.w = 32; fb.h = 32;
+    }
 
     if (exploit) return exploit_probe();
 

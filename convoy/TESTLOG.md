@@ -1243,6 +1243,125 @@ not volume.
 Offers per run stand at 2.54 against **1.48** at the v4 epoch — a 72% rise
 across P2 and P6 — while the delivery rate is 63% of accepted.
 
+## P7 — encounters: retune, then return survival margin
+
+**14 of 14 encounter kinds are now real decisions**, against 7 at the start of
+the phase. The plan's target was that every kind be chosen both ways at least
+15% of the time; it is met with no kind outside 25/75.
+
+| difficulty | P6 | P7 |
+|---|---:|---:|
+| FORGIVING | 95% | 97% |
+| THE ROAD | 72% | 82% |
+| UNFORGIVING | 40% | 56% |
+
+n=400, zero stalls, `-X` clean, determinism clean.
+
+### The biggest fix was in the observer, not the game
+
+`decide_event` carried a hard veto: any payment in fuel or water that left the
+convoy below its reserve was refused **before the deal was priced at all**.
+Because the bot provisions exactly to its reserve, that fired on any payment of
+one unit -- and six of the fourteen kinds charge in fuel or water.
+
+Removing the veto and letting the existing survival multiplier price the dip
+instead, with no change to any table:
+
+| kind | before | after |
+|---|---:|---:|
+| SIGNAL | 8% | 87% |
+| CACHE | 5% | 76% |
+| TRADER | 12% | 66% |
+| REFUGEE | 11% | 51% |
+| BRIDGE | 5% | 43% |
+
+Five kinds went from dead content to genuine decisions **without touching the
+game**. Had the phase started by retuning payoffs as planned, it would have
+been adjusting numbers on kinds that were being refused categorically whatever
+they offered.
+
+**The first attempt at this failed and nearly produced the wrong conclusion.**
+Relaxing the veto to a "risk premium" moved the accept rates by two points,
+which reads as "the tables really are the problem". The premium was
+double-counted: `good_value` already triples fuel and water below reserve, and
+the new code multiplied by three again -- twelve times market price for a unit
+of fuel, which no payoff in the table can clear.
+
+### Three genuine table faults
+
+**SIGNAL** at 87% accept was a non-decision in the other direction: a unit of
+fuel for ninety-odd credits is a formality. Trimmed to 25-50 + depth*4 -> 63/36.
+
+**RIVAL** was 43% *forced*. It named a good at random, and a convoy reserves
+most goods for survival, so the commonest outcome was not refusal but
+inability -- which reads the same on screen and means the opposite. A rival now
+eyes what is actually aboard, and never asks for more than is carried:
+22/77 with 43% forced -> 57/42 with 3% forced.
+
+**WRECK** was the one kind that was genuinely a bad trade: a unit of fuel for
+three to six scrap, about 17 credits for 27, and 51 for 27 once fuel mattered.
+
+Trying to fix it by making it *more generous* made it worse. Raising the
+salvage to 5-9 left acceptance at 11% while forced refusals went from 5% to
+21%: a bigger reward needs more free slots than a hold at 69% occupancy has,
+and P2's room check refuses it outright. **More generous and less attainable.**
+
+### 7b — the table can now return survival margin
+
+Every encounter charged in the two resources that end runs and paid in credits
+worth about 3% of the final score. WRECK is reversed: parts in, fuel out. You
+spend scrap stripping the wreck and come away with what is in its tank. It is a
+real decision precisely because the answer changes -- scrap is worth more as
+trade goods when the convoy is flush and worth nothing against fuel when it is
+not. 12% -> 78% accepted.
+
+CACHE can now hold water as well as ammo or meds, for the same reason.
+
+The first version asked 2-3 scrap and was unaffordable 55% of the time, because
+breakdowns draw on the same small stock. Reduced to 1-2.
+
+### Two contended currencies
+
+BREAK at 38% forced and PLAGUE at 30% were the same shape as the scrap finding
+in P5: the currency is too scarce for the ask. BREAK reduced to 1-2 scrap
+(38% -> 11% forced); the bot's medicine reserve raised to 2, since plague asks
+for one or two and the convoy starts with one (30% -> 25%).
+
+### Final state, n=400, THE ROAD
+
+| kind | accept | refuse | forced |
+|---|---:|---:|---:|
+| WRECK | 78% | 21% | 21% |
+| CACHE | 78% | 21% | 0% |
+| SIGNAL | 63% | 36% | 0% |
+| TRADER | 61% | 38% | 6% |
+| LEAK | 59% | 40% | 8% |
+| RIVAL | 55% | 44% | 4% |
+| REFUGEE | 54% | 45% | 4% |
+| SICK | 51% | 48% | 4% |
+| BREAK | 51% | 48% | 11% |
+| TOLL | 48% | 51% | 2% |
+| BRIDGE | 47% | 52% | 0% |
+| CHECKPOINT | 45% | 54% | 15% |
+| RAID | 41% | 58% | 14% |
+| PLAGUE | 34% | 65% | 25% |
+
+### A 50x faster harness, and what it proves
+
+A balance sweep never looks at a pixel, but the core drew a full 640x480 frame
+twice per step regardless -- about 25 billion pixel writes for a 400-seed arm,
+which was nearly all the wall clock. `-Q` shrinks the *logical* framebuffer
+while keeping the full allocation, so every primitive clips almost everything
+away and nothing can write out of bounds. It is only sound because no game
+logic reads the framebuffer dimensions: `game.c` touches `fb->w` exactly once,
+in a draw call.
+
+A six-arm phase gate went from about fifteen minutes to **sixteen seconds**.
+
+The acceptance test is that `-Q` produces byte-identical BOT lines to a
+full-size run, which it does -- and that is worth having for its own sake: it
+proves the render path cannot influence a balance number.
+
 ---
 
 ## Bugs found, and what found them

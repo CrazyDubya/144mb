@@ -41,7 +41,10 @@ static void reserves(const World *w, int *keep) {
     for (int i = 1; i <= span; ++i) water += world_water_burn_on(w, w->day + i);
     keep[G_WATER] = water;
     keep[G_AMMO]  = 2;             // enough to refuse one raid
-    keep[G_MEDS]  = 1;
+    // Two, not one. Plague asks for one or two and the convoy starts with a
+    // single unit, so 30% of outbreaks could not be treated at any price --
+    // the same shape as the scrap reserve, in a dearer currency.
+    keep[G_MEDS]  = 2;
     // Scrap is the cheapest good in the game and reads as pure trade stock,
     // which is how it came to be reserved at zero -- the bot sold every unit.
     // But it is also the repair currency, and a convoy with none cannot fix a
@@ -474,13 +477,28 @@ static int decide_event(const Bot *b, const World *w) {
     int keep[GOODS_COUNT];
     reserves(w, keep);
 
-    // Refuse anything that would eat into what is needed to finish the route,
-    // however good the deal looks on paper.
-    if (e->pay_good >= 0 && e->pay_qty > 0) {
-        int after = w->held[e->pay_good] - e->pay_qty;
-        if ((e->pay_good == G_FUEL || e->pay_good == G_WATER)
-            && after < keep[e->pay_good])
-            return BTN_B;
+    // Dipping into the survival reserve is expensive, not forbidden.
+    //
+    // This was a veto: any payment in fuel or water that left the convoy below
+    // its reserve was refused before the deal was even priced. Because the bot
+    // provisions *to* that reserve, it is nearly always sitting on exactly the
+    // reserve, so the rule fired on any payment of one unit -- and six of the
+    // fourteen encounter kinds charge in fuel or water. Measured, those six
+    // were accepted between 2% and 10% of the time regardless of what they
+    // offered, and no change to their payoffs could have moved that.
+    //
+    // A player facing "one fuel for a hundred and thirty credits, with a
+    // refinery two hops on" does not have a rule forbidding it; they weigh it.
+    // So the dip is priced instead: steeply, because being stranded ends the
+    // run, and never down to the last unit.
+    // The premium is already in good_value, which triples fuel and water once
+    // the convoy is at or below its reserve. Adding a separate multiplier on
+    // top charged twelve times the market price for a unit of fuel, which no
+    // payoff in the table can clear -- so the first attempt at relaxing the
+    // veto moved the accept rates by two points and changed nothing.
+    if (e->pay_good >= 0 && e->pay_qty > 0
+        && (e->pay_good == G_FUEL || e->pay_good == G_WATER)) {
+        if (w->held[e->pay_good] - e->pay_qty < 1) return BTN_B;  // never the last one
     }
 
     int cost = 0;
