@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Refuses a commit when the shipped tree does not match the tree that was
+# actually built and measured.
+#
+# This is the third mechanism in one release by which a commit shipped stale
+# code while every check reported success:
+#
+#   1. tools/sync.sh was run from inside the ship tree, so source and
+#      destination resolved to the same directory. rsync succeeded and copied
+#      nothing. Fixed by making sync.sh refuse to sync a tree to itself.
+#   2. sync.sh's output was piped to `tail`, so `&&` saw tail's exit status
+#      rather than sync's. The guard from (1) fired, printed its refusal, and
+#      the commit went ahead anyway.
+#   3. -- reserved for whatever the next one turns out to be.
+#
+# Remembering to be careful has now failed twice, so the check moved somewhere
+# it cannot be piped, skipped or run from the wrong directory. A commit is the
+# last point at which stale code can still be caught for free.
+#
+# Install: git config core.hooksPath .githooks
+set -euo pipefail
+
+WORK=/home/opc/convoy
+SHIP="$(git rev-parse --show-toplevel)/convoy"
+
+# Only meaningful on the machine that has the working tree.
+[ -d "$WORK/src" ] || exit 0
+
+if ! diff -rq "$WORK/src" "$SHIP/src" >/dev/null 2>&1; then
+    echo "pre-commit: the shipped tree does not match the working tree." >&2
+    diff -rq "$WORK/src" "$SHIP/src" 2>&1 | sed 's/^/  /' >&2
+    echo >&2
+    echo "  Every measurement in this phase ran against $WORK." >&2
+    echo "  Committing now would ship code that nothing has tested." >&2
+    echo "  Run: $WORK/tools/sync.sh" >&2
+    exit 1
+fi
+
+for f in build.sh tools/asan.sh tools/sync.sh; do
+    if [ -f "$WORK/$f" ] && ! cmp -s "$WORK/$f" "$SHIP/$f"; then
+        echo "pre-commit: $f differs between working and shipped trees." >&2
+        echo "  Run: $WORK/tools/sync.sh" >&2
+        exit 1
+    fi
+done

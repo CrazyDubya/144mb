@@ -305,6 +305,7 @@ typedef struct {
     int   use_ref;         // -A ref: play with the frozen agent instead
     int   daily;           // --daily: take today's fixed map, via the menu
     int   force_upg;       // -U n: fit upgrade n from the start, or -1
+    int   feats;           // -M n: which human pressures the bot feels
 } RunOpts;
 
 typedef struct {
@@ -365,6 +366,7 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
     // whether a moved number came from the game or from the observer.
     Bot bot; BotRef ref;
     bot_init(&bot, o->bot_float);       bot.refuse_all = o->refuse_all;
+    bot.feats = o->feats;
     botref_init(&ref, o->bot_float);    ref.refuse_all = o->refuse_all;
 
     int steps = 0;
@@ -492,6 +494,43 @@ static const char *const OUT_NAME[] = {
     "DEAD", "EMPTY", "PARTIAL", "INTACT", "EXEMPLARY"
 };
 
+#ifdef CONVOY_INSTRUMENT
+static const char *const EV_NAME[EV_KINDS] = {
+    "RAID", "WRECK", "SICK", "BREAK", "TRADER", "TOLL", "CACHE",
+    "BRIDGE", "RIVAL", "PLAGUE", "CHECKPOINT", "LEAK", "REFUGEE", "SIGNAL"
+};
+
+// Per-kind totals across a whole sweep. A single encounter kind fires about a
+// quarter of a time per run, so its entire contribution sits far below the
+// resolution of any feasible win-rate sample -- tuning one by watching the win
+// rate produces a confident wrong answer. This is the instrument that can see
+// them: how often each came up, how often it was taken, and how often it was
+// refused because it could not be paid rather than because it was a bad deal.
+typedef struct { long fired, acc, forced; } KindTotals;
+
+static void kind_add(KindTotals *t, const World *w) {
+    for (int k = 0; k < EV_KINDS; ++k) {
+        t[k].fired  += w->in.ev_fired[k];
+        t[k].acc    += w->in.ev_accepted[k];
+        t[k].forced += w->in.ev_forced[k];
+    }
+}
+
+static void kind_report(const KindTotals *t, int runs) {
+    printf("KIND  %-11s %8s %8s %8s %8s %8s\n",
+           "encounter", "fired", "per_run", "accept%", "refuse%", "forced%");
+    for (int k = 0; k < EV_KINDS; ++k) {
+        long f = t[k].fired;
+        if (f == 0) { printf("KIND  %-11s %8d %8s %8s %8s %8s\n",
+                             EV_NAME[k], 0, "-", "-", "-", "-"); continue; }
+        long refused = f - t[k].acc;
+        printf("KIND  %-11s %8ld %8.2f %7ld%% %7ld%% %7ld%%\n",
+               EV_NAME[k], f, (double)f / (runs ? runs : 1),
+               t[k].acc * 100 / f, refused * 100 / f, t[k].forced * 100 / f);
+    }
+}
+#endif
+
 // One line per run, key=value so it can be parsed without counting columns.
 // The previous positional format had grown to sixteen fields and every
 // consumer -- the docs included -- was already out of date with it.
@@ -562,6 +601,8 @@ int main(int argc, char **argv) {
     int         use_ref = 0;          // -A ref plays with the frozen agent
     int         daily = 0;            // --daily plays today's fixed map
     int         force_upg = -1;       // -U n fits an upgrade regardless of choice
+    int         feats = BOT_ALL;      // -M n selects which pressures the bot feels
+    int         kinds = 0;            // -K reports per-encounter-kind behaviour
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -584,6 +625,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-A") && i + 1 < argc) use_ref = !strcmp(argv[++i], "ref");
         else if (!strcmp(argv[i], "--daily")) daily = 1;
         else if (!strcmp(argv[i], "-U") && i + 1 < argc) force_upg = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-K")) kinds = 1;
     }
 
     GameMemory mem = {0};
@@ -597,7 +640,7 @@ int main(int argc, char **argv) {
 
     RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
                     every, verbose, outdir, determinism, use_ref, daily,
-                    force_upg };
+                    force_upg, feats };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player
@@ -607,6 +650,10 @@ int main(int argc, char **argv) {
         if (sweep_n <= 0) { lo = (int)seed; hi = (int)seed; }
 
         int won = 0, dead = 0, stalled = 0, runs = 0;
+#ifdef CONVOY_INSTRUMENT
+        KindTotals kt[EV_KINDS];
+        memset(kt, 0, sizeof kt);
+#endif
         for (int sd = lo; sd <= hi; ++sd) {
             RunResult r;
             if (!run_one(&mem, &fb, pixels, (uint32_t)sd, diff, &opt, &r)) return 2;
@@ -633,6 +680,7 @@ int main(int argc, char **argv) {
             }
 
             print_run(&r);
+            INSTR(kind_add(kt, &r.w));
             ++runs;
             if      (r.w.state == ST_WON)  ++won;
             else if (r.w.state == ST_DEAD) ++dead;
@@ -642,6 +690,7 @@ int main(int argc, char **argv) {
         if (sweep_n > 0) {
             printf("SWEEP n=%d diff=%d won=%d dead=%d stalled=%d win_pct=%d\n",
                    runs, diff, won, dead, stalled, runs ? won * 100 / runs : 0);
+            if (kinds) INSTR(kind_report(kt, runs));
         }
         // A stall is always a bug, never a balance result, so it fails the run
         // rather than quietly appearing in a column.

@@ -42,7 +42,24 @@ static void reserves(const World *w, int *keep) {
     keep[G_WATER] = water;
     keep[G_AMMO]  = 2;             // enough to refuse one raid
     keep[G_MEDS]  = 1;
-    keep[G_SCRAP] = 0;             // pure trade good
+    // Scrap is the cheapest good in the game and reads as pure trade stock,
+    // which is how it came to be reserved at zero -- the bot sold every unit.
+    // But it is also the repair currency, and a convoy with none cannot fix a
+    // breakdown at any price. Measured: 60% of breakdowns and 52% of leaks
+    // were refused because there was nothing to pay with, not because refusing
+    // was the better deal. Those two are indistinguishable in a decline count,
+    // and until they are separated the encounter tables cannot be tuned.
+    keep[G_SCRAP] = 3;             // one repair's worth
+}
+
+// What a taken job still needs, so the convoy buys toward it instead of
+// arriving at the delivery empty-handed. reserves() deliberately does not know
+// about contracts -- it is about surviving -- so this is separate.
+static int contract_short(const World *w, int g) {
+    const Contract *j = &w->job;
+    if (j->state != CONTRACT_TAKEN || j->good != g) return 0;
+    int short_by = j->qty - w->held[g];
+    return short_by > 0 ? short_by : 0;
 }
 
 static int avg_price(const Bot *b, int g) {
@@ -298,6 +315,24 @@ static int decide_trade(Bot *b, const World *w, int sel) {
         return act;
     }
 
+    // 3b. Buy what a job still needs. Only 43% of accepted contracts were ever
+    //     delivered, and nothing in the bot ever bought toward one -- it took
+    //     the job and then hoped the goods turned up in the hold by accident.
+    if (b->feats & BOT_CONTRACT) {
+        for (int g = 0; g < GOODS_COUNT; ++g) {
+            int need = contract_short(w, g);
+            if (need <= 0) continue;
+            if (!room || w->credits < nd->price[g]) continue;
+            // Only where it is not absurdly dear: a job bought at any price is
+            // a job that cost more than it pays.
+            int avg = avg_price(b, g);
+            if (avg > 0 && b->seen[g] >= 2 && nd->price[g] * 100 > avg * 115) continue;
+            int act = step_to(sel, g, BTN_A);
+            if (act == BTN_A) b->bought_here[g] = 1;
+            return act;
+        }
+    }
+
     // 4. Speculate: buy anything unusually cheap, if there is room and money to
     //    spare, to sell further east. This is the part a fixed script cannot do.
     if (room && cargo < world_cargo_cap(w) - 6 && hops > 1) {
@@ -356,7 +391,25 @@ static int score_node(const World *w, const Node *nd) {
     }
 }
 
-static int decide_map(const World *w, int map_sel) {
+// The best node reachable from a candidate, one hop further on. A player sees
+// the whole route drawn on screen; the bot saw exactly one link. Scoring the
+// chain is not clairvoyance -- every node's type and archetype is already
+// visible on the map -- it is just reading what is in front of it.
+static int lookahead_bonus(const World *w, int from_index) {
+    int next = w->sector + 1;
+    if (next >= SECTORS - 1) return 0;          // the Green Zone ends it anyway
+    uint8_t links = w->node[next][from_index].links;
+    int best = -100000;
+    for (int m = 0; m < NODES_PER; ++m) {
+        if (!(links & (1u << m))) continue;
+        if (!w->node[next + 1][m].active) continue;
+        int sc = score_node(w, &w->node[next + 1][m]);
+        if (sc > best) best = sc;
+    }
+    return best == -100000 ? 0 : best;
+}
+
+static int decide_map(const World *w, int map_sel, int feats) {
     // world_reachable, not a copy of it. The copy that used to be here omitted
     // the `sector >= SECTORS - 1` guard, so at the last sector it would have
     // read node[SECTORS][m] -- one row past the end of the array. Unreachable
@@ -369,6 +422,10 @@ static int decide_map(const World *w, int map_sel) {
     int best = 0, best_score = -100000;
     for (int i = 0; i < n; ++i) {
         int s = score_node(w, &w->node[w->sector + 1][cand[i]]);
+        // A good stop that leads nowhere is worth less than a fair one that
+        // opens onto a well. Discounted, because the second hop is a choice
+        // not yet made and the convoy may not take it.
+        if (feats & BOT_LOOKAHEAD) s += lookahead_bonus(w, cand[i]) / 2;
         if (s > best_score) { best_score = s; best = i; }
     }
     return step_to(map_sel, best, BTN_A);
@@ -442,6 +499,7 @@ static int decide_event(const Bot *b, const World *w) {
 void bot_init(Bot *b, int float_credits) {
     memset(b, 0, sizeof *b);
     b->float_credits = float_credits;
+    b->feats = BOT_ALL;
     b->at_sector = -1;
     b->at_index  = -1;
 }
@@ -493,7 +551,7 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
         }
         if (tab != TAB_MARKET) return BTN_RIGHT;
         return decide_trade(b, w, sel);
-    case ST_MAP:   return decide_map(w, map_sel);
+    case ST_MAP:   return decide_map(w, map_sel, b->feats);
     case ST_EVENT: return decide_event(b, w);
     default:       return -1;    // run is over
     }
