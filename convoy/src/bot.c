@@ -314,6 +314,7 @@ static int decide_trade(Bot *b, const World *w, int sel) {
 
         // Cargo under contract is not surplus, whatever the price says.
         surplus -= world_committed(w, g);
+        surplus -= world_errand_committed(w, g);
         if (surplus <= 0) continue;
 
         // Never sell a thing where it is made. They have plenty, they pay
@@ -639,6 +640,16 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;   // tabs cycle forward
             return BTN_A;
         }
+        // A favour from someone aboard. Worth taking when it can be kept: the
+        // reward is standing, which is what the third branch runs on, and
+        // failing one costs two steps of it and eventually the hand.
+        if (w->errand.state == ERR_OFFERED) {
+            if (tab != TAB_CREW) return BTN_RIGHT;
+            int keepable = (w->errand.qty == 0)
+                        || (world_cargo(w) + w->errand.qty < world_cargo_cap(w) - 4);
+            return keepable ? BTN_A : BTN_B;
+        }
+
         if ((b->feats & BOT_CONTRACT) && contract_worth_declining(w)) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;
             return BTN_B;

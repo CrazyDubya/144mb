@@ -183,7 +183,11 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
         } else if (gs->tab == TAB_GARAGE) {
             if (in->pressed[BTN_A]) world_buy_upgrade(w);
         } else if (gs->tab == TAB_CREW) {
-            if (in->pressed[BTN_A]) world_hire_crew(w);
+            // An offered errand takes precedence: it is the thing on screen.
+            if (w->errand.state == ERR_OFFERED) {
+                if (in->pressed[BTN_A]) world_errand_accept(w);
+                if (in->pressed[BTN_B]) world_errand_decline(w);
+            } else if (in->pressed[BTN_A]) world_hire_crew(w);
         }
         if (in->pressed[BTN_START]) { w->state = ST_MAP; gs->map_sel = 0; }
         break;

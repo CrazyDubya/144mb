@@ -1924,6 +1924,99 @@ bot is too conservative about hiring, and crew pricing still derives from a
 coverage model the third branch made obsolete. That repricing is P5's job and
 doing it here would have meant fitting a curve to a number about to move.
 
+## P3 — errands
+
+A personal favour from someone aboard, deliberately **not** a `Contract`. That
+structure is one-at-a-time, so an errand sharing it would disable the job board
+— the exact failure v4 spent a phase fixing — and its six fate counters would
+stop meaning anything.
+
+Two kinds. **ERR_VISIT** asks the convoy to stop at a settlement of a given
+trade before a sector: it costs no cargo, it costs *routing*, which is the
+resource the map contests and nothing else taxes. **ERR_CARRY** asks it to hold
+goods back, reusing the promised-cargo lock the contract board already has.
+
+Completion pays in **standing**, which is what the third branch runs on — a
+reward that compounds the mechanic rather than sitting beside it. Failure costs
+two steps of regard, and at −2 a hand gives notice and then walks at the next
+settlement. **The warning is the point**: losing the manoeuvre you have come to
+rely on should be something you saw coming and could have prevented.
+
+### Measured, with a hand forced aboard from the start
+
+| | result | target |
+|---|---:|---|
+| accepted | 81% | 40–80% |
+| completed | 48% | 45–75% |
+| walked out | 20% | 5–20% |
+
+Three of four in band. Offers ran at 1.24 per run before the rate was halved,
+and a hand asking twice in a run is a hand nagging.
+
+### The number that matters more
+
+Under **natural play**, only **7% of runs have a hand aboard at any point**. Of
+those, errands work: offered in 82%, accepted, completed 40%. So the errand
+machinery is sound and almost nobody sees it, because the convoy hires almost
+nobody — the same fact P2 recorded as unmet.
+
+Every criterion in this phase is gated behind hiring, and hiring is gated
+behind a crew price still derived from a coverage model the third branch made
+obsolete. That is P5, and it is now the only thing standing between the crew
+expansion and the player.
+
+## P3 — errands
+
+A personal favour from someone aboard, deliberately **not** a `Contract`. That
+structure is one-at-a-time, so an errand sharing it would disable the job board
+— the exact failure v4 spent a phase fixing — and its six fate counters would
+stop meaning anything.
+
+Two kinds. **ERR_VISIT** asks the convoy to stop at a settlement of a given
+trade before a sector: it costs no cargo, it costs *routing*, which is the
+resource the map contests and nothing else taxes. **ERR_CARRY** asks it to hold
+goods back, reusing the promised-cargo lock the contract board already has.
+
+Completion pays in **standing**, which is what the third branch runs on — a
+reward that compounds the mechanic rather than sitting beside it. Failure costs
+two steps of regard, and at −2 a hand gives notice and then walks at the next
+settlement. **The warning is the point**: losing the manoeuvre you have come to
+rely on should be something you saw coming and could have prevented.
+
+### Measured, with a hand forced aboard from the start
+
+| | result | target |
+|---|---:|---|
+| offered (runs) | 72% | 25–60% |
+| accepted | 86% | 40–80% |
+| completed | 43% | 45–75% |
+| walked out | 12% | 5–20% |
+
+Desertion is in band; the rest sit just outside it, and the offer rate is
+inflated by the measurement granting a hand from sector 0 — a hand that joins
+at sector 6 has half the settlements to be asked at.
+
+**A sixth stale-binary incident, and the worst of them.** A `sed` broke the
+offer condition, the build failed, the shell's `&&` chain stopped — and the
+analysis script then read a results file left over from the *previous* build
+and reported numbers with total confidence. The reduction being measured had
+never been applied. Caught only because the sanitizer run, which does not use
+`&&`, printed a compile error for a file the measurements had apparently just
+been taken from. **Read the file the measurement wrote, or delete it first:**
+these runs now `rm` their output before generating it.
+
+### The number that matters more
+
+Under **natural play**, only **7% of runs have a hand aboard at any point**. Of
+those, errands work: offered in 82%, accepted, completed 40%. So the errand
+machinery is sound and almost nobody sees it, because the convoy hires almost
+nobody — the same fact P2 recorded as unmet.
+
+Every criterion in this phase is gated behind hiring, and hiring is gated
+behind a crew price still derived from a coverage model the third branch made
+obsolete. That is P5, and it is now the only thing standing between the crew
+expansion and the player.
+
 ---
 
 ## Bugs found, and what found them

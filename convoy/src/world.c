@@ -604,6 +604,97 @@ void world_contract_decline(World *w) {
     INSTR(w->in.c_declined++);
 }
 
+void world_errand_accept(World *w) {
+    if (w->errand.state != ERR_OFFERED) return;
+    w->errand.state = (w->errand.qty > 0) ? ERR_CARRY : ERR_VISIT;
+    INSTR(w->in.err_taken++);
+}
+
+void world_errand_decline(World *w) {
+    if (w->errand.state != ERR_OFFERED) return;
+    w->errand.state = ERR_NONE;
+}
+
+// Cargo promised to a hand is not yours to sell, the same as contract cargo.
+int world_errand_committed(const World *w, int good) {
+    if (w->errand.state != ERR_CARRY || w->errand.arg != good) return 0;
+    return w->errand.qty;
+}
+
+// Offers, completions and the cost of letting someone down. Runs on arrival at
+// a settlement, alongside the contract board.
+static void errand_tick(World *w) {
+    Errand *e = &w->errand;
+    const Node *nd = &w->node[w->sector][w->index];
+
+    // Done? A visit is satisfied by standing in the right kind of place; a
+    // carry by still holding what was promised when the sector comes up.
+    if (e->state == ERR_VISIT && nd->archetype == e->arg) {
+        e->state = ERR_DONE;
+        INSTR(w->in.err_done++);
+        // Paid in standing, which is what the third branch runs on.
+        int who_c = CHAR_OF_ROLE[e->who];
+        if (w->regard[who_c] < 3) w->regard[who_c]++;
+    } else if (e->state == ERR_CARRY && w->sector >= e->by_sector
+               && w->held[e->arg] >= e->qty) {
+        e->state = ERR_DONE;
+        INSTR(w->in.err_done++);
+        int who_c = CHAR_OF_ROLE[e->who];
+        if (w->regard[who_c] < 3) w->regard[who_c]++;
+    }
+
+    // Failed? Carried past the point it could have been done.
+    if ((e->state == ERR_VISIT || e->state == ERR_CARRY)
+        && w->sector > e->by_sector) {
+        int who_c = CHAR_OF_ROLE[e->who];
+        w->regard[who_c] -= 2;
+        if (w->regard[who_c] < -3) w->regard[who_c] = -3;
+        e->state = ERR_NONE;
+        INSTR(w->in.err_failed++);
+    }
+
+    // A hand who has had enough gives notice, then goes. The warning is the
+    // point: losing the manoeuvre you have come to rely on should be something
+    // you saw coming and could have fixed.
+    for (int k = 0; k < CREW_COUNT; ++k) {
+        if (!w->crew[k]) continue;
+        int who_c = CHAR_OF_ROLE[k];
+        if (w->regard[who_c] <= -2) {
+            if (!(w->warned & (1u << k))) { w->warned |= (uint8_t)(1u << k); continue; }
+            w->crew[k] = 0;
+            w->warned &= (uint8_t)~(1u << k);
+            INSTR(w->in.crew_left++);
+            if (w->errand.who == k && (w->errand.state == ERR_VISIT
+                                       || w->errand.state == ERR_CARRY))
+                w->errand.state = ERR_NONE;
+        } else if (w->regard[who_c] >= 0) {
+            w->warned &= (uint8_t)~(1u << k);
+        }
+    }
+
+    if (e->state != ERR_NONE) return;
+
+    // Someone aboard, on good terms, with road left to do it in.
+    int cand[CREW_COUNT], n = 0;
+    // Anyone aboard. Requiring regard >= 1 as well gated on goodwill they have
+    // already demonstrated by agreeing to drive, and errands fired in 3% of
+    // runs against a 25-60% target.
+    for (int k = 0; k < CREW_COUNT; ++k) if (w->crew[k]) cand[n++] = k;
+    int roll = rng_range(&w->rng_people, 0, 99);
+    int pick = rng_range(&w->rng_people, 0, CREW_COUNT - 1);
+    int kind = rng_range(&w->rng_people, 0, 1);
+    int arch = rng_range(&w->rng_people, 0, ARCH_COUNT - 2);
+    int good = rng_range(&w->rng_people, 0, GOODS_COUNT - 1);
+    if (!n || w->sector > SECTORS - 5 || roll >= 18) return;
+
+    e->who   = (uint8_t)cand[pick % n];
+    e->state = ERR_OFFERED;
+    if (kind == 0) { e->arg = (uint8_t)arch; e->qty = 0; }
+    else           { e->arg = (uint8_t)good; e->qty = 2; }
+    e->by_sector = (uint8_t)(w->sector + 5);
+    INSTR(w->in.err_offered++);
+}
+
 // Called on arrival at a settlement: pay out a delivery if it can be made,
 // then post a new offer if the board is empty.
 static void contract_tick(World *w) {
@@ -956,7 +1047,8 @@ void world_travel(World *w, int next_index) {
     switch (nd->type) {
     case NODE_GREEN:  w->state = ST_WON;   break;
     case NODE_SETTLE:
-        w->state = ST_TRADE; observe_market(w); contract_tick(w); roll_offers(w);
+        w->state = ST_TRADE; observe_market(w); contract_tick(w);
+        errand_tick(w); roll_offers(w);
         // Someone is waiting for you in the market. Encounters used to live
         // only on encounter nodes, which put the story in direct competition
         // with trading: the profitable route is the one through settlements,
@@ -1020,7 +1112,9 @@ void world_sell(World *w, int good) {
     if (nd->type != NODE_SETTLE) return;
     if (w->held[good] < 1) return;
     // Cargo promised to a contract is not yours to sell.
-    if (w->held[good] - world_committed(w, good) < 1) return;
+    // Promised cargo is not yours to sell -- to a client or to a friend.
+    if (w->held[good] - world_committed(w, good)
+                      - world_errand_committed(w, good) < 1) return;
 
     int p = nd->price[good];
     int take = world_sell_price(w, good);

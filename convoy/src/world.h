@@ -120,6 +120,23 @@ typedef struct {
 
 enum { CONTRACT_NONE, CONTRACT_OFFERED, CONTRACT_TAKEN };
 
+// A personal errand from someone aboard.
+//
+// Deliberately not a Contract. That structure is one-at-a-time, so an errand
+// sharing it would disable the job board -- the exact failure v4 spent a phase
+// fixing -- and its six fate counters would stop meaning anything. An errand is
+// a commitment of *route*, which is the resource the map contests and nothing
+// else taxes, or of hold space held under a promise.
+enum { ERR_NONE, ERR_OFFERED, ERR_VISIT, ERR_CARRY, ERR_DONE };
+
+typedef struct {
+    uint8_t state;      // ERR_*
+    uint8_t who;        // CREW_* whose errand it is
+    uint8_t arg;        // ARCH_* to visit, or the good to carry
+    uint8_t qty;        // units to carry
+    uint8_t by_sector;  // do it before arriving here
+} Errand;
+
 // People you meet more than once. Regard shifts with how you treat them and
 // changes what they ask for next time, so a character is a mechanic rather
 // than a portrait with a line of dialogue attached.
@@ -286,6 +303,8 @@ typedef struct {
 
     Event    event;
     Contract job;      // one at a time: two would just be arithmetic
+    Errand   errand;   // likewise, and never more than one across all hands
+    uint8_t  warned;   // a hand has said they are thinking of leaving
     int      job_paid; // reward banked this stop, for the UI to celebrate
 
 #ifdef CONVOY_INSTRUMENT
@@ -315,6 +334,9 @@ int  world_price_bias(const World *w, int good);
 int  world_sell_price(const World *w, int good);
 void world_contract_accept(World *w);
 void world_contract_decline(World *w);
+void world_errand_accept(World *w);
+void world_errand_decline(World *w);
+int  world_errand_committed(const World *w, int good);
 // Units of `good` promised to an accepted contract, so nothing sells them out
 // from under the job.
 int  world_committed (const World *w, int good);

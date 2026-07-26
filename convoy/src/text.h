@@ -240,6 +240,13 @@
 #define T_JOB_ACCEPT    "ACCEPT THE JOB"
 #define T_JOB_DECLINE   "TURN IT DOWN"
 
+#define T_ERR_ASKS      "ASKS A FAVOUR"
+#define T_ERR_VISIT     "STOP AT A"
+#define T_ERR_CARRY     "HOLD BACK"
+#define T_ERR_BY        "BEFORE SECTOR"
+#define T_ERR_DOING     "YOU PROMISED"
+#define T_ERR_QUIT      "IS TALKING ABOUT LEAVING"
+
 // The third branch. One line per kind would be better writing and fourteen
 // more strings; a single verb per role reads well enough and keeps the table
 // to five entries.
