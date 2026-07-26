@@ -44,9 +44,38 @@ const char *const ARCH_DESC[6] = {
     T_ARCH_CLINIC_D, T_ARCH_SCRAPYARD_D, T_ARCH_GENERAL_D
 };
 
+// Widest tab strip any frame has drawn this run, for the harness to check.
+// Harness-only: the shipped game never asks and never pays for it.
+#ifdef CONVOY_INSTRUMENT
+int ui_strip_worst = 0;     // widest strip drawn this run
+int ui_strip_limit = 0;     // where the "< >" hint starts
+static void strip_probe(int right, int limit) {
+    if (right > ui_strip_worst) ui_strip_worst = right;
+    ui_strip_limit = limit;
+}
+#define UI_PROBE(r, l) strip_probe((r), (l))
+#else
+#define UI_PROBE(r, l) do { (void)(r); (void)(l); } while (0)
+#endif
+
 static const char *const TAB_NAME[TAB_COUNT] = {
-    T_TAB_MARKET, T_TAB_GARAGE, T_TAB_CREW, T_TAB_CONTRACTS, T_TAB_JOURNAL
+    T_TAB_MARKET, 0 /* the works, named per archetype */, T_TAB_CREW,
+    T_TAB_CONTRACTS, T_TAB_JOURNAL
 };
+
+const char *const WORKS_NAME[6] = {
+    T_WORKS_WELL, T_WORKS_REFINERY, T_WORKS_ARMOURY,
+    T_WORKS_CLINIC, T_WORKS_SCRAPYARD, T_WORKS_GENERAL,
+};
+
+// What this location is called here. Only the works varies by town, but the
+// lookup is by tab so a later phase can name the situation slot the same way
+// without every call site learning about a second special case.
+static const char *tab_name(const GameState *gs, int t) {
+    if (t == TAB_GARAGE)
+        return WORKS_NAME[gs->w.node[gs->w.sector][gs->w.index].archetype];
+    return TAB_NAME[t];
+}
 
 // Who is who, and what they say. Three lines each: a first meeting, a warm
 // return and a cold one, picked by the regard the player has earned.
@@ -227,16 +256,27 @@ static int draw_tabs(Framebuffer *fb, const GameState *gs, int x, int y, int pw)
     int tx = x + 10;
     for (int t = 0; t < TAB_COUNT; ++t) {
         if (!ui_tab_live(gs, t)) continue;
-        int tw = text_w(TAB_NAME[t], 1) + 16;
+        int tw = text_w(tab_name(gs, t), 1) + 16;
         int on = (t == gs->tab);
         fill_rect(fb, tx, y, tw, 20, PALETTE[on ? C_BORDER : C_INK]);
         if (on) draw_rect(fb, tx, y, tw, 20, PALETTE[C_BONE]);
-        draw_text(fb, tx + 8, y + 6, TAB_NAME[t], 1,
+        draw_text(fb, tx + 8, y + 6, tab_name(gs, t), 1,
                   PALETTE[on ? C_BONE : C_DIM]);
         tx += tw + 4;
     }
     // Which keys move between them.
     draw_text(fb, x + pw - 60, y + 6, "< >", 1, PALETTE[C_DIM]);
+
+    // How wide the strip actually got, measured rather than promised.
+    //
+    // The locations are named per town and a later phase adds a fifth for the
+    // situation, so the worst case is not something anyone can eyeball from the
+    // string table -- it depends on which archetype and which condition a seed
+    // rolled. The harness reads this and fails the sweep if any frame runs the
+    // strip into the "< >" hint at x+pw-60, which is the collision that would
+    // otherwise be found by a person looking at the one screenshot in a
+    // thousand where a QUARANTINE happened to sit next to a PUMP HOUSE.
+    UI_PROBE(tx - x, pw - 60);
     return 26;
 }
 

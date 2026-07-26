@@ -261,10 +261,29 @@
 // Settlement tabs
 // T_MARKET and T_END_AGAIN were removed: exact duplicates of T_TAB_MARKET
 // and T_AGAIN that nothing referenced.
-#define T_TAB_MARKET    "MARKET"
-#define T_TAB_GARAGE    "GARAGE"
-#define T_TAB_CREW      "CREW"
-#define T_TAB_CONTRACTS "CONTRACTS"
+// The tab strip is the town's locations, so these are places and not menus.
+// A player walks from the stalls to the room where people drink; they do not
+// switch to the CREW screen.
+//
+// Ten characters is the cap, and it is not a style rule. draw_tabs lays out
+// from x+10 at 6px a character plus 16px of padding and 4px gaps, and the
+// "< >" hint sits at x+pw-60 -- 386px in. Five locations at ten characters
+// each is 330px and fits; a sixth, or one long name, runs through the hint.
+// There is an assertion for this rather than a promise.
+#define T_TAB_MARKET    "STALLS"
+#define T_TAB_CREW      "ROOM"
+#define T_TAB_CONTRACTS "BOARD"
+
+// The garage is not a garage. It is whatever this place does for a living,
+// which is also where its trade will live from P3 -- so a scrapyard's forecourt
+// is the breakers' and a clinic's is the ward. "The local mechanic has
+// something out front" is better writing than GARAGE, and it costs one table.
+#define T_WORKS_WELL      "PUMP HOUSE"
+#define T_WORKS_REFINERY  "THE STILLS"
+#define T_WORKS_ARMOURY   "GUN LINE"
+#define T_WORKS_CLINIC    "THE WARD"
+#define T_WORKS_SCRAPYARD "BREAKERS"
+#define T_WORKS_GENERAL   "FORECOURT"
 
 // Contracts
 #define T_NO_WORK       "NO WORK POSTED HERE"
@@ -400,6 +419,7 @@
 #define T_TOWN_B14 "SIDING"
 #define T_TOWN_B15 "END"
 
+extern const char *const WORKS_NAME[6];
 extern const char *const TOWN_A[16];
 extern const char *const TOWN_B[16];
 extern const char *const GOOD_NAME[5];

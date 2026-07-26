@@ -9,6 +9,7 @@
 // with no compression -- so there is no libz dependency.
 #include "game.h"
 #include "world.h"
+#include "render.h"   // -Y: the text-on-text overlap probe
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -298,6 +299,107 @@ static int exploit_probe(void) {
     return 0;
 }
 
+// ---------------------------------------------------------------- ui probe
+// -Y drives the render.c text-box recorder. Every frame the bot produces is
+// checked for text drawn on top of text; the offending pairs are printed with
+// their rectangles and their strings, and the sweep exits non-zero, so this
+// works as a gate rather than as another report nobody reads.
+//
+// Identical collisions repeat on every frame the screen is up and on every
+// seed that reaches it, so a collision is reported once, by its two strings
+// and their positions, with a count of how many frames it appeared in.
+#ifdef CONVOY_INSTRUMENT
+typedef struct {
+    TextBox  a, b;
+    uint32_t seed;      // where it was first seen
+    int      step;
+    long     frames;    // how many frames it appeared in, across the sweep
+    int      area;      // overlapping pixels; picks the "worst" for the summary
+} Collision;
+
+enum { PROBE_UNIQUE = 128 };
+static Collision probe_uniq[PROBE_UNIQUE];
+static int       probe_nuniq;
+static int       probe_over;      // -Y: check every frame
+static long      probe_frames;    // frames containing at least one collision
+static long      probe_hits;      // collisions seen, counting repeats
+static uint32_t  probe_seed;
+static int       probe_step;
+
+static int probe_same(const TextBox *p, const TextBox *q) {
+    return p->x == q->x && p->y == q->y && p->w == q->w && p->h == q->h &&
+           !strcmp(p->s, q->s);
+}
+
+static void probe_note(const TextBox *a, const TextBox *b) {
+    int x0 = a->x > b->x ? a->x : b->x;
+    int y0 = a->y > b->y ? a->y : b->y;
+    int x1 = a->x + a->w < b->x + b->w ? a->x + a->w : b->x + b->w;
+    int y1 = a->y + a->h < b->y + b->h ? a->y + a->h : b->y + b->h;
+    int area = (x1 - x0) * (y1 - y0);
+
+    for (int i = 0; i < probe_nuniq; ++i) {
+        if (probe_same(&probe_uniq[i].a, a) && probe_same(&probe_uniq[i].b, b)) {
+            ++probe_uniq[i].frames;
+            return;
+        }
+    }
+    if (probe_nuniq >= PROBE_UNIQUE) return;
+    Collision *c = &probe_uniq[probe_nuniq++];
+    c->a = *a; c->b = *b;
+    c->seed = probe_seed; c->step = probe_step;
+    c->frames = 1; c->area = area;
+}
+
+static void probe_check(void) {
+    int n = render_probe_overlaps();
+    if (n <= 0) return;
+    ++probe_frames;
+    probe_hits += n;
+    TextBox a, b;
+    for (int i = 0; i < n; ++i)
+        if (render_probe_pair(i, &a, &b)) probe_note(&a, &b);
+}
+
+static int probe_report(void) {
+    if (!probe_nuniq) {
+        printf("OVERLAP frames=0  no text-on-text collisions found\n");
+        return 0;
+    }
+    int worst = 0;
+    for (int i = 1; i < probe_nuniq; ++i)
+        if (probe_uniq[i].area > probe_uniq[worst].area) worst = i;
+
+    for (int i = 0; i < probe_nuniq; ++i) {
+        const Collision *c = &probe_uniq[i];
+        printf("OVERLAP seed=%u step=%d frames=%ld  \"%s\" [%d,%d %dx%d]"
+               "  x  \"%s\" [%d,%d %dx%d]\n",
+               c->seed, c->step, c->frames,
+               c->a.s, c->a.x, c->a.y, c->a.w, c->a.h,
+               c->b.s, c->b.x, c->b.y, c->b.w, c->b.h);
+    }
+    printf("OVERLAP frames=%ld worst=\"%s\" x \"%s\"\n",
+           probe_frames, probe_uniq[worst].a.s, probe_uniq[worst].b.s);
+    printf("OVERLAP distinct=%d total_hits=%ld\n", probe_nuniq, probe_hits);
+    return 1;
+}
+#endif
+
+// Every frame the game draws goes through here so the probe can bracket it.
+// With -Y off this is game_update and one predictable branch; with the
+// instrumentation compiled out it is game_update and nothing at all.
+static void frame_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
+#ifdef CONVOY_INSTRUMENT
+    if (probe_over) {
+        render_probe_reset();
+        game_update(mem, in, fb);
+        probe_check();
+        return;
+    }
+#endif
+    game_update(mem, in, fb);
+}
+
 // ---------------------------------------------------------------- one run
 typedef struct {
     int   bot_float, refuse_all, journal_at, end_shot, every, verbose;
@@ -337,6 +439,7 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
     res->seed = seed;
     res->journal_tab = -1;
     res->trace = 2166136261u;
+    INSTR(probe_seed = seed; probe_step = 0);
 
     // The daily run had no coverage at all: nothing in the harness ever called
     // game_daily or touched the title's second row, so both the date-derived
@@ -347,9 +450,9 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         for (int k = 0; k < 3; ++k) {
             memset(&in, 0, sizeof in);
             in.down[keys[k]] = in.pressed[keys[k]] = 1;
-            game_update(mem, &in, fb);
+            frame_update(mem, &in, fb);
             memset(&in, 0, sizeof in);
-            game_update(mem, &in, fb);
+            frame_update(mem, &in, fb);
         }
     }
 
@@ -360,9 +463,9 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         int btn = (n > 0) ? BTN_RIGHT : BTN_LEFT;
         memset(&in, 0, sizeof in);
         in.down[btn] = in.pressed[btn] = 1;
-        game_update(mem, &in, fb);
+        frame_update(mem, &in, fb);
         memset(&in, 0, sizeof in);
-        game_update(mem, &in, fb);
+        frame_update(mem, &in, fb);
     }
 
     // Two agents, one loop. The reference agent is the frozen v4-entry bot:
@@ -376,6 +479,7 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
     int steps = 0;
     const int LIMIT = 4000;      // generous; a run is ~60 decisions
     while (steps++ < LIMIT) {
+        INSTR(probe_step = steps);
         const World *w = game_world(mem);
         if (w->state == ST_DEAD || w->state == ST_WON) break;
 
@@ -436,9 +540,9 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
 
         memset(&in, 0, sizeof in);
         in.down[btn] = in.pressed[btn] = 1;
-        game_update(mem, &in, fb);
+        frame_update(mem, &in, fb);
         memset(&in, 0, sizeof in);
-        game_update(mem, &in, fb);
+        frame_update(mem, &in, fb);
 
         if (o->trace_hash) {
             res->trace = fnv(&res->trace, 0, state_hash(game_world(mem)));
@@ -460,9 +564,9 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
                 if (t == o->shot_tab) break;
                 memset(&in, 0, sizeof in);
                 in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
-                game_update(mem, &in, fb);
+                frame_update(mem, &in, fb);
                 memset(&in, 0, sizeof in);
-                game_update(mem, &in, fb);
+                frame_update(mem, &in, fb);
             }
             int t = 0;
             game_ui(mem, NULL, NULL, &t, NULL);
@@ -481,9 +585,9 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
                 if (t == TAB_JOURNAL) break;
                 memset(&in, 0, sizeof in);
                 in.down[BTN_RIGHT] = in.pressed[BTN_RIGHT] = 1;
-                game_update(mem, &in, fb);
+                frame_update(mem, &in, fb);
                 memset(&in, 0, sizeof in);
-                game_update(mem, &in, fb);
+                frame_update(mem, &in, fb);
             }
             game_ui(mem, NULL, NULL, &res->journal_tab, NULL);
             char path[512];
@@ -506,7 +610,7 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         for (int k = 0; k < 240; ++k) {
             memset(&in, 0, sizeof in);
             if ((k % 30) == 0) in.down[BTN_A] = in.pressed[BTN_A] = 1;
-            game_update(mem, &in, fb);
+            frame_update(mem, &in, fb);
         }
         char path[512];
         snprintf(path, sizeof path, "%s/end.png", o->outdir);
@@ -742,6 +846,12 @@ int main(int argc, char **argv) {
     int         kinds = 0;            // -K reports per-encounter-kind behaviour
     int         shot_tab = -1;        // -S n photographs the first frame of tab n
     int         quick = 0;            // -Q shrinks the drawn area for sweeps
+    // -Y runs a bot sweep and reports every frame in which text was drawn on
+    // top of text. It needs the full 640x480 framebuffer: -Q shrinks the
+    // logical size to 32x32, which clips away almost every draw, so the probe
+    // would see nothing and report a clean bill of health. -Q is therefore
+    // refused below rather than silently honoured.
+    int         overlap = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-t") && i + 1 < argc) ticks = atoi(argv[++i]);
@@ -769,6 +879,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-K")) kinds = 1;
         else if (!strcmp(argv[i], "-S") && i + 1 < argc) shot_tab = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-Q")) quick = 1;
+        else if (!strcmp(argv[i], "-Y")) overlap = 1;
     }
 
     GameMemory mem = {0};
@@ -793,9 +904,30 @@ int main(int argc, char **argv) {
         fb.w = 32; fb.h = 32;
     }
 
+    // -Y: full-size framebuffer, no PNGs, and a sweep by default. Turning the
+    // probe on here rather than inside run_one keeps every other mode -- and
+    // every other sweep -- on exactly the path it was on before.
+    if (overlap) {
+#ifdef CONVOY_INSTRUMENT
+        if (quick) {
+            fprintf(stderr, "-Y needs the full framebuffer; -Q clips text away "
+                            "and the probe would report a clean screen\n");
+            return 1;
+        }
+        fb.w = FB_W; fb.h = FB_H;
+        every = 0;                       // the probe reads boxes, not pixels
+        probe_over = 1;
+        render_probe_enable(1);
+        if (sweep_n <= 0 && !bot_mode) sweep_n = 20;
+#else
+        fprintf(stderr, "-Y needs CONVOY_INSTRUMENT\n");
+        return 1;
+#endif
+    }
+
     if (exploit) return exploit_probe();
 
-    RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
+    RunOpts opt ={ bot_float, refuse_all, journal_at, end_shot,
                     every, verbose, outdir, determinism, use_ref, daily,
                     force_upg, force_crew, feats, shot_tab };
 
@@ -849,6 +981,25 @@ int main(int argc, char **argv) {
         }
 
         if (sweep_n > 0) {
+#ifdef CONVOY_INSTRUMENT
+    // The tab strip is named per town and gains a fifth location in a later
+    // phase, so its worst case depends on which archetype and condition a seed
+    // rolled -- not on anything readable from the string table. Measured over
+    // every frame of the sweep and failed here, because the alternative is
+    // someone noticing it in the one screenshot in a thousand where a long
+    // condition name happened to sit beside a long works name.
+    {
+        extern int ui_strip_worst, ui_strip_limit;
+        printf("STRIP worst=%d limit=%d %s\n", ui_strip_worst, ui_strip_limit,
+               (ui_strip_limit && ui_strip_worst > ui_strip_limit) ? "OVERRUN" : "ok");
+        if (ui_strip_limit && ui_strip_worst > ui_strip_limit) {
+            fprintf(stderr, "tab strip overruns the hint: %d > %d\n",
+                    ui_strip_worst, ui_strip_limit);
+            return 6;
+        }
+    }
+#endif
+
             printf("SWEEP n=%d diff=%d won=%d dead=%d stalled=%d win_pct=%d\n",
                    runs, diff, won, dead, stalled, runs ? won * 100 / runs : 0);
             if (kinds) INSTR(kind_report(kt, runs); role_report(&rt);
@@ -869,6 +1020,10 @@ int main(int argc, char **argv) {
             snprintf(path, sizeof path, "%s/bot.wav", outdir);
             write_wav(path, &mem, wav_secs);
         }
+#ifdef CONVOY_INSTRUMENT
+        // Non-zero on any collision, so -Y is a gate and not a report.
+        if (overlap && probe_report()) return 7;
+#endif
         return 0;
     }
 

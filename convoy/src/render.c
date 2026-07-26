@@ -366,6 +366,70 @@ void draw_line(Framebuffer *fb, int x0, int y0, int x1, int y1, uint32_t rgb) {
     }
 }
 
+// ---------------------------------------------------------------- ui probe
+// See render.h for why this exists. Harness only.
+#ifdef CONVOY_INSTRUMENT
+enum { PROBE_MAX_BOX = 256, PROBE_MAX_PAIR = 64 };
+
+static TextBox probe_box[PROBE_MAX_BOX];
+static TextBox probe_a[PROBE_MAX_PAIR], probe_b[PROBE_MAX_PAIR];
+static int     probe_nbox, probe_npair, probe_on;
+
+void render_probe_enable(int on) { probe_on = on; }
+void render_probe_reset (void)   { probe_nbox = 0; probe_npair = 0; }
+int  render_probe_overlaps(void) { return probe_npair; }
+int  render_probe_boxes (void)   { return probe_nbox; }
+
+int render_probe_pair(int i, TextBox *a, TextBox *b) {
+    if (i < 0 || i >= probe_npair || i >= PROBE_MAX_PAIR) return 0;
+    *a = probe_a[i];
+    *b = probe_b[i];
+    return 1;
+}
+
+static void probe_label(char *dst, const char *s) {
+    int i = 0;
+    if (s) for (; s[i] && i < (int)sizeof probe_box[0].s - 1; ++i) dst[i] = s[i];
+    dst[i] = '\0';
+}
+
+// Half-open rectangles, so two runs of text laid out edge to edge -- which is
+// what `tx += draw_text(...)` produces all over the UI -- touch without
+// colliding. Only a real overlap of drawn area is reported.
+static int probe_hit(const TextBox *a, const TextBox *b) {
+    return a->x < b->x + b->w && b->x < a->x + a->w &&
+           a->y < b->y + b->h && b->y < a->y + a->h;
+}
+
+// Records one drawn box, clipped to the framebuffer: text scrolled off the
+// edge is not on screen and cannot collide with anything that is.
+static void probe_add(const Framebuffer *fb, int x, int y, int w, int h,
+                      const char *s) {
+    if (!probe_on || w <= 0 || h <= 0) return;
+
+    int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > fb->w) x1 = fb->w;
+    if (y1 > fb->h) y1 = fb->h;
+    if (x1 <= x0 || y1 <= y0) return;
+
+    TextBox nb;
+    nb.x = x0; nb.y = y0; nb.w = x1 - x0; nb.h = y1 - y0;
+    probe_label(nb.s, s);
+
+    for (int i = 0; i < probe_nbox; ++i) {
+        if (!probe_hit(&nb, &probe_box[i])) continue;
+        if (probe_npair < PROBE_MAX_PAIR) {
+            probe_a[probe_npair] = probe_box[i];
+            probe_b[probe_npair] = nb;
+        }
+        ++probe_npair;
+    }
+    if (probe_nbox < PROBE_MAX_BOX) probe_box[probe_nbox++] = nb;
+}
+#endif
+
 // ---------------------------------------------------------------- text
 int glyph_w(int scale) { return 6 * scale; }   // 5px glyph + 1px gap
 
@@ -389,6 +453,9 @@ int number_w(int value, int scale) {
 
 int draw_number(Framebuffer *fb, int x, int y, int value, int scale, uint32_t rgb) {
     int start = x;
+#ifdef CONVOY_INSTRUMENT
+    int probe_val = value;
+#endif
     if (value < 0) {
         draw_glyph(fb, x, y, G_MINUS, scale, rgb);
         x += glyph_w(scale);
@@ -400,6 +467,22 @@ int draw_number(Framebuffer *fb, int x, int y, int value, int scale, uint32_t rg
         draw_glyph(fb, x, y, G_0 + digits[n], scale, rgb);
         x += glyph_w(scale);
     }
+#ifdef CONVOY_INSTRUMENT
+    {
+        // The font's ink lives in rows 1..6 of the 8-row cell, so the box is
+        // the ink and not the leading: two lines 15px apart at scale 1 do not
+        // register as a collision, which they would if the cell were used.
+        char lab[24];
+        int  li = 0, v2 = probe_val, neg = (v2 < 0);
+        char tmp[12]; int tn = 0;
+        if (neg) v2 = -v2;
+        do { tmp[tn++] = (char)('0' + v2 % 10); v2 /= 10; } while (v2 && tn < 11);
+        if (neg) lab[li++] = '-';
+        while (tn--) lab[li++] = tmp[tn];
+        lab[li] = '\0';
+        probe_add(fb, start, y + scale, x - start, 6 * scale, lab);
+    }
+#endif
     return x - start;
 }
 
@@ -435,11 +518,23 @@ int text_w(const char *s, int scale) {
 
 int draw_text(Framebuffer *fb, int x, int y, const char *s, int scale, uint32_t rgb) {
     int start = x;
+#ifdef CONVOY_INSTRUMENT
+    const char *probe_s = s;
+    int probe_first = -1, probe_last = -1;   // ink extent, so leading and
+#endif                                       // trailing spaces do not collide
     for (; *s; ++s) {
         int g = glyph_for(*s);
         if (g >= 0) draw_glyph(fb, x, y, g, scale, rgb);
+#ifdef CONVOY_INSTRUMENT
+        if (g >= 0) { if (probe_first < 0) probe_first = x; probe_last = x; }
+#endif
         x += glyph_w(scale);
     }
+#ifdef CONVOY_INSTRUMENT
+    if (probe_first >= 0)
+        probe_add(fb, probe_first, y + scale,
+                  probe_last + glyph_w(scale) - probe_first, 6 * scale, probe_s);
+#endif
     return x - start;
 }
 
@@ -477,6 +572,25 @@ int draw_key(Framebuffer *fb, int x, int y, int glyph, int scale) {
     fill_rect(fb, x, y, w, h, PALETTE[C_INK]);
     draw_rect(fb, x, y, w, h, PALETTE[C_BONE]);
     draw_glyph(fb, x + 3, y + 3, glyph, scale, PALETTE[C_BONE]);
+#ifdef CONVOY_INSTRUMENT
+    // The whole keycap, not just the symbol: the cap is opaque, so anything
+    // under it is hidden by it.
+    {
+        static const char *const KEYNAME[] = {
+            "<KEY 0>", "<KEY 1>", "<KEY 2>", "<KEY 3>", "<KEY 4>",
+            "<KEY 5>", "<KEY 6>", "<KEY 7>", "<KEY 8>", "<KEY 9>"
+        };
+        const char *lab = "<KEY>";
+        if (glyph >= G_0 && glyph <= G_9)   lab = KEYNAME[glyph - G_0];
+        else if (glyph == G_KEY_Z)          lab = "<KEY Z>";
+        else if (glyph == G_ENTER)          lab = "<KEY ENTER>";
+        else if (glyph == G_UP)             lab = "<KEY UP>";
+        else if (glyph == G_DOWN)           lab = "<KEY DOWN>";
+        else if (glyph == G_RIGHT)          lab = "<KEY RIGHT>";
+        else if (glyph == G_X)              lab = "<KEY X>";
+        probe_add(fb, x, y, w, h, lab);
+    }
+#endif
     return w;
 }
 

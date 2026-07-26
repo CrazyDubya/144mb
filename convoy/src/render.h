@@ -91,4 +91,39 @@ void draw_trend (Framebuffer *fb, int x, int y, int dir, int scale);
 // like everything else here it is generated rather than stored.
 void draw_portrait(Framebuffer *fb, int x, int y, int s, uint32_t seed, int mood);
 
+// ---------------------------------------------------------------- ui probe
+// Text-on-text collision detector. Three overlapping-UI bugs shipped in a
+// single session and every one was found by a human squinting at a screenshot:
+// a stock bar through the word SELL, a warning line at a fixed y through a
+// roster that grows with the crew, and a scale-2 heading through a column
+// label that had only ever been clear because the old heading was shorter.
+// None of them are visible in the source, because in every case the two draws
+// live in different functions and only collide for certain data.
+//
+// So the harness looks instead. Every text draw records its ink box; a box
+// that intersects one already drawn this frame is a collision. Only text
+// against text: drawing text on a filled panel, a scrim or a selection
+// highlight is normal and correct, so fill_rect, draw_rect, draw_panel,
+// fill_scrim and the icons are deliberately not recorded.
+//
+// Like Metrics in world.h this is compiled out of the shipped executable
+// entirely -- the contest binary should not carry its own test rig, and the
+// exe stays byte-identical whether or not the harness is instrumented.
+#ifdef CONVOY_INSTRUMENT
+typedef struct {
+    int  x, y, w, h;    // ink box, clipped to the framebuffer
+    char s[24];         // what was drawn, truncated
+} TextBox;
+
+// Recording is off until asked for, so an ordinary sweep pays one predictable
+// branch per text draw and nothing else.
+void render_probe_enable(int on);
+void render_probe_reset (void);            // call at the start of every frame
+int  render_probe_overlaps(void);          // colliding pairs this frame
+int  render_probe_boxes (void);            // text boxes recorded this frame
+// Reads back pair i (0..overlaps-1). Returns 0 if i is out of range or the
+// pair was dropped because the store was full.
+int  render_probe_pair  (int i, TextBox *a, TextBox *b);
+#endif
+
 #endif

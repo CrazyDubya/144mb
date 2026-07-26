@@ -2395,3 +2395,43 @@ arithmetic, which in every case said the layout was fine.
 
 The location strip — folding the tabs into five town locations, moving the
 journal to the right column, and the strip-width assertion — is not done.
+
+---
+
+# v6 P2b — the tab strip becomes the town
+
+MARKET / GARAGE / CREW / CONTRACTS were menus. They are now places: STALLS,
+the works, ROOM, BOARD. The works is named per archetype — a refinery's is THE
+STILLS, a clinic's THE WARD, a scrapyard's BREAKERS — because "the local
+mechanic has something out front" is better writing than GARAGE and it costs
+one table.
+
+Reused `ui_tab_live` rather than building a second navigation layer. That
+function already encodes "this place exists only when it has something in it",
+which is exactly the requirement, and `cycle_tab` already skips dead entries.
+A nested layer would also have multiplied the one failure this codebase already
+shipped from a binding with no affordance.
+
+## The strip is measured, not promised
+
+`draw_tabs` reports the width it actually drew and the sweep fails on overrun:
+
+    STRIP worst=296 limit=360 ok
+
+64px of headroom. That is a fact worth having before P4 rather than after: the
+situation tab must be **8 characters or fewer** (SIEGE, DRY, BOOM, CARTEL fit;
+QUARANTINE and ABANDONED do not). The worst case depends on which archetype and
+condition a seed rolled, so it is not something anybody could read off the
+string table — which is precisely why it is asserted rather than eyeballed.
+
+## Gate
+
+    win rates   68/50/32   unchanged from P2a and P1
+    stalls             0
+    STRIP             ok
+
+## Still open
+
+The journal has not yet moved out of the strip to the right column, so the
+fifth slot for the situation is not free yet. That, and the `-J` reachability
+assertion that must be replaced rather than deleted when it does.
