@@ -1,4 +1,5 @@
 #include "game.h"
+#include "scene_pixels.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -49,7 +50,8 @@ void game_tick(const Input *in){
     if(g.samples>=g.required&&g.blackbox&&g.sub.y<45)g.won=1;
 }
 void game_draw(Framebuffer *f){
-    clear(f,0x00030b16);for(int y=80;y<FB_H;y+=40)rect(f,0,y,FB_W,1,0x00071425);
+    int scene=g.won?5:g.lost?5:(g.sub.y<100?0:g.sub.y<185?1:g.sub.y<270?2:g.sub.y<355?3:4);
+    scene_frame(f,scene,82);for(int y=80;y<FB_H;y+=40)rect(f,0,y,FB_W,1,0x00071425);
     for(int i=0;i<18;i++){int x=(i*97+g.tick/5)%640;int y=70+(i*61)%400;pixel(f,x,y,0x00305a69);}
     rect(f,0,465,FB_W,15,0x00131e25);for(int x=0;x<640;x+=31)line(f,x,465,x+16,450-(x%43),0x001b3036);
     if(g.ping)circle(f,g.sub.x,g.sub.y,g.ping,0x0049cfe8);

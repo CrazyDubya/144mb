@@ -1,4 +1,5 @@
 #include "game.h"
+#include "scene_pixels.h"
 #include <stdio.h>
 #include <string.h>
 typedef struct{int pos,dir,axis,wait,active;}Train;
@@ -27,7 +28,7 @@ void game_tick(const Input*in){
  if(g.delay>1500)g.crash=1;
 }
 void game_draw(Framebuffer*f){
- static const uint32_t bg[3]={0x00141a18,0x00151b24,0x00201815};int sh=g.shift<3?g.shift:2;clear(f,bg[sh]);for(int x=0;x<640;x+=20){rect(f,x,228,10,4,0x006b7068);rect(f,x,248,10,4,0x006b7068);}for(int y=50;y<440;y+=20){rect(f,310,y,4,10,0x006b7068);rect(f,330,y,4,10,0x006b7068);}rect(f,0,234,640,12,0x00969b91);rect(f,316,40,12,400,0x00969b91);
+ int sh=g.shift<3?g.shift:2;scene_frame(f,g.crash?5:sh,70);for(int x=0;x<640;x+=20){rect(f,x,228,10,4,0x006b7068);rect(f,x,248,10,4,0x006b7068);}for(int y=50;y<440;y+=20){rect(f,310,y,4,10,0x006b7068);rect(f,330,y,4,10,0x006b7068);}rect(f,0,234,640,12,0x00969b91);rect(f,316,40,12,400,0x00969b91);
  if(sh>=1){line(f,80,234,210,150,0x00969b91);line(f,80,246,210,162,0x00969b91);}if(sh>=2){line(f,430,234,580,330,0x00969b91);line(f,430,246,580,342,0x00969b91);}
  uint32_t ew=g.priority==0&&!g.hold?0x004ed97a:0x00e04f5f,ns=g.priority==1&&!g.hold?0x004ed97a:0x00e04f5f;circle(f,270,216,7,ew);circle(f,344,270,7,ns);
  for(int i=0;i<6;i++){Train*t=&g.t[i];if(!t->active)continue;uint32_t c=(i&1)?0x00f2c14e:0x0058a6e7;if(t->axis==0){rect(f,t->pos-16,232,32,16,c);rect(f,t->pos-10,228,18,5,c);}else{rect(f,314,t->pos-16,16,32,c);rect(f,310,t->pos-10,5,18,c);}}

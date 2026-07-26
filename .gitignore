@@ -9,6 +9,7 @@ media/
 docs/
 *.png
 !*/assets/title-source.png
+!*/assets/scenes-rc1.png
 *.wav
 *.gif
 

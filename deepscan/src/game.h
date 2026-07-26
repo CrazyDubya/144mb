@@ -7,8 +7,8 @@
 #define FB_H 480
 
 typedef struct { uint32_t *pixels; int w, h; } Framebuffer;
-typedef struct { uint8_t down[8], pressed[8]; } Input;
-enum { UP, DOWN, LEFT, RIGHT, A, B, START, HELP };
+typedef struct { uint8_t down[10], pressed[10]; } Input;
+enum { UP, DOWN, LEFT, RIGHT, A, B, C, D, START, HELP };
 
 static inline void pixel(Framebuffer *f, int x, int y, uint32_t c) {
     if ((unsigned)x < (unsigned)f->w && (unsigned)y < (unsigned)f->h)

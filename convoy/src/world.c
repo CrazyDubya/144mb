@@ -117,9 +117,9 @@ typedef struct {
 
 static const DiffRule DIFF[DIFF_COUNT] = {
     /*                 cr   w   f  fscale  spoil  storm  settle */
-    /* EASY   */ {    125, 8,  6,      1,    28,     14,     45 },
-    /* NORMAL */ {    122, 8,  5,      2,    35,     16,     43 },
-    /* HARD   */ {    112, 7,  5,      3,    44,     21,     38 },
+    /* EASY   */ {    131, 8,  6,      1,    26,     12,     47 },
+    /* NORMAL */ {    123, 8,  5,      2,    35,     16,     43 },
+    /* HARD   */ {    107, 7,  5,      3,    47,     23,     36 },
 };
 
 int world_score(const World *w) {
@@ -1157,7 +1157,19 @@ int world_service_price(const World *w) {
     case ARCH_WELL:      return nd->price[G_WATER] * 7 / 2;
     case ARCH_REFINERY:  return nd->price[G_FUEL];
     case ARCH_CLINIC:    return nd->price[G_MEDS];
-    case ARCH_SCRAPYARD: return w->kit_failed >= 0 ? nd->price[G_SCRAP] * 3 : 0;
+    // Free if the mechanic is aboard -- they do the work, the yard supplies
+    // the metal.
+    //
+    // Without this the yard SUBSTITUTES for the role instead of complementing
+    // it: putting broken kit right is precisely what a mechanic is for, so
+    // adding a shop that does it for money took the mechanic from +11 in v5 to
+    // +3 on a granted-free A/B, below the +8 bar that release set. A service
+    // that quietly makes a crew role redundant is a worse outcome than no
+    // service, and the fix is to make having the hand change what the shop
+    // costs rather than to weaken the shop.
+    case ARCH_SCRAPYARD:
+        if (w->kit_failed < 0) return 0;
+        return w->crew[CREW_MECHANIC] ? 0 : nd->price[G_SCRAP] * 3;
     case ARCH_ARMOURY:   return nd->price[G_AMMO] * 2;
     default:             return 0;
     }

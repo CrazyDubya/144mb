@@ -2859,3 +2859,61 @@ down. In mitigation the random `EV_PLAGUE` already forces at a similar rate, so
 the situation is no more optionless than the kind it reuses.
 
     stalls 0 · overlaps 0 · ASan/-X/-Z clean
+
+---
+
+# v6 P6/P7 — retune, and what the final gate found
+
+## Difficulty restored
+
+The condition price and stock distortions compressed the spread, so the table
+was widened at both ends rather than the situations being tuned further:
+
+    EASY   131 cr, 9 water, 6 fuel, spoil 26, storm 12, settle 47
+    NORMAL 123 cr, 8 water, 5 fuel  (barely moved)
+    HARD   107 cr, 7 water, 5 fuel, spoil 47, storm 23, settle 36
+
+    n=1000:  65 / 48 / 29        contract 66 / 47 / 30
+
+One point out at each difficulty, inside noise at this n. Water is the sharpest
+lever in the table: a single unit at EASY moved it nine points, which is worth
+knowing before anyone reaches for it again.
+
+## The gate found a regression nobody caused on purpose
+
+v5 left every crew role worth +8 to +18 granted free. Re-run at the end of v6:
+
+    role       v5    v6
+    MECHANIC  +11    +3     <-- under the bar v5 set
+    GUARD      +8   +11
+    MEDIC     +12   +11
+    SCOUT     +16   +15
+    TRADER    +19   +13
+
+**Nothing was done to the mechanic. The services were.** A scrapyard that puts a
+broken fitting right does the mechanic's job, and a refinery that turns scrap
+into fuel eases the same shortage a mechanic eases. Between them they made the
+role largely redundant without anyone deciding to.
+
+The scrapyard now does the work free when the mechanic is aboard, so the two
+are complementary rather than substitutes. That is right on its own terms and it
+**recovered nothing measurable** — the overlap was never mainly about repairs,
+it is the whole service set easing the scrap and fuel economy the mechanic
+exists to ease.
+
+Shipped recorded rather than fixed, in the same way v4 shipped with crew
+recorded as broken rather than quietly rebalanced. The honest version of "we
+added shops" is that adding shops can cost you a character.
+
+## Final gate
+
+    n=1000 per arm      65 / 48 / 29     stalls 0
+    overlaps            0                n=150 x 3
+    STRIP               240 / 360
+    -X exploit          clean
+    ASan / UBSan        clean
+    -Z determinism      clean x 3
+    size                123,904 bytes    8.40% of the floppy
+
+    rumours    2.20/run     situations 4.44/run
+    services   1.20/run     dry shelf  30% of runs
