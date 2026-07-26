@@ -140,6 +140,21 @@ enum { UPG_HOLD, UPG_ECON, UPG_ARMOUR, UPG_TANKS, UPG_COUNT };
 // daily water burn, so hiring is a running cost rather than a straight upgrade.
 enum { CREW_MECHANIC, CREW_GUARD, CREW_MEDIC, CREW_SCOUT, CREW_TRADER, CREW_COUNT };
 
+// The five hands are the five people on the road. Four of the pairings were
+// already exact -- the chief owns raids, the doc owns sickness, the trader owns
+// trades, the drifter owns wrecks -- and Marlow is the one invention: the rival
+// convoy captain joins as mechanic after her own rig dies, which is a story
+// only losing can tell.
+//
+// crew[] stays indexed by ROLE, not by character. Every ability site in
+// roll_event compiles untouched and identity comes for free.
+extern const signed char CHAR_OF_ROLE[CREW_COUNT];
+extern const signed char ROLE_OF_CHAR[CHAR_COUNT];
+
+// Turning an enemy is meant to be an achievement, so the two who rob you want
+// more goodwill and more money than the three who do not.
+int  world_char_is_enemy(int who);
+
 // Measurement counters, compiled into the headless harness only. They exist
 // because outcomes alone cannot tell you why: a kind nobody accepts because it
 // is a bad deal and a kind nobody *can* accept read identically in a win-rate
@@ -267,6 +282,7 @@ typedef struct {
 
     uint8_t  met   [CHAR_COUNT];   // times encountered
     int8_t   regard[CHAR_COUNT];   // -3..+3, shifts with what you did
+    uint8_t  regard_moved[CHAR_COUNT];  // sector+1 of the last shift, or 0
 
     Event    event;
     Contract job;      // one at a time: two would just be arithmetic
@@ -285,6 +301,7 @@ int  world_hop_costs_fuel(const World *w);
 int  world_can_travel(const World *w, int next_index);
 // Fills `out` with the node indices reachable from here, returning how many.
 // Lives here rather than in the UI because it is a fact about the route.
+int  world_can_recruit(const World *w, int who);
 uint8_t world_links(const World *w);
 int  world_reachable (const World *w, int *out);
 // The good a settlement specialises in, or -1 for a general trading post.

@@ -238,8 +238,19 @@ static int crew_value(const Bot *b, const World *w, int k, int hops) {
 
     if (b->enc_seen == 0) return -keep;             // nothing seen yet: assume nothing
     int avg_cost = b->enc_cost / b->enc_seen;
+
+    // A hand aboard offers a way through EVERY encounter, not only the three
+    // kinds they specialise in. Valuing them at `role_seen` coverage was right
+    // when their ability was a silent modifier on 3 of 14 kinds; it now
+    // undercounts them by roughly the ratio the third branch changed --
+    // measured, a free hand is worth +10 to +17 points and the old model
+    // priced that at a fifth of it, so the convoy hired nobody.
+    int enc_left = b->enc_seen * hops / (b->hops_done + 1);
     int covered  = b->role_seen[k] * hops / (b->hops_done + 1);
-    return covered * avg_cost - keep;
+
+    // Roughly a third of an encounter's cost is saved by taking the manoeuvre
+    // instead, and the specialist's own kinds are worth more than that again.
+    return (enc_left * avg_cost / 3) + (covered * avg_cost / 3) - keep;
 }
 
 // Credits in the hold compound -- buy low, sell high, repeat -- so over the
@@ -275,8 +286,12 @@ static int crew_worth_hiring(const Bot *b, const World *w) {
     int hops = SECTORS_LAST - w->sector;
     if (hops < 5) return 0;
     int price = world_crew_price(w, k);
-    if (w->credits - price < 100) return 0;
-    if (w->held[G_WATER] < 6) return 0;          // cannot feed them yet
+    // Working capital to leave after a hire. This was 100 on a convoy that
+    // typically holds 100-150 credits, so it refused almost every hand -- the
+    // identical fault the kit gate had at 120, found the same way, by an
+    // option that was offered constantly and never taken.
+    if (w->credits - price < 30) return 0;
+    if (w->held[G_WATER] < 5) return 0;          // cannot feed them yet
     return crew_value(b, w, k, hops) > price;
 }
 

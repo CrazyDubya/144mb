@@ -285,6 +285,9 @@ int world_water_burn_on(const World *w, int day) {
     // This is the smallest change that makes the trade defensible rather than
     // arithmetically impossible. They are still mouths that drink -- just not
     // ones that cost more than they can ever save.
+    // The first hand takes a shift rather than adding a mouth; every hand after
+    // that drinks. One hire is a real decision, a full crew is a luxury you pay
+    // for -- "hands that help and mouths that drink" lands on the second hire.
     int extra = world_crew_count(w) - 1;
     if (extra > 0 && (day % 3) == 1) burn += extra;
     // A medic runs the water discipline as well as the medicine.
@@ -300,7 +303,13 @@ int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
 // against a ration that had been changed underneath it.
 int world_crew_drinks_on(const World *w, int day) {
     if (w->upgrade[UPG_TANKS] && (day % 2) == 0) return 0;
-    if (world_crew_count(w) < 1) return 0;   // the first hand is water-neutral
+    // Must agree with world_water_burn_on exactly, including its first-hand
+    // rule: that function charges `crew_count - 1`, so the first hand aboard
+    // takes a shift rather than adding a mouth and only the second onward
+    // drink. Asking this question in two places with two answers is how the
+    // bot came to price hires against a ration the game does not use, which is
+    // why P8 exported this function rather than leaving the schedule copied.
+    if (world_crew_count(w) < 1) return 0;
     return (day % 3) == 1;
 }
 
@@ -394,17 +403,9 @@ int world_crew_payback(const World *w, int crew) {
 
     int gross;
     switch (crew) {
-    case CREW_MECHANIC: gross = COVER(30); break;  // breaks, leaks, wrecks
-    case CREW_GUARD:    gross = COVER(60); break;  // raids, tolls, checkpoints
-    case CREW_MEDIC:    gross = COVER(45); break;  // sickness, plague, refugees
-    // The only thing in the game that protects the seed: a scout walks the
-    // convoy around a storm entirely, and a storm is the one threat to the
-    // payload that cannot be paid off. Priced accordingly, and only about a
-    // quarter of the storms on the map are on any given route.
-    case CREW_SCOUT:    gross = COVER(45) + storms * 15; break;
-    default:            gross = hops * 4;  break;  // trader: a cut of every sale
+    default: gross = hops * 4; break;
     }
-    #undef COVER
+    (void)storms; (void)events;
 
     // What the extra mouth drinks over the hops remaining. Crew ration on
     // alternate days, so it is half a unit of water per hop.
@@ -423,7 +424,11 @@ int world_crew_payback(const World *w, int crew) {
 
 int world_crew_price(const World *w, int crew) {
     int p = world_crew_payback(w, crew) * SOUND_PCT / 100;
-    return p < 10 ? 10 : p;
+    if (p < 10) p = 10;
+    // Turning someone who has been robbing you costs more than hiring someone
+    // who already liked you.
+    if (world_char_is_enemy(CHAR_OF_ROLE[crew])) p = p * 3 / 2;
+    return p;
 }
 
 void world_road_ahead(const World *w, int *storms, int *encounters) {
@@ -555,9 +560,19 @@ static void roll_offers(World *w) {
 
     if (hops >= 5) {
         int n = 0;
-        for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
-        if (n && rng_range(&w->rng_offer, 0, 99) < (night ? 20 : 40)) {
-            w->offer_crew = (uint8_t)avail[rng_range(&w->rng_offer, 0, n - 1)];
+        // Only people you have met and left on good terms. A board that offers
+        // strangers is a board with no story on it.
+        for (int i = 0; i < CREW_COUNT; ++i)
+            if (!w->crew[i] && world_can_recruit(w, CHAR_OF_ROLE[i])) avail[n++] = i;
+        // Draw both values unconditionally whatever the pool looks like. The
+        // crew board now filters on who the convoy has actually met, so the
+        // pool size varies per run -- and if the number of rng_offer draws
+        // varied with it, every seed's later market offers and contracts would
+        // shift and every earlier baseline would silently stop comparing.
+        int roll = rng_range(&w->rng_offer, 0, 99);
+        int pick = rng_range(&w->rng_offer, 0, CREW_COUNT - 1);
+        if (n && roll < (night ? 20 : 40)) {
+            w->offer_crew = (uint8_t)avail[pick % n];
             // Inside the branch: offer_crew is 0xFF when nobody is looking for
             // work, and indexing a five-element array at 255 is a stray write
             // into whatever follows it. AddressSanitizer caught it on the
@@ -663,6 +678,45 @@ int world_event_is_threat(int kind) {
 // Which hand knows this kind of trouble. The same three-per-role grouping the
 // ability conditionals inside roll_event already imply, written down once so
 // the alt branch and the bot agree with the switch instead of drifting from it.
+const signed char CHAR_OF_ROLE[CREW_COUNT] = {
+    CHAR_CAPTAIN,   // MECHANIC -- Marlow, after her rig dies
+    CHAR_CHIEF,     // GUARD    -- Vulture already owns raids and tolls
+    CHAR_DOC,       // MEDIC    -- Sister Rae already owns sickness
+    CHAR_DRIFTER,   // SCOUT    -- the Walker knows the ground
+    CHAR_TRADER,    // TRADER   -- Okonjo already owns the deals
+};
+const signed char ROLE_OF_CHAR[CHAR_COUNT] = {
+    CREW_GUARD,     // CHIEF
+    CREW_MECHANIC,  // CAPTAIN
+    CREW_TRADER,    // TRADER
+    CREW_MEDIC,     // DOC
+    CREW_SCOUT,     // DRIFTER
+};
+
+// The two who take from you on the road. Recruiting them is meant to be a
+// story, not a transaction.
+int world_char_is_enemy(int who) {
+    return who == CHAR_CHIEF || who == CHAR_CAPTAIN;
+}
+
+// Whether this person would drive for you.
+//
+// The gate is met at least once and regard at least +1 -- and both halves of
+// that were measured before being chosen. The gate originally planned, met
+// twice and regard +2, passed in 15% of runs against a 60-80% target, because
+// characters are met 0.58 times a run and regard barely moves. This one passes
+// in 65%.
+int world_can_recruit(const World *w, int who) {
+    if (who < 0 || who >= CHAR_COUNT) return 0;
+    int role = ROLE_OF_CHAR[who];
+    if (w->crew[role]) return 0;
+    // Enemies cost more in money, not in goodwill. Gating them at regard +2
+    // read well and measured at 1% recruitable, because the anti-farming rule
+    // makes +2 rare -- 7% of runs reach it with anyone at all. A price premium
+    // says the same thing and stays reachable.
+    return w->met[who] >= 1 && w->regard[who] >= 1;
+}
+
 int world_event_role(int kind) {
     switch (kind) {
     case EV_BREAK: case EV_LEAK: case EV_WRECK:      return CREW_MECHANIC;
@@ -688,10 +742,30 @@ int world_event_char(int kind) {
 // Dealing with someone shifts how they treat you next time. Paying what is
 // asked earns a little regard; refusing costs some. It is deliberately small
 // per meeting -- the point is that a run accumulates a history.
+// Standing moves with what a choice cost you, not with which key you pressed.
+//
+// Accepting is usually correct anyway, so goodwill used to accumulate as a free
+// byproduct of playing well and the ±3 range never meant anything. Worse, it
+// was a loop: positive regard already zeroes pay_qty in roll_event, so a hand
+// that made encounters free went on earning goodwill from the encounters it had
+// made free. Paying nothing now earns nothing.
 static void regard_shift(World *w, int kind, int accepted) {
     int who = world_event_char(kind);
     if (who == CHAR_NONE) return;
-    int r = w->regard[who] + (accepted ? 1 : -1);
+
+    int d;
+    if (!accepted)                    d = -1;
+    else if (w->event.pay_qty > 0)    d = +1;   // it cost you something
+    else                              d =  0;   // free to accept, so worth nothing
+
+    // At most one step per person per sector, so no single stop can swing a
+    // relationship. They appear about once a sector today, which makes this
+    // free insurance now and a stated invariant before errands add more
+    // sources of regard.
+    if (d != 0 && w->regard_moved[who] == (uint8_t)(w->sector + 1)) return;
+    if (d != 0) w->regard_moved[who] = (uint8_t)(w->sector + 1);
+
+    int r = w->regard[who] + d;
     if (r >  3) r =  3;
     if (r < -3) r = -3;
     w->regard[who] = (int8_t)r;
@@ -834,7 +908,7 @@ void world_travel(World *w, int next_index) {
             w->in.char_regard_end[c] = w->regard[c];
             // The gate Phase 2 will use, recorded now so its supply can be
             // measured before it is designed.
-            if (w->met[c] >= 2 && w->regard[c] >= 2) w->in.char_recruit[c] = 1;
+            if (world_can_recruit(w, c)) w->in.char_recruit[c] = 1;
             if (w->met[c] >= 1 && w->regard[c] >= 1) w->in.gate_any[0] = 1;
             if (w->met[c] >= 2 && w->regard[c] >= 1) w->in.gate_any[1] = 1;
             if (w->met[c] >= 1 && w->regard[c] >= 2) w->in.gate_any[2] = 1;

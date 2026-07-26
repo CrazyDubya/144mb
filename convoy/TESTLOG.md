@@ -1854,6 +1854,76 @@ could not have caused it. Measured properly, with and without a hand aboard on
 the same build, the worst forced rate is **9% either way**. The branch does not
 make anything unaffordable.
 
+## P2 — crew are the characters
+
+The five hands are now the five people on the road. Four pairings were already
+exact — the chief owns raids, the doc owns sickness, the trader owns deals, the
+drifter owns wrecks — and Marlow is the one invention: the rival convoy captain
+joins as mechanic after her own rig dies, a story only losing can tell.
+
+`crew[]` stays indexed by role, so every ability site in `roll_event` compiled
+untouched and identity came for free.
+
+### The gate, chosen from P0's measurement
+
+`met >= 1 && regard >= 1`, passing in **67% of runs** against a 60–80% target.
+Per character, recruitable in:
+
+| | VULTURE | MARLOW | OKONJO | SISTER RAE | THE WALKER |
+|---|---:|---:|---:|---:|---:|
+| recruitable | 21% | 12% | 19% | 13% | 35% |
+
+All five are reachable. **Enemies cost more in money, not in goodwill** — the
+first version gated Vulture and Marlow at regard +2 and measured them at 1%
+recruitable, because the anti-farming rule below makes +2 genuinely rare. A
+price premium says the same thing and stays attainable.
+
+### Standing now tracks what a choice cost
+
+Accepting is usually correct anyway, so goodwill accumulated as a free
+byproduct of playing well and the ±3 range never meant anything. Worse, it was
+a loop: positive regard already zeroes `pay_qty`, so a hand that made
+encounters free went on earning goodwill from the encounters it had made free.
+
+Paying nothing now earns nothing: accept **at a price** +1, accept free 0,
+decline −1, manoeuvre succeeded +1, failed −1. Capped at one step per person
+per sector.
+
+### Two agreement bugs, the same shape as ever
+
+`world_crew_drinks_on` and `world_water_burn_on` disagreed about the ration.
+The burn function charges `crew_count - 1` — the first hand takes a shift
+rather than adding a mouth — while the bot's model charged every hand. **This
+is the exact fault P8 fixed by exporting the schedule rather than copying it**,
+reintroduced by an abandoned experiment that survived in one of the two places.
+Then, fixing it, I made the *other* function agree in the wrong direction and
+had to measure again to see which was authoritative.
+
+And the crew hiring gate demanded **100 credits of working capital** left after
+a hire, on a convoy holding 100–150 — the identical fault the kit gate had at
+120, found the identical way: an option offered constantly and never taken.
+
+### Where it landed
+
+P1's A/Bs are preserved, which was this phase's real exit criterion — it
+changes who ends up aboard, not what being aboard does:
+
+| role | P1 | P2 |
+|---|---:|---:|
+| MECHANIC | +14 | +12 |
+| GUARD | +10 | +10 |
+| MEDIC | +13 | +12 |
+| SCOUT | +16 | +16 |
+| TRADER | +17 | +18 |
+
+**Two criteria are not met and are recorded rather than tuned away.** Take
+rates are 12 / 2 / 18 / 10 / 12% against a 15–85% bar, and `CREWSET` entropy is
+0.54 bits against a 2.0 target — up from 0.02 at the start of the phase, but
+with 92% of runs still ending crewless. Both are the same underlying fact: the
+bot is too conservative about hiring, and crew pricing still derives from a
+coverage model the third branch made obsolete. That repricing is P5's job and
+doing it here would have meant fitting a curve to a number about to move.
+
 ---
 
 ## Bugs found, and what found them
