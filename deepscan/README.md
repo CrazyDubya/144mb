@@ -8,7 +8,8 @@ wakes predators. Complete the selected objective and survive the ascent.
 The survey, salvage, deep-diving, and experimental vessels trade hull, battery,
 and cargo capacity. Battery, oxygen, pressure, hull, noise, lights, silent
 running, repairs, cargo, twelve organism signatures, and optional discoveries
-remain active throughout the expedition.
+remain active throughout the expedition. The debrief names every organism added
+to the expedition's specimen record.
 
 ## Controls
 

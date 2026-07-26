@@ -4,6 +4,7 @@ Keep the lighthouse through seven storm nights and fourteen contacts. Each
 campaign selects one logically consistent rule governing the imitation. Move
 among the lens, radio, chart, generator, journal, and exterior gallery to reveal
 written evidence before deciding whether to guide or deny a contact.
+The journal retains the outcome of earlier contacts as a compact transcript.
 
 Daylight choices repair the generator, search the former keeper's records, or
 store power. Saved ships, rejected genuine callers, admitted imitations,

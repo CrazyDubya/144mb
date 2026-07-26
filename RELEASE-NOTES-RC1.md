@@ -21,8 +21,10 @@ six RGB565 campaign plates, and three RGB332 narrative plates.
 - Queued key edges so brief presses are not dropped between ticks
 - Automatic simulation pause when the game loses focus
 - Hold-`H` help/pause and `M` audio mute
+- Date-derived daily challenge seeds and persisted mute/completion settings
 - Graceful no-audio operation and cleanup after partial WinMM failure
 - 36,000-tick headless ceiling for longer campaign probes
+- Deterministic malformed/edge-input fuzz probes under both sanitizers
 - Release packaging with byte counts, headroom, and SHA-256 manifests
 
 ## Candidate limitations

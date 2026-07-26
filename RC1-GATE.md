@@ -79,3 +79,29 @@ A source comment or version string is not evidence. A feature is complete only
 when its player-visible path exists and an appropriate probe executes it. Cross
 compilation proves the PE file exists; the Windows CI smoke test proves that it
 launches. RC1 is declared only when both classes of evidence are current.
+
+## Current candidate evidence
+
+The local candidate audit is automated by `./verify-rc1.sh`. It currently
+proves, for all five games:
+
+- warning-free native and Win32 builds
+- PE32+ GUI target type
+- executable size inside both the floppy limit and the 80–95% production range
+- 100/100 complete campaigns and 20/20 deliberate failures
+- byte-identical repeated deterministic sweeps
+- byte-identical deterministic 640×480 rendered-frame captures
+- non-silent terminal audio buffers
+- AddressSanitizer and UndefinedBehaviorSanitizer campaign, loss, and
+  deterministic edge-input fuzz probes
+- embedded title, campaign, and narrative asset sources
+- reproducible release folders with verified SHA-256 manifests
+
+Longer deterministic campaign sweeps and the defects they exposed are recorded
+in [SOAKLOG-RC1.md](SOAKLOG-RC1.md).
+
+The Windows workflow additionally foregrounds each executable, enters gameplay,
+sends all action keys, toggles help and mute, waits for continued execution, and
+captures a screenshot. That target-runtime result remains pending until this
+candidate is run by GitHub Actions; it cannot be substituted by the successful
+cross-build.

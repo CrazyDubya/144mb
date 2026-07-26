@@ -28,6 +28,7 @@ static uint32_t rnd(void){g.rng=g.rng*1664525u+1013904223u;return g.rng;}
 const char*game_name(void){return "MICROCOLONY 1.0 RC1";}
 const char*game_help(void){return "ARROWS PIPETTE  Z NUTRIENT  X ANTIBIOTIC  C SELECT TOOL  V APPLY  H HELP  M MUTE";}
 const char*game_goal(void){return "STEER SIX ECOSYSTEMS. USE EACH SAMPLE'S REQUIRED TOOLS, THEN HOLD ALL SIX POPULATIONS STABLE.";}
+const char*game_ending(void){return g.won?"RESEARCH COMPLETE\nALL SIX ECOSYSTEMS ARE STABLE AND THE FIELD GUIDE IS COMPLETE.\nPRESS ENTER TO BEGIN A NEW DAILY SAMPLE SET.":"CULTURE COLLAPSED\nA REQUIRED POPULATION BECAME EXTINCT, THE TOOL BUDGET WAS EXHAUSTED, OR STABILITY TOOK TOO LONG.\nUSE INTRODUCE BEFORE A SCARCE SPECIES DISAPPEARS.\nPRESS ENTER TO TRY AGAIN.";}
 
 static void recount(void){
     memset(g.count,0,sizeof g.count);
@@ -69,7 +70,8 @@ static void simulate(void){
         g.next[at]=(uint8_t)v;
     }
     memcpy(g.cell,g.next,sizeof g.cell);recount();
-    if(g.toxin>0&&g.current)g.toxin--;if(g.current>0)g.current--;
+    if(g.toxin>0&&g.current)g.toxin--;
+    if(g.current>0)g.current--;
     int diverse=1;for(int k=PRODUCER;k<SPECIES;k++)if(g.count[k]<1)diverse=0;
     int balanced=g.count[PRODUCER]>=80&&g.count[PRODUCER]<=750&&g.count[GRAZER]>=20&&g.count[PREDATOR]>=3&&g.count[DECOMPOSER]>=8&&g.count[PARASITE]>=1&&g.count[SPORE]>=1&&g.toxin<65;
     int ready=(g.used&required[g.mission])==required[g.mission];
@@ -91,7 +93,8 @@ static void patch_cells(int radius,int action){
     }
 }
 static void apply_tool(int use){
-    if(g.budget<=0)return;g.budget--;g.used|=(unsigned)use;
+    if(g.budget<=0)return;
+    g.budget--;g.used|=(unsigned)use;
     if(use==USE_NUTRIENT)patch_cells(3,use);
     if(use==USE_ANTIBIOTIC){patch_cells(2,use);g.toxin+=4;}
     if(use==USE_LIGHT){g.light=g.light<70?g.light+20:g.light-30;}
@@ -104,21 +107,26 @@ static void apply_tool(int use){
 }
 void game_tick(const Input*in){
     if(in->pressed[START]){game_init(g.rng+1);return;}if(g.won||g.lost)return;g.tick++;g.mission_tick++;
-    if(in->pressed[LEFT]&&g.cx>0)g.cx--;if(in->pressed[RIGHT]&&g.cx<GW-1)g.cx++;
-    if(in->pressed[UP]&&g.cy>0)g.cy--;if(in->pressed[DOWN]&&g.cy<GH-1)g.cy++;
-    if(in->pressed[A])apply_tool(USE_NUTRIENT);if(in->pressed[B])apply_tool(USE_ANTIBIOTIC);
+    if(in->pressed[LEFT]&&g.cx>0)g.cx--;
+    if(in->pressed[RIGHT]&&g.cx<GW-1)g.cx++;
+    if(in->pressed[UP]&&g.cy>0)g.cy--;
+    if(in->pressed[DOWN]&&g.cy<GH-1)g.cy++;
+    if(in->pressed[A])apply_tool(USE_NUTRIENT);
+    if(in->pressed[B])apply_tool(USE_ANTIBIOTIC);
     if(in->pressed[C])g.selected=(g.selected+1)%TOOLS;
     if(in->pressed[D]){static const int use[TOOLS]={USE_LIGHT,USE_PH,USE_SPECIES,USE_CLEAN,USE_CURRENT,USE_QUARANTINE};apply_tool(use[g.selected]);}
     if(g.tick%5==0)simulate();
 }
 
 void game_draw(Framebuffer*f){
-    int scene=g.mission<6?g.mission:5;if(g.won)story_frame(f,2,112);else if(g.selected==TOOL_SPECIES)story_frame(f,1,68);else if(g.mission==0&&g.mission_tick<120)story_frame(f,0,72);else scene_frame(f,scene,68);circle(f,320,245,213,0x00517b6a);
+    int scene=g.mission<6?g.mission:5;if(g.won){story_frame(f,2,112);return;}if(g.lost){scene_frame(f,5,92);return;}if(g.selected==TOOL_SPECIES)story_frame(f,1,68);else if(g.mission==0&&g.mission_tick<120)story_frame(f,0,72);else scene_frame(f,scene,68);circle(f,320,245,213,0x00517b6a);
+    for(int i=0;i<g.toxin;i++){int x=75+(i*73+g.tick)%490,y=78+(i*47)%330;pixel(f,x,y,0x00c94862);}
+    if(g.current)for(int i=0;i<12;i++){int x=90+(i*43+g.tick)%450,y=90+(i*29)%300;line(f,x,y,x+14,y-4,0x007ee8df);}
+    for(int i=0;i<g.light/10;i++)line(f,250+i*14,65,270+i*12,90,0x00e8df75);
     for(int y=0;y<GH;y++)for(int x=0;x<GW;x++){int at=y*GW+x,k=g.cell[at];if(!k)continue;static const uint32_t color[SPECIES]={0,0x005edb72,0x00e6c45b,0x00e65d67,0x00a977d8,0x00d35eb5,0x007bdde6};int px=60+x*13,py=72+y*13;circle(f,px,py,2+k/2,color[k]);if(g.quarantine[at])pixel(f,px+5,py-5,0x00ffffff);}
     rect(f,57+g.cx*13,69+g.cy*13,9,2,0x00ffffff);rect(f,60+g.cx*13,66+g.cy*13,2,9,0x00ffffff);
     rect(f,10,40,g.stable*2,7,0x0065d890);rect(f,10,50,g.toxin*2,5,0x00cf5060);
     for(int k=0;k<6;k++)for(int x=1;x<64;x++){int a=g.history[k][(g.history_at+x-1)&63]/5,b=g.history[k][(g.history_at+x)&63]/5;line(f,500+x*2,450-a,502+x*2,450-b,0x0040a050+k*0x00130d11);}
-    if(g.won)rect(f,160,185,320,110,0x00257250);if(g.lost)rect(f,160,185,320,110,0x0071243d);
 }
 void game_status(char*d,size_t n){
     int m=g.mission<6?g.mission:5;snprintf(d,n,"SAMPLE %d/6 %s  P %d G %d H %d D %d PAR %d S %d  STABLE %d/120  TOXIN %d  TOOLS %d  SELECTED %s%s",

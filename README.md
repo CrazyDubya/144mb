@@ -33,11 +33,11 @@ entertainment value — in that order.
 | game | status | size | % of disk |
 |---|---|---|---|
 | [convoy](convoy/) | v4 complete | 110,592 | 7.50% |
-| [deepscan](deepscan/) | 1.0 RC1 | 1,301,504 | 88.26% |
-| [switchyard](switchyard/) | 1.0 RC1 | 1,298,944 | 88.09% |
-| [last-light](last-light/) | 1.0 RC1 | 1,298,432 | 88.06% |
-| [microcolony](microcolony/) | 1.0 RC1 | 1,298,944 | 88.09% |
-| [ten-paces](ten-paces/) | 1.0 RC1 | 1,298,944 | 88.09% |
+| [deepscan](deepscan/) | 1.0 RC1 | 1,307,136 | 88.65% |
+| [switchyard](switchyard/) | 1.0 RC1 | 1,302,528 | 88.33% |
+| [last-light](last-light/) | 1.0 RC1 | 1,301,504 | 88.26% |
+| [microcolony](microcolony/) | 1.0 RC1 | 1,301,504 | 88.26% |
+| [ten-paces](ten-paces/) | 1.0 RC1 | 1,302,528 | 88.33% |
 
 ## Building
 
@@ -65,6 +65,11 @@ Useful environment variables:
 
 - `ZIG=/path/to/zig` — pick a specific compiler
 - `ONLY_WIN=1` — skip the native development harness
+
+Harness arguments shared by the five candidates are `-s SEED`, `-N RUNS`,
+`-t TICKS`, `-L` for the careless loss player, `-F` for deterministic
+edge-input fuzzing, `-Q` for a non-terminal snapshot probe, and
+`-o FRAME.bmp` to write the rendered 640×480 framebuffer.
 
 The five RC1 executables embed their Win32 head, title, six campaign plates,
 three narrative plates, rules, English interface, and synthesized stereo audio.

@@ -16,6 +16,7 @@ static struct {
     int rule, night, contact_no, station, power, generator, timer;
     int saved, denied, intruders, errors, evidence, day, day_choice;
     int previous_keeper, ending, won, lost, tick;
+    uint16_t transcript[14];int transcript_count;
 } g;
 
 static uint32_t rnd(void){g.rng=g.rng*1664525u+1013904223u;return g.rng;}
@@ -31,6 +32,10 @@ static const char *station_name[]={"LENS","RADIO","CHART","GENERATOR","JOURNAL",
 const char*game_name(void){return "LAST LIGHT 1.0 RC1";}
 const char*game_help(void){return "LEFT/RIGHT STATION  Z INSPECT/REPAIR  X GUIDE  C DENY  V WAIT  H HELP  M MUTE";}
 const char*game_goal(void){return "USE THE KEEPER'S RULE AND WRITTEN EVIDENCE. GUIDE REAL SHIPS; NEVER LIGHT THE IMITATION ASHORE.";}
+const char*game_ending(void){
+    if(g.won)return g.ending==4?"HARBOR SAFE\nTHE MISSING KEEPER ANSWERED THE LAST SIGNAL AND CAME HOME.\nPRESS ENTER TO BEGIN ANOTHER SEVEN-NIGHT WATCH.":g.ending==2?"HARBOR SAFE\nEVERY SURVIVOR SAW THE DAWN.\nPRESS ENTER TO BEGIN ANOTHER WATCH.":"HARBOR SAFE\nTHE STORM PASSED, BUT THE WATCH CONTINUES.\nPRESS ENTER TO BEGIN AGAIN.";
+    return g.ending==5?"SOMETHING CAME ASHORE\nYOU GUIDED A CONTACT THAT VIOLATED THE KEEPER'S RULE.\nREVIEW THE WRITTEN CLUE AND TRY AGAIN.":g.ending==6?"SOMETHING CAME ASHORE\nTOO MANY GENUINE SHIPS WERE DENIED. INVESTIGATE THE RELEVANT STATION BEFORE DECIDING.":"SOMETHING CAME ASHORE\nTHE LIGHTHOUSE LOST POWER. REPAIR THE GENERATOR AND STORE POWER AT DAWN.";
+}
 
 static void new_contact(void){
     Contact *c=&g.contact;memset(c,0,sizeof *c);
@@ -44,8 +49,11 @@ static void new_contact(void){
         if(g.rule==RULE_WRECK)c->wreck_name=1;
         /* A second imperfection rewards broad investigation without making it required. */
         int flaw=(int)(rnd()%5);
-        if(flaw==0)c->horn=0;if(flaw==1)c->call=0;if(flaw==2)c->tide=0;
-        if(flaw==3)c->green=0;if(flaw==4)c->delay=9;
+        if(flaw==0)c->horn=0;
+        if(flaw==1)c->call=0;
+        if(flaw==2)c->tide=0;
+        if(flaw==3)c->green=0;
+        if(flaw==4)c->delay=9;
     }
     g.timer=900;g.station=LENS;
 }
@@ -70,11 +78,13 @@ static void inspect(void){
 
 static void finish_contact(int guide){
     Contact*c=&g.contact;
+    if(g.transcript_count<14){uint16_t record=(uint16_t)(c->green|(c->tide<<1)|(c->horn<<2)|(c->call<<3)|((c->delay==9)<<4)|(c->reef<<5)|(c->wreck_name<<6)|(c->genuine<<7)|(guide<<8));g.transcript[g.transcript_count++]=record;}
     if(guide){if(c->genuine)g.saved++;else g.intruders++;}
     else {if(c->genuine)g.denied++;else g.evidence+=2;}
     if((guide!=c->genuine))g.errors++;
     g.contact_no++;
-    if(g.intruders>0||g.errors>=4){g.lost=1;g.ending=5;return;}
+    if(g.intruders>0){g.lost=1;g.ending=5;return;}
+    if(g.errors>=4){g.lost=1;g.ending=6;return;}
     if(g.contact_no>=2){g.day=1;g.day_choice=0;g.timer=0;return;}
     new_contact();
 }
@@ -110,7 +120,7 @@ void game_tick(const Input*in){
 
 void game_draw(Framebuffer*f){
     int scene=g.won?4:g.lost?5:g.day?0:(!g.contact.genuine?3:g.night<4?1:2);
-    if(g.day)story_frame(f,0,118);else if(g.station==CHART)story_frame(f,1,76);else if(g.station==JOURNAL)story_frame(f,2,76);else scene_frame(f,scene,82);
+    if(g.won||g.lost){scene_frame(f,scene,96);return;}else if(g.day)story_frame(f,0,118);else if(g.station==CHART)story_frame(f,1,76);else if(g.station==JOURNAL)story_frame(f,2,76);else scene_frame(f,scene,82);
     for(int y=275;y<450;y+=17)line(f,0,y,640,y+((y+g.tick/8)%13)-6,0x001d3b50);
     for(int i=0;i<75;i++){int x=(i*83+g.tick*3)%680-20,y=(i*47+g.tick*5)%430;line(f,x,y,x-8,y+16,0x0033485a);}
     if(!g.day&&!g.won&&!g.lost){
@@ -122,8 +132,6 @@ void game_draw(Framebuffer*f){
         if(evidence_says_fake(c))rect(f,210,92,220,8,0x00c74252);
     }
     if(g.day)rect(f,90,120,460,230,0x00251f18);
-    if(g.won)rect(f,150,175,340,125,0x00256849);
-    if(g.lost)rect(f,150,175,340,125,0x00652739);
 }
 
 void game_status(char*d,size_t n){
@@ -137,9 +145,13 @@ void game_status(char*d,size_t n){
     if(c->known&16)snprintf(clues+strlen(clues),sizeof clues-strlen(clues)," TIDE %s",c->tide?"VALID":"FALSE");
     if(c->known&32)snprintf(clues+strlen(clues),sizeof clues-strlen(clues)," REEF %s",c->reef?"WIDOW'S":"CLEAR");
     if(c->known&64)snprintf(clues+strlen(clues),sizeof clues-strlen(clues)," NAME %s",c->wreck_name?"WRECK LOG":"CURRENT");
+    if(g.station==JOURNAL&&g.transcript_count){uint16_t r=g.transcript[g.transcript_count-1];snprintf(clues+strlen(clues),sizeof clues-strlen(clues)," LAST LOG: %s %s",(r&128)?"REAL":"IMITATION",(r&256)?"GUIDED":"DENIED");}
+    const char*ending="";
+    if(g.won)ending=g.ending==4?"  HARBOR SAFE - THE MISSING KEEPER CAME HOME":g.ending==2?"  HARBOR SAFE - EVERY SURVIVOR SAW THE DAWN":"  HARBOR SAFE - THE WATCH CONTINUES";
+    if(g.lost)ending=g.ending==5?"  SOMETHING CAME ASHORE - YOU GUIDED AN IMITATION":g.ending==6?"  SOMETHING CAME ASHORE - TOO MANY REAL SHIPS WERE DENIED":"  SOMETHING CAME ASHORE - THE LIGHTHOUSE LOST POWER";
     snprintf(d,n,"NIGHT %d/7 CONTACT %d/2  %s  POWER %d GEN %d  SAVED %d ERRORS %d  RULE: %s%s%s",
              g.night,g.contact_no+1,station_name[g.station],g.power,g.generator,g.saved,g.errors,
-             rule_text[g.rule],clues,g.won?"  HARBOR SAFE":g.lost?"  SOMETHING CAME ASHORE":"");
+             rule_text[g.rule],clues,ending);
 }
 
 Input game_autoplay(int t){
@@ -152,7 +164,7 @@ Input game_autoplay(int t){
     in.pressed[evidence_says_fake(c)?C:B]=1;return in;
 }
 Input game_careless(int t){(void)t;Input in={0};if(!g.day)in.pressed[B]=1;else if(!g.day_choice)in.pressed[B]=1;else in.pressed[START]=1;return in;}
-uint32_t game_hash(void){return (uint32_t)(g.rule*3+g.night*5+g.contact_no*7+g.saved*11+g.denied*13+g.intruders*17+g.errors*19+g.power*23+g.generator*29+g.evidence*31+g.day*37+g.ending*41+g.tick);}
+uint32_t game_hash(void){uint32_t h=(uint32_t)(g.rule*3+g.night*5+g.contact_no*7+g.saved*11+g.denied*13+g.intruders*17+g.errors*19+g.power*23+g.generator*29+g.evidence*31+g.day*37+g.ending*41+g.tick+g.transcript_count*43);for(int i=0;i<g.transcript_count;i++)h=h*33u+g.transcript[i];return h;}
 int game_result(void){return g.won?1:g.lost?-1:0;}
 void game_audio(int16_t*s,int n){
     static uint32_t p,noise=1;int hz=g.contact.horn?73:61;

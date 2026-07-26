@@ -35,6 +35,7 @@ static inline void circle(Framebuffer *f, int cx, int cy, int r, uint32_t c) {
 const char *game_name(void);
 const char *game_help(void);
 const char *game_goal(void);
+const char *game_ending(void);
 void game_init(uint32_t seed);
 void game_tick(const Input *in);
 void game_draw(Framebuffer *fb);
