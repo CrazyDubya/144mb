@@ -17,6 +17,18 @@ DST="${1:-/home/opc/144mb/convoy}"
 
 [ -d "$DST" ] || { echo "no ship tree at $DST" >&2; exit 1; }
 
+# Refuse to sync a tree to itself. SRC is derived from this script's own path,
+# so running the ship tree's copy of it makes source and destination the same
+# directory -- rsync then succeeds, reports nothing, and the working tree is
+# never copied. That is not hypothetical: it happened, and four files of a
+# phase were committed at their previous revision while every check that could
+# have caught it had already passed against the working tree.
+if [ "$SRC" = "$DST" ]; then
+    echo "refusing to sync $SRC to itself." >&2
+    echo "run the working tree's copy: /home/opc/convoy/tools/sync.sh" >&2
+    exit 1
+fi
+
 changed=0
 for rel in src tools build.sh; do
     if ! diff -rq "$SRC/$rel" "$DST/$rel" >/dev/null 2>&1; then

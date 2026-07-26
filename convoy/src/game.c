@@ -11,8 +11,22 @@
 #include "cutscene.h"
 #include "render.h"
 
-// Exposed so the headless harness can trace the simulation; not used by the
-// Windows build, and costs nothing there since it is never referenced.
+// Today's date, arriving as a number. The platform layer is the only part of
+// the program that knows what day it is; keeping it on that side means the
+// core still makes no OS calls, and a daily run stays reproducible from its
+// seed like any other.
+void game_daily(GameMemory *mem, uint32_t seed) {
+    GameState *gs = (GameState *)mem->permanent;
+    gs->daily_seed = seed ? seed : 1u;
+}
+
+// Harness-only accessors. Compiled out of the Windows target entirely: they
+// are never called there, but "never called" is not "not present" without
+// link-time garbage collection, so all three were being carried in the
+// contest binary as dead weight.
+#ifdef CONVOY_INSTRUMENT
+
+// Exposed so the headless harness can trace the simulation.
 const World *game_world(GameMemory *mem) {
     return &((GameState *)mem->permanent)->w;
 }
@@ -24,15 +38,6 @@ int audio_mood_of(GameMemory *mem) {
     return ((GameState *)mem->permanent)->audio.mood;
 }
 
-// Today's date, arriving as a number. The platform layer is the only part of
-// the program that knows what day it is; keeping it on that side means the
-// core still makes no OS calls, and a daily run stays reproducible from its
-// seed like any other.
-void game_daily(GameMemory *mem, uint32_t seed) {
-    GameState *gs = (GameState *)mem->permanent;
-    gs->daily_seed = seed ? seed : 1u;
-}
-
 // The test bot drives the real UI rather than calling the simulation directly,
 // so it has to see where the cursor is. Read-only, harness-only.
 void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
@@ -42,6 +47,8 @@ void game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title) {
     if (tab)     *tab     = gs->tab;
     if (title)   *title   = gs->title;
 }
+
+#endif  // CONVOY_INSTRUMENT
 
 // ---------------------------------------------------------------- helpers
 static void restart(GameState *gs, uint32_t seed) {

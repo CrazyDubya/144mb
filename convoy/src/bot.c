@@ -30,7 +30,16 @@ static void reserves(const World *w, int *keep) {
     keep[G_FUEL]  = span + 1;      // +1 for a storm eating one
     // Water is per day, not per hop, and every hand aboard drinks. Missing
     // this is how a bot cheerfully hires five people and dies of thirst.
-    keep[G_WATER] = span * world_water_burn(w) + 2;
+    //
+    // Summed over the days ahead rather than today's rate multiplied out. The
+    // burn alternates with the parity of the day -- crew drink on odd days,
+    // water tanks give a dry day on even ones -- so sampling one day and
+    // scaling it made the reserve swing between two very different numbers
+    // depending on which day the convoy happened to arrive. With tanks fitted
+    // on an even day it collapsed to 2.
+    int water = 2;
+    for (int i = 1; i <= span; ++i) water += world_water_burn_on(w, w->day + i);
+    keep[G_WATER] = water;
     keep[G_AMMO]  = 2;             // enough to refuse one raid
     keep[G_MEDS]  = 1;
     keep[G_SCRAP] = 0;             // pure trade good
@@ -67,63 +76,146 @@ static int contract_worth_taking(const World *w) {
     return 1;
 }
 
-// What a fitting is worth over the hops that remain, in credits.
+// ------------------------------------------------- what a fitting is worth
 //
-// Derived from the generator's own rates, not from instinct: encounters are
-// 30% of nodes and there are five kinds, so any one kind fires about 0.8 times
-// in a 13-hop run. An earlier version of this assumed a raid every four hops
-// and overvalued armour by more than 3x.
-#define FUEL_WORTH  22
-#define WATER_WORTH 13
+// THE RULE THIS SECTION EXISTS TO ENFORCE: the bot takes *facts* from world.h
+// -- prices, burn rates, capacities, what is reachable -- and never a
+// *valuation*. It must not call world_upg_payback or world_crew_payback.
+//
+// Not a style preference. world_upg_price is defined as a fixed percentage of
+// world_upg_payback, so a test of the form `payback(x) > price(x)` reduces to
+// `p > 0.45p`, which is true for every positive p. That was literally the
+// hiring test: it passed for any crew member at any price, whether the payback
+// figure behind it was right or wrong by a factor of eight. A tautology cannot
+// discover that a price is wrong, and the price being wrong is the thing under
+// investigation.
+//
+// So these estimates are built from what this convoy has actually seen: the
+// prices it has paid, the encounters it has met, the times it ran out of room.
+// They can disagree with the asking price, and the disagreement is the
+// measurement.
 
-// A duplicate of world_upg_payback used to sit here. Nothing called it -- the
-// bot's purchase test never consulted a value at all -- so it was a second
-// copy of a formula that could drift from the real one without any test
-// noticing. Deleted. Phase 3 replaces the purchase test itself.
+// A unit of a good, valued at the prices this convoy has actually seen. The
+// table that used to be here had drifted from the game's own base prices --
+// water 13 against 12, fuel 22 against 17 -- and nothing would ever have
+// reported that, because both copies were only ever read by their own side.
+static int unit_value(const Bot *b, const World *w, int g) {
+    int a = avg_price(b, g);
+    if (a > 0) return a;
+    return w->node[w->sector][w->index].price[g];   // first stop: what is in front of us
+}
 
-// Crew drink every day they are aboard, so their keep comes straight out of
-// whatever they save.
-// Each hand now covers a category of trouble rather than one encounter kind,
-// which is roughly three of the fourteen, and drinks on alternate days rather
-// than every day. Both halves of that were needed: at one kind and a full
-// ration, every hire was net-negative and travelling alone was correct.
-static int crew_payback(const World *w, int k, int hops) {
-    int gross;
-    switch (k) {
-    case CREW_MECHANIC: gross = hops * 3 / 5 * 26; break;  // breaks, leaks, bridges
-    case CREW_GUARD:    gross = hops * 3 / 5 * 45; break;  // raids, tolls, checkpoints
-    case CREW_MEDIC:    gross = hops * 3 / 5 * 30; break;  // sickness, plague, refugees
-    case CREW_SCOUT:    gross = hops * 3 / 5 * 28; break;  // storms, bridges, caches
-    case CREW_TRADER:   gross = hops * 12;         break;  // every sale, plus tip-offs
-    default:            gross = 0;
+// Which hand would have helped with which trouble. This is the bot's own
+// belief about the crew, formed the way a player forms it -- by meeting the
+// encounter and noticing who would have covered it -- and deliberately not a
+// copy of the coverage logic inside roll_event.
+static int role_for_event(int kind) {
+    switch (kind) {
+    case EV_BREAK: case EV_LEAK: case EV_WRECK:      return CREW_MECHANIC;
+    case EV_RAID:  case EV_TOLL: case EV_CHECKPOINT: return CREW_GUARD;
+    case EV_SICK:  case EV_PLAGUE: case EV_REFUGEE:  return CREW_MEDIC;
+    case EV_BRIDGE: case EV_CACHE:                   return CREW_SCOUT;
+    case EV_TRADER: case EV_SIGNAL: case EV_RIVAL:   return CREW_TRADER;
+    default:                                         return -1;
     }
-    // Alternate-day rations, and a medic pays part of their own keep.
-    int keep = hops * WATER_WORTH / 2;
-    if (k == CREW_MEDIC)       keep /= 2;
-    if (w->upgrade[UPG_TANKS]) keep /= 2;
-    return gross - keep;
+}
+
+// Records an encounter as it is faced, so later purchases can be judged
+// against what this run has actually thrown at the convoy rather than against
+// an assumed rate. The old constants assumed five encounter kinds firing 0.8
+// times each; there are fourteen.
+static void note_event(Bot *b, const World *w) {
+    const Event *e = &w->event;
+    int cost = 0;
+    if (e->pay_good >= 0)  cost += e->pay_qty  * unit_value(b, w, e->pay_good);
+    if (e->lose_good >= 0) cost += e->lose_qty * unit_value(b, w, e->lose_good);
+    b->enc_seen++;
+    b->enc_cost += cost;
+    int role = role_for_event(e->kind);
+    if (role >= 0) b->role_seen[role]++;
+}
+
+static int upg_value(const Bot *b, const World *w, int u, int hops) {
+    int water = unit_value(b, w, G_WATER);
+    int fuel  = unit_value(b, w, G_FUEL);
+    switch (u) {
+    // A free hop every second day, and a dry day every second day. Both are
+    // arithmetic on prices the convoy has paid.
+    case UPG_ECON:   return (hops / 2) * fuel;
+    case UPG_TANKS:  return (hops / 2) * water;
+    // Ten more slots are worth what the convoy would have done with them.
+    // Counted, not assumed: every time a buy was refused for want of room is
+    // one unit it wanted and could not carry, and the margin on a unit is
+    // roughly the gap between buying and selling it elsewhere.
+    case UPG_HOLD: {
+        if (b->hops_done < 2) return 0;
+        int typical = (unit_value(b, w, G_WATER) + unit_value(b, w, G_FUEL)) / 2;
+        int wanted  = b->hold_blocked * hops / (b->hops_done + 1);
+        if (wanted > 10) wanted = 10;                  // only ten slots on offer
+        return wanted * typical / 4;                   // a quarter margin, conservatively
+    }
+    // Armour reduces what refusing a raid costs. Valued from the raids this
+    // run has actually met and what they have actually cost.
+    case UPG_ARMOUR: {
+        if (b->enc_seen == 0) return 0;
+        int avg_cost = b->enc_cost / b->enc_seen;
+        int raids    = b->role_seen[CREW_GUARD] * hops / (b->hops_done + 1);
+        return raids * avg_cost / 2;
+    }
+    default: return 0;
+    }
+}
+
+// A hand's worth: the trouble it covers, minus what it drinks. Both sides
+// measured -- the coverage from this run's encounters, the keep from the
+// game's own burn function at the prices the convoy is paying for water.
+static int crew_value(const Bot *b, const World *w, int k, int hops) {
+    int water = unit_value(b, w, G_WATER);
+
+    // Keep: what one more mouth adds to the burn over the hops remaining.
+    // world_water_burn_on is a fact, not a valuation, so asking it is fine.
+    int keep = 0;
+    for (int i = 1; i <= hops; ++i) {
+        int day = w->day + i;
+        if (world_water_burn_on(w, day) > 0 && (day % 2) == 1) keep += water;
+    }
+
+    if (k == CREW_TRADER) {
+        // The only one whose benefit is not tied to encounters: it takes a
+        // tenth off the spread on every sale for the rest of the run.
+        int sales = hops * 3;                       // a few units a stop
+        int typical = (unit_value(b, w, G_WATER) + unit_value(b, w, G_FUEL)) / 2;
+        return sales * typical / 10 - keep;
+    }
+
+    if (b->enc_seen == 0) return -keep;             // nothing seen yet: assume nothing
+    int avg_cost = b->enc_cost / b->enc_seen;
+    int covered  = b->role_seen[k] * hops / (b->hops_done + 1);
+    return covered * avg_cost - keep;
 }
 
 // Credits in the hold compound -- buy low, sell high, repeat -- so over the
 // legs that remain, working capital roughly triples. A fitting has to beat
 // that, not merely beat zero, which in practice means kit is only ever correct
 // out of genuine surplus.
-static int upgrade_worth_buying(const World *w) {
+static int upgrade_worth_buying(const Bot *b, const World *w) {
     int u = w->offer_upg;
     if (u >= UPG_COUNT || w->upgrade[u]) return 0;
     int hops = SECTORS_LAST - w->sector;
     if (hops < 5) return 0;
-    // Price is now derived from remaining payback, so the question is no
-    // longer "does this pay for itself" -- it always does on paper -- but
-    // "can the convoy spare the capital, and is the gamble worth it".
+
     int price = world_upg_price(w, u, w->offer_salvaged);
     int float_needed = w->offer_salvaged ? 70 : 120;
     if (w->credits - price < float_needed) return 0;
-    (void)hops;
-    return 1;
+
+    // Salvaged kit may fail partway, so it is worth less than sound kit by
+    // roughly the share of the run it is expected to survive.
+    int value = upg_value(b, w, u, hops);
+    if (w->offer_salvaged) value = value * 4 / 5;
+    return value > price;
 }
 
-static int crew_worth_hiring(const World *w) {
+static int crew_worth_hiring(const Bot *b, const World *w) {
     int k = w->offer_crew;
     if (k >= CREW_COUNT || w->crew[k]) return 0;
     int hops = SECTORS_LAST - w->sector;
@@ -131,7 +223,7 @@ static int crew_worth_hiring(const World *w) {
     int price = world_crew_price(w, k);
     if (w->credits - price < 100) return 0;
     if (w->held[G_WATER] < 6) return 0;          // cannot feed them yet
-    return crew_payback(w, k, hops) > price;
+    return crew_value(b, w, k, hops) > price;
 }
 
 // ---------------------------------------------------------------- trade
@@ -186,6 +278,10 @@ static int decide_trade(Bot *b, const World *w, int sel) {
     // happen. Without the room check the bot presses BUY at a full hold
     // forever, which is exactly how the 13-hop route deadlocked it.
     int room = cargo < world_cargo_cap(w);
+    // A full hold that wanted to buy is the only honest evidence that more
+    // slots would be worth paying for. Counted here rather than assumed, so
+    // the racks are valued by pressure this run actually felt.
+    if (!room) b->hold_blocked++;
 
     // 2. Top up fuel, which is the resource that ends runs. Buy it even at a
     //    poor price -- being stranded costs more than being overcharged.
@@ -261,10 +357,13 @@ static int score_node(const World *w, const Node *nd) {
 }
 
 static int decide_map(const World *w, int map_sel) {
-    int cand[NODES_PER], n = 0;
-    uint8_t links = w->node[w->sector][w->index].links;
-    for (int m = 0; m < NODES_PER; ++m)
-        if ((links & (1u << m)) && w->node[w->sector + 1][m].active) cand[n++] = m;
+    // world_reachable, not a copy of it. The copy that used to be here omitted
+    // the `sector >= SECTORS - 1` guard, so at the last sector it would have
+    // read node[SECTORS][m] -- one row past the end of the array. Unreachable
+    // today only because arriving at the Green Zone sets ST_WON before the map
+    // is ever drawn, which is a state-machine accident rather than a bound.
+    int cand[NODES_PER];
+    int n = world_reachable(w, cand);
     if (n == 0) return BTN_A;
 
     int best = 0, best_score = -100000;
@@ -284,9 +383,12 @@ static int decide_map(const World *w, int map_sel) {
 // Roughly what a unit of each good is worth to the convoy right now. Survival
 // stock is worth more than its price when the tank or the tanks are low, which
 // is what stops the bot trading away the thing that is about to kill it.
-static int good_value(const World *w, int g) {
-    static const int BASE[GOODS_COUNT] = { 13, 22, 25, 40, 6 };
-    int v = BASE[g];
+static int good_value(const Bot *b, const World *w, int g) {
+    // Priced from what this convoy has actually seen. The fixed table that
+    // used to be here had drifted from the game's own base prices -- water 13
+    // against 12, fuel 22 against 17 -- and neither side could ever have
+    // reported the drift, because each was only read by itself.
+    int v = unit_value(b, w, g);
     int keep[GOODS_COUNT];
     reserves(w, keep);
     if ((g == G_FUEL || g == G_WATER) && w->held[g] <= keep[g]) v *= 3;
@@ -315,17 +417,17 @@ static int decide_event(const Bot *b, const World *w) {
     }
 
     int cost = 0;
-    if (e->pay_good >= 0) cost = e->pay_qty * good_value(w, e->pay_good);
+    if (e->pay_good >= 0) cost = e->pay_qty * good_value(b, w, e->pay_good);
 
     int benefit = e->gain_credits;
-    if (e->gain_good >= 0) benefit += e->gain_qty * good_value(w, e->gain_good);
+    if (e->gain_good >= 0) benefit += e->gain_qty * good_value(b, w, e->gain_good);
 
     // Refusing has a price too: a named good, a bite out of the hold, or the
     // seed itself. The seed is what the run is for, so it is priced far above
     // anything it physically weighs.
     if (e->lose_qty > 0) {
         if (e->lose_good == -2)      benefit += e->lose_qty * 90;
-        else if (e->lose_good >= 0)  benefit += e->lose_qty * good_value(w, e->lose_good);
+        else if (e->lose_good >= 0)  benefit += e->lose_qty * good_value(b, w, e->lose_good);
         else                         benefit += e->lose_qty * 18;
     }
 
@@ -347,14 +449,31 @@ void bot_init(Bot *b, int float_credits) {
 int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
     if (title) return BTN_START;
 
-    // New stop: forget what was bought at the last one.
+    // New stop: forget what was bought at the last one, and take one price
+    // reading. observe() used to run on every step, i.e. every keypress, so a
+    // market was counted five to twenty times depending on how long the bot
+    // stood in it -- and since world_buy and world_sell move the local price
+    // permanently, what accumulated was the moved price, repeatedly.
+    //
+    // The error was therefore a function of how much the bot traded, which is
+    // the thing the average is used to decide. The game's own running average
+    // (observe_market) has always been once per arrival; these now agree.
     if (w->sector != b->at_sector || w->index != b->at_index) {
+        if (w->sector != b->at_sector && b->at_sector >= 0) b->hops_done++;
         b->at_sector = w->sector;
         b->at_index  = w->index;
         for (int g = 0; g < GOODS_COUNT; ++g) b->bought_here[g] = 0;
+        observe(b, w);
     }
 
-    observe(b, w);
+    // Record an encounter once, as it is met. What the convoy has actually
+    // been asked for is the only basis it has for pricing a hand or a plate
+    // of armour, and it is a better one than a constant.
+    if (w->state == ST_EVENT) {
+        if (!b->in_event) { b->in_event = 1; note_event(b, w); }
+    } else {
+        b->in_event = 0;
+    }
 
     switch (w->state) {
     case ST_TRADE:
@@ -364,11 +483,11 @@ int bot_step(Bot *b, const World *w, int sel, int map_sel, int tab, int title) {
             if (tab != TAB_CONTRACTS) return BTN_RIGHT;   // tabs cycle forward
             return BTN_A;
         }
-        if (upgrade_worth_buying(w)) {
+        if (upgrade_worth_buying(b, w)) {
             if (tab != TAB_GARAGE) return BTN_RIGHT;
             return BTN_A;
         }
-        if (crew_worth_hiring(w)) {
+        if (crew_worth_hiring(b, w)) {
             if (tab != TAB_CREW) return BTN_RIGHT;
             return BTN_A;
         }

@@ -129,7 +129,6 @@ static int write_png(const char *path, const uint32_t *pixels, int w, int h) {
 const World *game_world(GameMemory *mem);
 int          audio_mood_of(GameMemory *mem);
 void         game_ui(GameMemory *mem, int *sel, int *map_sel, int *tab, int *title);
-void         game_daily(GameMemory *mem, uint32_t seed);
 
 // Renders the synth to a WAV and reports level statistics. There is no way to
 // listen to anything on this machine, so the check is numeric: non-silent,
@@ -400,13 +399,40 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
                              : bot_step(&bot, w, sel, map_sel, tab, title);
         if (btn < 0) break;
 
+        // Checked here, between the bot's observation and the world's next
+        // one, because that is the only point at which both have seen exactly
+        // the same set of markets. world.h claimed for three releases that
+        // "both reason from identical information"; they did not, because the
+        // bot sampled once per keypress and the game once per arrival, so the
+        // bot's average was weighted by how long it loitered in each shop.
+        // Now that both sample on arrival they must agree exactly.
+        if (o->trace_hash && !o->use_ref) {
+            for (int g = 0; g < GOODS_COUNT; ++g) {
+                if (bot.seen[g] == 0 || w->seen_n[g] == 0) continue;
+                if (bot.seen[g] != w->seen_n[g]) {
+                    fprintf(stderr, "sample counts differ, seed %u good %d: "
+                            "bot %d vs world %d\n", seed, g, bot.seen[g], w->seen_n[g]);
+                    return 0;
+                }
+                int ba = (int)(bot.sum[g] / bot.seen[g]);
+                int wa = (int)(w->seen_sum[g] / w->seen_n[g]);
+                if (ba != wa) {
+                    fprintf(stderr, "price average disagrees, seed %u good %d: "
+                            "bot %d vs world %d\n", seed, g, ba, wa);
+                    return 0;
+                }
+            }
+        }
+
         memset(&in, 0, sizeof in);
         in.down[btn] = in.pressed[btn] = 1;
         game_update(mem, &in, fb);
         memset(&in, 0, sizeof in);
         game_update(mem, &in, fb);
 
-        if (o->trace_hash) res->trace = fnv(&res->trace, 0, state_hash(game_world(mem)));
+        if (o->trace_hash) {
+            res->trace = fnv(&res->trace, 0, state_hash(game_world(mem)));
+        }
 
         if (o->journal_at && steps == o->journal_at && w->state == ST_TRADE) {
             for (int k = 0; k < TAB_COUNT; ++k) {

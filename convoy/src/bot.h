@@ -24,6 +24,16 @@ typedef struct {
     // keep two sets of thresholds permanently disjoint.
     int8_t bought_here[GOODS_COUNT];
     int    at_sector, at_index;
+
+    // What this convoy has actually lived through, used to value fittings from
+    // experience instead of from the simulation's own constants. See the note
+    // on circularity in bot.c.
+    int    hops_done;                 // hops travelled so far
+    int    enc_seen;                  // encounters faced
+    int    enc_cost;                  // credits-equivalent they have cost
+    int    role_seen[CREW_COUNT];     // ...that each role would have helped with
+    int    hold_blocked;              // buys refused for want of space
+    int    in_event;                  // so an encounter is counted once, not per key
 } Bot;
 
 void bot_init(Bot *b, int float_credits);
