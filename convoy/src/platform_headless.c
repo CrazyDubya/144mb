@@ -305,6 +305,7 @@ typedef struct {
     int   use_ref;         // -A ref: play with the frozen agent instead
     int   daily;           // --daily: take today's fixed map, via the menu
     int   force_upg;       // -U n: fit upgrade n from the start, or -1
+    int   force_crew;      // -C n: put crew n aboard from the start, or -1
     int   feats;           // -M n: which human pressures the bot feels
     int   shot_tab;        // -S n: photograph the first frame showing tab n
 } RunOpts;
@@ -397,6 +398,10 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
             if (o->force_upg >= 0 && o->force_upg < UPG_COUNT) {
                 World *mw = (World *)(uintptr_t)w;   // harness only
                 mw->upgrade[o->force_upg] = 1;
+            }
+            if (o->force_crew >= 0 && o->force_crew < CREW_COUNT) {
+                World *mw = (World *)(uintptr_t)w;
+                mw->crew[o->force_crew] = 1;
             }
         }
         int btn = o->use_ref ? botref_step(&ref, w, sel, map_sel, tab, title)
@@ -548,6 +553,38 @@ static void kind_add(KindTotals *t, const World *w) {
     }
 }
 
+// Per-role hiring and fitting. The aggregate says how often the boards are used
+// at all; this says whether any single option is dominated or dominant, which
+// is the bar DESIGN-kit sets and the only way to see a role nobody ever takes.
+typedef struct { long off[CREW_COUNT], hire[CREW_COUNT];
+                 long uoff[UPG_COUNT], ubuy[UPG_COUNT]; } RoleTotals;
+
+static void role_add(RoleTotals *t, const World *w) {
+    for (int k = 0; k < CREW_COUNT; ++k) {
+        t->off[k]  += w->in.crew_offered[k];
+        t->hire[k] += w->in.crew_hired[k];
+    }
+    for (int u = 0; u < UPG_COUNT; ++u) {
+        t->uoff[u] += w->in.upg_offered[u];
+        t->ubuy[u] += w->in.upg_bought[u];
+    }
+}
+
+static void role_report(const RoleTotals *t) {
+    static const char *const CN[CREW_COUNT] =
+        { "MECHANIC", "GUARD", "MEDIC", "SCOUT", "TRADER" };
+    static const char *const UN[UPG_COUNT] =
+        { "HOLD", "ECON", "ARMOUR", "TANKS" };
+    for (int k = 0; k < CREW_COUNT; ++k)
+        printf("ROLE  crew %-9s offered %5ld  hired %5ld  take %3ld%%\n",
+               CN[k], t->off[k], t->hire[k],
+               t->off[k] ? t->hire[k] * 100 / t->off[k] : 0);
+    for (int u = 0; u < UPG_COUNT; ++u)
+        printf("ROLE  kit  %-9s offered %5ld  fitted %5ld  take %3ld%%\n",
+               UN[u], t->uoff[u], t->ubuy[u],
+               t->uoff[u] ? t->ubuy[u] * 100 / t->uoff[u] : 0);
+}
+
 static void kind_report(const KindTotals *t, int runs) {
     printf("KIND  %-11s %8s %8s %8s %8s %8s\n",
            "encounter", "fired", "per_run", "accept%", "refuse%", "forced%");
@@ -634,6 +671,7 @@ int main(int argc, char **argv) {
     int         use_ref = 0;          // -A ref plays with the frozen agent
     int         daily = 0;            // --daily plays today's fixed map
     int         force_upg = -1;       // -U n fits an upgrade regardless of choice
+    int         force_crew = -1;      // -C n puts a crew member aboard regardless
     int         feats = BOT_ALL;      // -M n selects which pressures the bot feels
     int         kinds = 0;            // -K reports per-encounter-kind behaviour
     int         shot_tab = -1;        // -S n photographs the first frame of tab n
@@ -660,6 +698,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-A") && i + 1 < argc) use_ref = !strcmp(argv[++i], "ref");
         else if (!strcmp(argv[i], "--daily")) daily = 1;
         else if (!strcmp(argv[i], "-U") && i + 1 < argc) force_upg = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-C") && i + 1 < argc) force_crew = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-M") && i + 1 < argc) feats = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-K")) kinds = 1;
         else if (!strcmp(argv[i], "-S") && i + 1 < argc) shot_tab = atoi(argv[++i]);
@@ -692,7 +731,7 @@ int main(int argc, char **argv) {
 
     RunOpts opt = { bot_float, refuse_all, journal_at, end_shot,
                     every, verbose, outdir, determinism, use_ref, daily,
-                    force_upg, feats, shot_tab };
+                    force_upg, force_crew, feats, shot_tab };
 
     // ---- bot mode ----------------------------------------------------
     // The bot plays through the real UI: it presses the same keys a player
@@ -704,7 +743,9 @@ int main(int argc, char **argv) {
         int won = 0, dead = 0, stalled = 0, runs = 0;
 #ifdef CONVOY_INSTRUMENT
         KindTotals kt[EV_KINDS];
+        RoleTotals rt;
         memset(kt, 0, sizeof kt);
+        memset(&rt, 0, sizeof rt);
 #endif
         for (int sd = lo; sd <= hi; ++sd) {
             RunResult r;
@@ -732,7 +773,7 @@ int main(int argc, char **argv) {
             }
 
             print_run(&r);
-            INSTR(kind_add(kt, &r.w));
+            INSTR(kind_add(kt, &r.w); role_add(&rt, &r.w));
             ++runs;
             if      (r.w.state == ST_WON)  ++won;
             else if (r.w.state == ST_DEAD) ++dead;
@@ -742,7 +783,7 @@ int main(int argc, char **argv) {
         if (sweep_n > 0) {
             printf("SWEEP n=%d diff=%d won=%d dead=%d stalled=%d win_pct=%d\n",
                    runs, diff, won, dead, stalled, runs ? won * 100 / runs : 0);
-            if (kinds) INSTR(kind_report(kt, runs));
+            if (kinds) INSTR(kind_report(kt, runs); role_report(&rt));
         }
         // A stall is always a bug, never a balance result, so it fails the run
         // rather than quietly appearing in a column.

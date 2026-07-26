@@ -41,9 +41,9 @@ survive.
 |---|---|---|---|
 | ignores the economy | **0%** | **0%** | **0%** |
 | buys fuel, fixed routine | **0%** | **0%** | **0%** |
-| plays prices (see the bot below) | **70%** | **43%** | **27%** |
+| plays prices (see the bot below) | **61%** | **47%** | **27%** |
 
-Over 400 seeds each, zero stalls. The first two follow fixed key sequences and
+Over 1,000 seeds each, zero stalls. The first two follow fixed key sequences and
 cannot react to a price, so they die out on the road; only the third trades.
 
 These numbers are **not** comparable to anything published before v4. The

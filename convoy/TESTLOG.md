@@ -1617,6 +1617,97 @@ nothing, with the rules that came out of it — identical is a red flag, never
 silence a build, never pipe a check whose exit status you depend on, and when a
 guard has been defeated twice, move it somewhere it cannot be bypassed.
 
+## P11 — the bot optimised, and kit priced from A/Bs
+
+Final v4 gate, n=1000: **61 / 47 / 27**, inside bands of 60-70 / 42-52 / 22-32.
+Zero stalls, careless 0%, sanitizers/determinism/exploit clean.
+
+### Forced-policy A/Bs: what each option is actually worth
+
+Every fitting and hand granted free at the start, n=600 on THE ROAD against a
+44% baseline. This is the measurement the whole release was building toward,
+and it could not have been made before P3 removed the tautology.
+
+| option | win rate | delta |
+|---|---:|---:|
+| kit ECON | 86% | **+42** |
+| kit TANKS | 80% | **+36** |
+| kit HOLD | 50% | +6 |
+| kit ARMOUR | 49% | +5 |
+| crew MEDIC | 48% | +4 |
+| crew TRADER | 35% | −9 |
+| crew SCOUT | 25% | −19 |
+| crew MECHANIC | 24% | −20 |
+| crew GUARD | 21% | **−23** |
+
+### The bot was leaving 12 points on the table
+
+`upgrade_worth_buying` demanded **120 credits of working capital left over**
+after a purchase, on a convoy that typically holds 100-150. It blocked almost
+every fitting -- including the economiser, worth +42. The gate dated from when
+kit was overpriced and capital compounded faster than any fitting returned;
+neither had been true for several phases.
+
+Swept: 120 → 43%, 80 → 49%, 50 → 53%, 30 → **55%**, 15 → 55%. Set to 30.
+
+### Kit was priced by instinct, and two of four were backwards
+
+`world_upg_payback` still carried the original guesses, including armour at
+`hops * 3/5 * 20` -- the same discredited five-kinds rate that broke the crew
+pricing in P8. It made armour the **dearest** fitting in the game while the
+A/B puts it at the **least valuable**. Repriced against the measured deltas.
+
+Two valuation bugs in the bot, both found by a take rate stuck at zero:
+
+- `UPG_HOLD` was valued from buys refused for want of room. That counter can
+  never fire: the bot only speculates when six slots are already free, so the
+  branch is unreachable and the racks were worth zero forever -- 0 fitted from
+  552 offers. Valued from measured occupancy instead.
+- `UPG_ARMOUR` divided before multiplying, rounding a 0.8-per-run rate to
+  zero. **Exactly the fault fixed in the crew payback one phase earlier**,
+  reproduced days later in the same shape.
+
+Result -- every fitting is now a live choice, meeting the `DESIGN-kit.md` bar
+of at least 15% taken and no more than 85%:
+
+| | offered | taken |
+|---|---:|---:|
+| HOLD | 615 | 42% |
+| ECON | 803 | 57% |
+| ARMOUR | 530 | 65% |
+| TANKS | 858 | 34% |
+
+### Crew are the one system v4 could not fix
+
+Every role is net-negative **even when granted free**, and the reason is
+structural rather than a matter of price:
+
+| ration | free GUARD | free SCOUT |
+|---|---:|---:|
+| every 3 days | −22 | −21 |
+| every 6 days | −13 | −8 |
+| never drinks | **+5** | **+9** |
+
+At zero water cost a specialist is worth +5 to +9, because its ability fires
+**0.8 times per run** -- three of fourteen kinds at 3.7 encounters. Any ration
+that preserves "mouths that drink" outweighs that by three to five times.
+
+The role that came closest to viable is the trader, and the reason points at
+the fix: its benefit is **always on**. The scout is the sharpest illustration
+of the opposite -- it negates storms entirely, which sounds strong and measures
+at −19, because a competent convoy already routes around storms. It guards
+against something good play avoids.
+
+**Left as measured rather than papered over.** Crew are a presence problem, not
+a pricing problem, and the fix is content: passives, a third branch in
+encounters, personal errands, and a voice. That is v5.
+
+### AddressSanitizer caught a stray write on its first run
+
+The per-role counter added this phase indexed `crew_offered[w->offer_crew]`
+outside the branch that sets it. `offer_crew` is `0xFF` when nobody is looking
+for work, so a five-element array was being written at index 255.
+
 ---
 
 ## Bugs found, and what found them

@@ -150,6 +150,13 @@ typedef struct {
 
     uint16_t pl_storm, pl_demand, pl_random;   // crates lost, by cause
 
+    // Per role, because "12% of runs hire someone" hides whether that is one
+    // role always taken and four never offered, or five taken evenly.
+    uint16_t crew_offered[CREW_COUNT];
+    uint16_t crew_hired[CREW_COUNT];
+    uint16_t upg_offered[UPG_COUNT];
+    uint16_t upg_bought[UPG_COUNT];
+
     uint32_t units_bought, units_sold;
     int32_t  credits_in, credits_out;
     int32_t  sold_headline;   // list value of everything sold, before the take

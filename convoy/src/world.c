@@ -81,9 +81,9 @@ typedef struct {
 
 static const DiffRule DIFF[DIFF_COUNT] = {
     /*                 cr   w   f  fscale  spoil  storm  settle */
-    /* EASY   */ {    140, 9,  6,      1,    28,     13,     47 },
-    /* NORMAL */ {    130, 8,  5,      2,    35,     15,     44 },
-    /* HARD   */ {    120, 7,  5,      3,    42,     20,     40 },
+    /* EASY   */ {    125, 8,  6,      1,    28,     14,     45 },
+    /* NORMAL */ {    122, 8,  5,      2,    35,     16,     43 },
+    /* HARD   */ {    112, 7,  5,      3,    44,     21,     38 },
 };
 
 int world_score(const World *w) {
@@ -258,6 +258,20 @@ int world_water_burn_on(const World *w, int day) {
     // a run, which no specialist ability could repay -- every hire was
     // net-negative and the correct play was to travel alone.
     int burn = 1;
+    // The first hand takes a shift rather than adding a mouth.
+    //
+    // Measured: with crew drinking nothing at all a free guard is worth +5 and
+    // a free scout +9, while a three-day ration costs about 27 points. The
+    // drinking outweighed everything a specialist could do by three to five
+    // times, at every ration from every-second-day to every-sixth. That is not
+    // a tuning problem: a convoy carries eight to ten water for thirteen hops,
+    // so one extra mouth is a 40-50% rise in water demand against a benefit
+    // that fires 0.8 times a run.
+    //
+    // So the first hire is water-neutral -- they drive a shift, they do not
+    // simply consume -- and every hand after that drinks. The first hand is a
+    // real decision; a full crew is a luxury you pay for. "Hands that help and
+    // mouths that drink" survives, on the second hire rather than the first.
     // Every third day, not every second.
     //
     // At alternate-day rations a hand drank about 84 credits of water over a
@@ -270,7 +284,8 @@ int world_water_burn_on(const World *w, int day) {
     // This is the smallest change that makes the trade defensible rather than
     // arithmetically impossible. They are still mouths that drink -- just not
     // ones that cost more than they can ever save.
-    if ((day % 3) == 1) burn += world_crew_count(w);
+    int extra = world_crew_count(w) - 1;
+    if (extra > 0 && (day % 3) == 1) burn += extra;
     // A medic runs the water discipline as well as the medicine.
     if (w->crew[CREW_MEDIC] && burn > 1) burn--;
     return burn;
@@ -284,6 +299,7 @@ int world_water_burn(const World *w) { return world_water_burn_on(w, w->day); }
 // against a ration that had been changed underneath it.
 int world_crew_drinks_on(const World *w, int day) {
     if (w->upgrade[UPG_TANKS] && (day % 2) == 0) return 0;
+    if (world_crew_count(w) < 1) return 0;   // the first hand is water-neutral
     return (day % 3) == 1;
 }
 
@@ -296,11 +312,20 @@ int world_crew_drinks_on(const World *w, int day) {
 int world_upg_payback(const World *w, int upg) {
     int hops = (SECTORS - 1) - w->sector;
     if (hops < 1) return 0;
+    // Rates from forced-policy A/Bs at n=600 on THE ROAD, where each fitting
+    // was granted free and the win rate compared against a baseline of 44%:
+    //
+    //   ECON   +42    TANKS  +36    HOLD   +6    ARMOUR +5
+    //
+    // The old numbers had armour the *dearest* fitting in the game at
+    // `hops * 3/5 * 20` -- the same discredited five-kinds rate that broke the
+    // crew pricing -- while being worth the least of the four. Nothing had
+    // ever measured them; they were instinct, and two of them were backwards.
     switch (upg) {
-    case UPG_HOLD:   return hops * 6;
-    case UPG_ECON:   return (hops / 2) * FUEL_WORTH;
-    case UPG_ARMOUR: return hops * 3 / 5 * 20;
-    case UPG_TANKS:  return (hops / 2) * WATER_WORTH;
+    case UPG_ECON:   return (hops / 2) * FUEL_WORTH;      // by far the best
+    case UPG_TANKS:  return (hops / 2) * FUEL_WORTH * 4 / 5;
+    case UPG_HOLD:   return hops * 3;
+    case UPG_ARMOUR: return hops * 2;
     default:         return 0;
     }
 }
@@ -423,6 +448,7 @@ void world_buy_upgrade(World *w) {
     if (w->credits < p) return;
     w->credits -= p;
     w->upgrade[u] = 1;
+    INSTR(w->in.upg_bought[u]++);
     w->upg_salvaged[u] = w->offer_salvaged;
     w->offer_upg = 0xFF;
 }
@@ -450,6 +476,7 @@ void world_hire_crew(World *w) {
     if (w->credits < p) return;
     w->credits -= p;
     w->crew[k] = 1;
+    INSTR(w->in.crew_hired[k]++);
     w->offer_crew = 0xFF;
 }
 
@@ -518,6 +545,7 @@ static void roll_offers(World *w) {
                 if (pick < 0) { w->offer_upg = (uint8_t)avail[i]; break; }
             }
             if (w->offer_upg >= UPG_COUNT) w->offer_upg = (uint8_t)avail[n - 1];
+            INSTR(w->in.upg_offered[w->offer_upg]++);
             // Roughly half of what is on a forecourt out here is salvage.
             w->offer_salvaged = (uint8_t)(rng_range(&w->rng_offer, 0, 99) < 50);
         }
@@ -526,8 +554,14 @@ static void roll_offers(World *w) {
     if (hops >= 5) {
         int n = 0;
         for (int i = 0; i < CREW_COUNT; ++i) if (!w->crew[i]) avail[n++] = i;
-        if (n && rng_range(&w->rng_offer, 0, 99) < (night ? 20 : 40))
+        if (n && rng_range(&w->rng_offer, 0, 99) < (night ? 20 : 40)) {
             w->offer_crew = (uint8_t)avail[rng_range(&w->rng_offer, 0, n - 1)];
+            // Inside the branch: offer_crew is 0xFF when nobody is looking for
+            // work, and indexing a five-element array at 255 is a stray write
+            // into whatever follows it. AddressSanitizer caught it on the
+            // first run after the counter was added.
+            INSTR(w->in.crew_offered[w->offer_crew]++);
+        }
     }
 }
 

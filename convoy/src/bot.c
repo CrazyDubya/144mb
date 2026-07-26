@@ -178,19 +178,35 @@ static int upg_value(const Bot *b, const World *w, int u, int hops) {
     // one unit it wanted and could not carry, and the margin on a unit is
     // roughly the gap between buying and selling it elsewhere.
     case UPG_HOLD: {
-        if (b->hops_done < 2) return 0;
+        // Valued from how full the hold actually runs, not from buys that were
+        // refused for want of room. The refusal counter never fires: the bot
+        // only speculates when six slots are already free, so the "no room"
+        // branch is unreachable and the racks priced at zero forever -- 0 fitted
+        // out of 552 offers, against a forced-policy value of +6 points.
+        int cap  = world_cargo_cap(w);
+        int full = world_cargo(w) * 100 / (cap ? cap : 1);
+        if (full < 50) return 0;                       // room to spare; no value
         int typical = (unit_value(b, w, G_WATER) + unit_value(b, w, G_FUEL)) / 2;
-        int wanted  = b->hold_blocked * hops / (b->hops_done + 1);
-        if (wanted > 10) wanted = 10;                  // only ten slots on offer
-        return wanted * typical / 4;                   // a quarter margin, conservatively
+        // Above half full, each of the ten new slots is worth a share of a
+        // typical unit's margin, scaled by how tight things already are.
+        return 10 * typical * (full - 50) / 100 / 3;
     }
     // Armour reduces what refusing a raid costs. Valued from the raids this
     // run has actually met and what they have actually cost.
     case UPG_ARMOUR: {
-        if (b->enc_seen == 0) return 0;
-        int avg_cost = b->enc_cost / b->enc_seen;
-        int raids    = b->role_seen[CREW_GUARD] * hops / (b->hops_done + 1);
-        return raids * avg_cost / 2;
+        // Priced off the road ahead rather than only off raids already met.
+        // Keyed to role_seen alone it was worth nothing until a raid had
+        // happened, and armour is offered early -- 13 fitted out of 1444
+        // offers, against a forced-policy value of +5 points. Raids are three
+        // of fourteen kinds, and world_road_ahead is a fact the bot may read.
+        int storms = 0, events = 0;
+        world_road_ahead(w, &storms, &events);
+        int per = b->enc_seen ? b->enc_cost / b->enc_seen
+                              : unit_value(b, w, G_AMMO) * 2;
+        // One expression: raids come to about 0.8 over a run and dividing
+        // before multiplying rounds that to zero. Exactly the fault found in
+        // the crew payback in P8, reproduced here days later.
+        return events * 45 * 3 * per / (100 * 14 * 2);
     }
     default: return 0;
     }
@@ -237,7 +253,13 @@ static int upgrade_worth_buying(const Bot *b, const World *w) {
     if (hops < 5) return 0;
 
     int price = world_upg_price(w, u, w->offer_salvaged);
-    int float_needed = w->offer_salvaged ? 70 : 120;
+    // Working capital to leave after a purchase. This was 120 for sound kit on
+    // a convoy that typically holds 100-150 credits, so it blocked nearly every
+    // fitting -- while forced-policy A/Bs put the economiser at +42 points and
+    // the water tanks at +36. The gate was written when kit was overpriced and
+    // capital compounded faster than any fitting returned; neither is true now.
+    // Swept: 120 -> 43%, 80 -> 49%, 50 -> 53%, 30 -> 55%, 15 -> 55%.
+    int float_needed = w->offer_salvaged ? 18 : 30;
     if (w->credits - price < float_needed) return 0;
 
     // Salvaged kit may fail partway, so it is worth less than sound kit by
