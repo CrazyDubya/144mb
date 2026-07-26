@@ -442,7 +442,12 @@ static int run_one(GameMemory *mem, Framebuffer *fb, uint32_t *pixels,
         // below was hardcoded to one tab at one step, which meant finding the
         // right step by hand for every screen -- and a panel that is only ever
         // looked at by luck is a panel whose overflow nobody notices.
-        if (o->shot_tab >= 0 && !res->shot_done && w->state == ST_TRADE) {
+        // Past the opening. A cut scene owns the screen while the world state
+        // already reads ST_TRADE, so shooting on state alone photographs the
+        // cut scene -- the same disagreement between what the simulation says
+        // and what is on screen that produced the wrong map hash in P1.
+        if (o->shot_tab >= 0 && !res->shot_done && steps > 25
+            && w->state == ST_TRADE) {
             for (int k = 0; k < TAB_COUNT; ++k) {
                 int t = 0;
                 game_ui(mem, NULL, NULL, &t, NULL);

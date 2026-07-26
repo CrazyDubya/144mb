@@ -206,7 +206,12 @@ void game_update(GameMemory *mem, const Input *in, Framebuffer *fb) {
 
     case ST_DEAD:
     case ST_WON:
-        if (in->pressed[BTN_START]) restart(gs, gs->seed + gs->tick);
+        if (in->pressed[BTN_START]) {
+            // A daily run replays the same map. It used to take a fresh seed
+            // regardless, so pressing "run it again" on today's map silently
+            // gave a different one.
+            restart(gs, gs->daily ? gs->daily_seed : gs->seed + gs->tick);
+        }
         break;
     }
 

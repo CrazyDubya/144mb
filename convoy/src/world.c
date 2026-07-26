@@ -882,6 +882,19 @@ void world_sell(World *w, int good) {
 }
 
 // ---------------------------------------------------------------- encounters
+// Which of the two refusals applies. The UI showed "YOU CANNOT PAY THIS" for
+// both, so a convoy with a full hold and a full purse was told it was broke.
+int world_accept_block(const World *w) {
+    const Event *e = &w->event;
+    if (e->pay_good >= 0 && w->held[e->pay_good] < e->pay_qty) return 1;
+    if (e->gain_good >= 0 && e->gain_qty > 0) {
+        int freed = (e->pay_good >= 0) ? e->pay_qty : 0;
+        int room  = world_cargo_cap(w) - (world_cargo(w) - freed);
+        if (room < e->gain_qty) return 2;
+    }
+    return 0;
+}
+
 int world_can_accept(const World *w) {
     const Event *e = &w->event;
     if (e->pay_good >= 0 && w->held[e->pay_good] < e->pay_qty) return 0;

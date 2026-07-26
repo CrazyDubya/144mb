@@ -49,7 +49,6 @@
 #define T_HOLD         "HOLD"
 
 // Market
-#define T_MARKET       "MARKET"
 #define T_PRICE        "PRICE"
 #define T_HELD         "HELD"
 #define T_BUY          "BUY"
@@ -112,6 +111,10 @@
 #define T_SIGNAL_A     "GO AND LOOK"
 #define T_SIGNAL_B     "IGNORE IT"
 #define T_CANNOT       "YOU CANNOT PAY THIS"
+// world_can_accept refuses for two unrelated reasons and said the same thing
+// for both, so a full hold read as an empty purse.
+#define T_NO_ROOM      "NO ROOM IN THE HOLD"
+#define T_FREE         "FREE"
 
 // The opening. Short: a judge wants to play, not read.
 #define T_OPEN_1A      "THE LAST GREENHOUSE IN THE WEST BURNED IN THE SPRING."
@@ -121,7 +124,9 @@
 #define T_OPEN_3A      "YOU CANNOT SELL THE SEED. NOT FOR FUEL,"
 #define T_OPEN_3B      "NOT FOR WATER, NOT TO SAVE YOUR OWN LIFE."
 #define T_OPEN_3C      "EVERYTHING ELSE IN THE HOLD IS NEGOTIABLE."
-#define T_OPEN_SKIP    "ENTER TO CONTINUE    ESC TO SKIP"
+// ESC quits the game; it has never skipped anything. The prompt told players
+// to press the one key that ends the run.
+#define T_OPEN_SKIP    "ANY KEY TO CONTINUE"
 
 // The people you meet more than once. Names are short so they fit beside a
 // portrait, and each has three lines: a first meeting, a warm return and a
@@ -175,7 +180,6 @@
 #define T_END_EXEMP_A  "ALL SIX CRATES, A CREW STILL BREATHING,"
 #define T_END_EXEMP_B  "AND ENOUGH LEFT OVER TO GO BACK FOR MORE."
 #define T_END_EXEMP_C  "THEY NAME THE FIRST FIELD AFTER THE CONVOY."
-#define T_END_AGAIN    "ENTER TO RUN IT AGAIN"
 
 // Vignettes: a line or two on the road, at moments worth marking.
 #define T_VIG_FIRST_A  "THE WEST IS BEHIND YOU NOW."
@@ -220,6 +224,8 @@
 #define T_BACK         "PRESS ANY KEY TO GO BACK"
 
 // Settlement tabs
+// T_MARKET and T_END_AGAIN were removed: exact duplicates of T_TAB_MARKET
+// and T_AGAIN that nothing referenced.
 #define T_TAB_MARKET    "MARKET"
 #define T_TAB_GARAGE    "GARAGE"
 #define T_TAB_CREW      "CREW"

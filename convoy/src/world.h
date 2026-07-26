@@ -285,6 +285,8 @@ void world_travel(World *w, int next_index);
 void world_buy   (World *w, int good);
 void world_sell  (World *w, int good);
 int  world_can_accept(const World *w);
+// Why an encounter cannot be taken: 0 fine, 1 cannot pay, 2 no room.
+int  world_accept_block(const World *w);
 void world_accept(World *w);    // pay the price
 void world_decline(World *w);   // take the consequence
 

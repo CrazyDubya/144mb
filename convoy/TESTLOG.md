@@ -1488,6 +1488,78 @@ Rewritten with `set -e`, an unsilenced build, and an assertion that the edit
 changed the file. **Fourth instance this release of a tool reporting success
 while doing nothing.**
 
+## P9 — presentation
+
+Win rates 70 / 43 / 27, unchanged from P8b at n=400. A presentation phase that
+moves the win rate has leaked behaviour, so that equality is the gate.
+
+### The payload is drawn
+
+It was rendered **nowhere**. `T_PAYLOAD` and `T_PAYLOAD_SAFE` were defined and
+referenced by nothing; `world_payload()` was called only by the harness. A
+player could cross all fourteen sectors and reach the Green Zone having never
+seen the thing the entire run is about.
+
+Worse, the two numbers that did exist disagreed by exactly that amount: the HUD
+counts `world_cargo`, which **includes** the payload, while the cargo grid
+iterated `held[]`, which does not. The gap between them *was* the six crates.
+
+Six green cells now head the hold, labelled once. HOLD 25/30 and the grid now
+agree.
+
+The grid also sizes to `world_cargo_cap()` rather than the `CARGO_CAP`
+constant. With racks fitted it drew thirty cells for a forty-slot hold, so ten
+slots of paid-for cargo were invisible.
+
+### A demand for the seed no longer looks like scrap
+
+`ui_event` tested `lose_good >= 0` and let `-2` — the payload — fall into the
+generic random-cargo branch. The highest-stakes decision in the game, where a
+crate is 500 score against a win's 1000, was drawn identically to losing three
+units of junk. It now renders as crates, in the payload's own colour.
+
+### Things the screen said that were not true
+
+- **"ESC TO SKIP"** on every cut-scene panel. ESC quits the game; it has never
+  skipped anything. The opening told players to press the one key that ends the
+  run. Now "ANY KEY TO CONTINUE", which is what actually happens.
+- **"YOU CANNOT PAY THIS"** appeared when the real reason was a full hold.
+  `world_can_accept` refuses for two unrelated reasons and said the same thing
+  for both, so a convoy with a full purse was told it was broke. Split via
+  `world_accept_block`.
+- **The water burn was for the wrong day**, and hidden entirely from solo
+  drivers. It showed `world_water_burn(w)` — the day already paid — while the
+  hop about to be taken charges for `day + 1`; with crew aboard or tanks fitted
+  those differ half the time. And the whole readout only appeared with crew, so
+  a lone driver was never told water is spent per day, while thirst is one of
+  the two things that end a run.
+- **A free encounter drew as "− icon × 0"**, which reads as a cost of nothing
+  rather than as no cost — and it is the only on-screen evidence that a hire is
+  earning its keep. Now "FREE".
+- **Replaying a daily run gave a different map.** `restart` took a fresh seed
+  regardless of daily mode.
+
+### Collisions
+
+The garage printed "FITTED TUNED ENGINE" straight over "SHOULD RETURN 60": the
+owned list runs from `y+86` at a 15px pitch while the payback and road-ahead
+lines were fixed at `y+92` and `y+118`. `draw_outfit` now returns where its
+list ended and the extras draw beneath it.
+
+Found by looking, not by reading coordinates — the `-S <tab>` flag added in P6
+exists because hunting the right frame by hand does not scale to a whole
+presentation pass.
+
+### Every string is now drawn
+
+`T_MARKET` and `T_END_AGAIN` were exact duplicates of `T_TAB_MARKET` and
+`T_AGAIN` that nothing referenced; removed. `T_CHEAP_HERE` and `T_DEAR_HERE`
+were the legend for the price-trend arrow — the signal the entire trade route
+is built from, drawn bare with no explanation anywhere outside the help screen.
+They are now shown on the line that already describes the selected good.
+
+A grep for unreferenced `T_*` symbols returns nothing.
+
 ---
 
 ## Bugs found, and what found them

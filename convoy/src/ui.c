@@ -153,7 +153,11 @@ static int draw_tabs(Framebuffer *fb, const GameState *gs, int x, int y, int pw)
 
 // Shared layout for the two outfitting boards: what is for sale, what it does,
 // what it costs, and what is already aboard.
-static void draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
+// Returns the y at which the owned list ended, so callers can draw beneath it
+// rather than through it: the garage's payback and road-ahead lines were fixed
+// at y+92 and y+118 while this list runs from y+86 at a 15px pitch, so
+// "FITTED TUNED ENGINE" was printed straight over "SHOULD RETURN 60".
+static int draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
                         int offer, int count, const char *const *names,
                         const char *const *descs, const uint8_t *owned,
                         int price, const char *empty_msg,
@@ -185,11 +189,13 @@ static void draw_outfit(Framebuffer *fb, GameState *gs, int x, int y, int pw,
         any = 1;
     }
     (void)any;
+    return ly;
 }
 
 // Everything the garage knows that the base panel does not: the condition of
 // what is on offer, what it should return, and what is still on the road.
-static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y, int pw) {
+static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y,
+                              int pw, int below) {
     const World *w = &gs->w;
     (void)pw;
 
@@ -204,15 +210,15 @@ static void draw_garage_extra(Framebuffer *fb, GameState *gs, int x, int y, int 
         // What it is expected to earn back, next to what it costs, so the
         // player can see the bet rather than having to infer it.
         int px = x + 14;
-        px += draw_text(fb, px, y + 92, T_PAYS_BACK, 1, PALETTE[C_DIM]) + 8;
-        draw_number(fb, px, y + 92, world_upg_payback(w, w->offer_upg), 1,
+        px += draw_text(fb, px, below, T_PAYS_BACK, 1, PALETTE[C_DIM]) + 8;
+        draw_number(fb, px, below, world_upg_payback(w, w->offer_upg), 1,
                     PALETTE[C_WARN]);
     }
 
     // The road east, counted off the map the player can already see.
     int storms = 0, events = 0;
     world_road_ahead(w, &storms, &events);
-    int ry = y + 118;
+    int ry = below + 18;
     draw_text(fb, x + 14, ry, T_ROAD_AHEAD, 1, PALETTE[C_BONE]);
     int rx = x + 14;
     rx += text_w(T_ROAD_AHEAD, 1) + 16;
@@ -316,14 +322,21 @@ void ui_hud(Framebuffer *fb, const World *w) {
     draw_glyph(fb, x, 13, G_SLASH, 2, PALETTE[C_DIM]); x += glyph_w(2);
     x += draw_number(fb, x, 13, world_cargo_cap(w), 2, PALETTE[C_DIM]) + 16;
 
-    // Crew, and what they cost in water every day.
+    // Crew, and what the next hop will cost in water.
+    //
+    // Two faults here. The figure was world_water_burn(w), the burn for the
+    // day already paid; the hop about to be taken charges for w->day + 1, and
+    // with crew aboard or tanks fitted those differ half the time. And the
+    // whole readout was hidden unless crew were aboard, so a solo driver was
+    // never told that water is spent per day at all -- while thirst is one of
+    // the two things that end a run.
     if (world_crew_count(w) > 0) {
         x += draw_text(fb, x, 15, T_CREW_COUNT, 1, PALETTE[C_DIM]) + 6;
         x += draw_number(fb, x, 13, world_crew_count(w), 2, PALETTE[C_BONE]) + 8;
-        draw_glyph(fb, x, 13, G_MINUS, 2, PALETTE[C_BAD]); x += glyph_w(2);
-        draw_icon(fb, x, 9, ICON_WATER, 1); x += 18;
-        x += draw_number(fb, x, 13, world_water_burn(w), 2, PALETTE[C_BAD]);
     }
+    draw_glyph(fb, x, 13, G_MINUS, 2, PALETTE[C_BAD]); x += glyph_w(2);
+    draw_icon(fb, x, 9, ICON_WATER, 1); x += 18;
+    x += draw_number(fb, x, 13, world_water_burn_on(w, w->day + 1), 2, PALETTE[C_BAD]);
 
     // Credits, right-aligned, then the day just left of it.
     int cw = number_w(w->credits, 2);
@@ -566,13 +579,13 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
         if (gs->tab == TAB_CONTRACTS) draw_contracts(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_JOURNAL) draw_journal(fb, gs, x, y + 44 + th, pw);
         else if (gs->tab == TAB_GARAGE) {
-            draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
+            int below = draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_upg, UPG_COUNT,
                         UPG_NAME, UPG_DESC, gs->w.upgrade,
                         gs->w.offer_upg < UPG_COUNT
                             ? world_upg_price(&gs->w, gs->w.offer_upg,
                                               gs->w.offer_salvaged) : 0,
                         T_NO_GARAGE, T_BUY_UPGRADE, T_OWNED);
-            draw_garage_extra(fb, gs, x, y + 44 + th, pw);
+            draw_garage_extra(fb, gs, x, y + 44 + th, pw, below + 6);
         }
         else if (gs->tab == TAB_CREW) {
             draw_outfit(fb, gs, x, y + 44 + th, pw, gs->w.offer_crew, CREW_COUNT,
@@ -649,27 +662,65 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
     {
         int ty = y + 58 + th + (GOODS_COUNT + 1) * rowh;
         int tw = text_w(GOOD_USE[gs->sel], 1);
-        fill_scrim(fb, x + 6, ty - 4, tw + 16, 18, PALETTE[C_INK], 13);
+        // The trend arrow is the signal the whole trade route is built from,
+        // and it was drawn bare -- no legend anywhere outside the help screen.
+        // Both strings for it existed and had never been drawn. Placed here,
+        // on the line that already explains the selected good, rather than
+        // beside the arrow where it sat on the row border.
+        int bias = world_price_bias(w, gs->sel);
+        const char *note = bias < 0 ? T_CHEAP_HERE : bias > 0 ? T_DEAR_HERE : 0;
+        int nw = note ? text_w(note, 1) + 14 : 0;
+        fill_scrim(fb, x + 6, ty - 4, tw + nw + 16, 18, PALETTE[C_INK], 13);
         draw_text(fb, x + 14, ty, GOOD_USE[gs->sel], 1, PALETTE[C_WARN]);
+        if (note)
+            draw_text(fb, x + 14 + tw + 14, ty, note, 1,
+                      PALETTE[bias < 0 ? C_GOOD : C_WARN]);
     }
 
     // Cargo hold below, the run's health bar.
+    //
+    // The seed goes first, and it goes here at all because until now it was
+    // drawn nowhere in the game. The HUD counts it -- world_cargo includes the
+    // payload -- while this grid iterated held[] and did not, so the two never
+    // agreed, and the difference between them was precisely the six crates the
+    // whole run is about. A player could reach the Green Zone having never
+    // seen the thing they were carrying.
+    //
+    // The cell count is world_cargo_cap, not CARGO_CAP: with racks fitted the
+    // grid drew thirty cells for a forty-slot hold and ten units of cargo
+    // simply did not appear.
     const int cell = 20, cols = 15;
+    int cap  = world_cargo_cap(w);
+    int rows = (cap + cols - 1) / cols;
     int cy = y + 78 + th + (GOODS_COUNT + 1) * rowh;
-    draw_panel(fb, x, cy, cols * cell + 12, 2 * cell + 12);
+    draw_panel(fb, x, cy, cols * cell + 12, rows * cell + 12);
     int slot = 0;
+    for (int n = 0; n < world_payload(w) && slot < cap; ++n, ++slot) {
+        int sx = x + 6 + (slot % cols) * cell;
+        int sy = cy + 6 + (slot / cols) * cell;
+        fill_rect(fb, sx + 1, sy + 1, cell - 2, cell - 2, PALETTE[C_GREEN]);
+        draw_glyph(fb, sx + 6, sy + 5, G_PLUS, 2, PALETTE[C_BONE]);
+    }
     for (int g = 0; g < GOODS_COUNT; ++g) {
-        for (int n = 0; n < w->held[g] && slot < CARGO_CAP; ++n, ++slot) {
+        for (int n = 0; n < w->held[g] && slot < cap; ++n, ++slot) {
             int sx = x + 6 + (slot % cols) * cell;
             int sy = cy + 6 + (slot / cols) * cell;
             fill_rect(fb, sx + 1, sy + 1, cell - 2, cell - 2, PALETTE[C_INK]);
             draw_icon(fb, sx + 2, sy + 2, g, 1);
         }
     }
-    for (; slot < CARGO_CAP; ++slot) {
+    for (; slot < cap; ++slot) {
         int sx = x + 6 + (slot % cols) * cell;
         int sy = cy + 6 + (slot / cols) * cell;
         draw_rect(fb, sx + 1, sy + 1, cell - 2, cell - 2, PALETTE[C_BORDER]);
+    }
+
+    // Name the green cells once, so they are not just an unexplained colour.
+    if (world_payload(w) > 0) {
+        int lx = x + 6;
+        lx += draw_number(fb, lx, cy + rows * cell + 14, world_payload(w), 1,
+                          PALETTE[C_GOOD]) + 6;
+        draw_text(fb, lx, cy + rows * cell + 14, T_PAYLOAD_SAFE, 1, PALETTE[C_DIM]);
     }
 }
 
@@ -754,9 +805,13 @@ void ui_event(Framebuffer *fb, GameState *gs) {
 
     draw_text(fb, x + 20, y + 94, EV_ACCEPT[e->kind], 1,
               affordable ? PALETTE[C_BONE] : PALETTE[C_DIM]);
-    if (!affordable)
+    if (!affordable) {
+        // Two unrelated refusals used to share one message, so a full hold
+        // read as an empty purse.
+        int why = world_accept_block(&gs->w);
         draw_text(fb, x + 20 + text_w(EV_ACCEPT[e->kind], 1) + 12, y + 94,
-                  T_CANNOT, 1, PALETTE[C_BAD]);
+                  why == 2 ? T_NO_ROOM : T_CANNOT, 1, PALETTE[C_BAD]);
+    }
 
     // --- accept -------------------------------------------------------
     int ay = y + 108;
@@ -765,9 +820,16 @@ void ui_event(Framebuffer *fb, GameState *gs) {
 
     draw_key(fb, x + 20, ay + 6, G_KEY_Z, 2);
     int ax = x + 20 + key_w(2) + 18;
-    if (e->pay_good >= 0)
+    if (e->pay_good >= 0 && e->pay_qty > 0) {
         ax += draw_stack(fb, ax, ay, -1, e->pay_good, e->pay_qty,
                          affordable ? PALETTE[C_BONE] : PALETTE[C_BAD]) + 24;
+    } else if (e->pay_good >= 0) {
+        // The right crew aboard makes an encounter free. That was drawn as
+        // "- icon x0", which reads as a cost of nothing rather than as no
+        // cost -- and it is the only on-screen evidence that a hire is
+        // earning its keep.
+        ax += draw_text(fb, ax, ay + 10, T_FREE, 1, PALETTE[C_GOOD]) + 24;
+    }
 
     if (e->gain_good >= 0) {
         draw_stack(fb, ax, ay, +1, e->gain_good, e->gain_qty, PALETTE[C_GOOD]);
@@ -788,7 +850,21 @@ void ui_event(Framebuffer *fb, GameState *gs) {
     draw_key(fb, x + 20, by + 6, G_X, 2);
     int bx = x + 20 + key_w(2) + 18;
     if (e->lose_qty > 0) {
-        if (e->lose_good >= 0) {
+        if (e->lose_good == -2) {
+            // The seed itself. This is the highest-stakes branch in the game --
+            // a crate is worth 500 score against a win's 1000 -- and it used to
+            // render identically to losing a few units of random cargo,
+            // because the test below only recognised a named good.
+            int lx = bx;
+            draw_glyph(fb, lx, by + 10, G_MINUS, 2, PALETTE[C_BAD]);
+            lx += glyph_w(2) + 6;
+            for (int i = 0; i < e->lose_qty && i < 6; ++i) {
+                fill_rect(fb, lx, by + 4, 16, 16, PALETTE[C_GREEN]);
+                draw_glyph(fb, lx + 4, by + 7, G_PLUS, 2, PALETTE[C_BONE]);
+                lx += 20;
+            }
+            draw_text(fb, lx + 4, by + 10, T_PAYLOAD, 1, PALETTE[C_BAD]);
+        } else if (e->lose_good >= 0) {
             draw_stack(fb, bx, by, -1, e->lose_good, e->lose_qty, PALETTE[C_BAD]);
         } else {
             // Random cargo: show the hold itself being taken.
@@ -876,6 +952,10 @@ void ui_title(Framebuffer *fb, GameState *gs) {
         draw_text(fb, mx + 164, ry, value, 1,
                   PALETTE[on ? C_WARN : C_DIM]);
     }
+
+    // Which keys do what. T_M_ARROWS was defined and never drawn, so nothing
+    // on screen said that up and down move between the two rows.
+    draw_text_c(fb, cx, my + 44, T_M_ARROWS, 1, PALETTE[C_DIM]);
 
     // One line explaining whatever the cursor is currently on.
     draw_text_c(fb, cx, my + 56,
