@@ -47,6 +47,7 @@ const char *const ARCH_DESC[6] = {
 // Widest tab strip any frame has drawn this run, for the harness to check.
 // Harness-only: the shipped game never asks and never pays for it.
 #ifdef CONVOY_INSTRUMENT
+#define INSTR_UI(stmt) do { stmt; } while (0)
 int ui_strip_worst = 0;     // widest strip drawn this run
 int ui_strip_limit = 0;     // where the "< >" hint starts
 static void strip_probe(int right, int limit) {
@@ -55,6 +56,7 @@ static void strip_probe(int right, int limit) {
 }
 #define UI_PROBE(r, l) strip_probe((r), (l))
 #else
+#define INSTR_UI(stmt) do { } while (0)
 #define UI_PROBE(r, l) do { (void)(r); (void)(l); } while (0)
 #endif
 
@@ -150,10 +152,12 @@ int ui_tab_live(const GameState *gs, int tab) {
         if (gs->w.offer_crew < CREW_COUNT) return 1;
         return world_crew_count(&gs->w) > 0;
     }
-    if (tab == TAB_JOURNAL) {
-        for (int i = 0; i < CHAR_COUNT; ++i) if (gs->w.met[i]) return 1;
-        return 0;
-    }
+    // The journal is no longer a location. It is a personal record -- it has
+    // never had a selectable row and you do not walk to it -- and it was
+    // occupying one of five slots in a strip that now names places. It lives in
+    // the right column instead, where it is visible at every stop rather than
+    // one the player remembered to open.
+    if (tab == TAB_JOURNAL) return 0;
     return 0;
 }
 
@@ -675,12 +679,69 @@ void ui_map(Framebuffer *fb, GameState *gs) {
     }
 }
 
+
+// The watchlist: everyone met, and what standing with them is *for*.
+//
+// The journal has shown "REGARD GOOD" since v3, which is a stat. What a player
+// needs is the plan -- whether this person would drive for them, and what it
+// would take. Specified in v5 and not built; the right column is where it goes,
+// because 180px of the trade screen has been empty since the game had one.
+//
+// Drawn every stop rather than behind a tab nobody opened.
+#ifdef CONVOY_INSTRUMENT
+int ui_watchlist_rows = 0;   // the harness checks this instead of tab reachability
+#endif
+static void draw_watchlist(Framebuffer *fb, const World *w, int x, int y, int cw) {
+    int any = 0;
+    for (int i = 0; i < CHAR_COUNT; ++i) if (w->met[i]) { any = 1; break; }
+    if (!any) return;
+
+    // A panel behind it. Without one the column is drawn straight onto the
+    // sky, and the standing lines -- which are coloured, and the point of the
+    // whole block -- were unreadable against a sunset. Sized to the people
+    // actually met, so it never leaves an empty box on screen.
+    int n = 0;
+    for (int i = 0; i < CHAR_COUNT; ++i) if (w->met[i]) ++n;
+    draw_panel(fb, x, y - 8, cw, 28 + n * 32);
+
+    draw_text(fb, x + 10, y, T_WATCH_TITLE, 1, PALETTE[C_DIM]);
+    int ly = y + 16;
+
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        if (!w->met[i]) continue;
+        int role   = ROLE_OF_CHAR[i];
+        int aboard = (role >= 0) && w->crew[role];
+        int r      = w->regard[i];
+
+        draw_portrait(fb, x + 8, ly, 1, who_seed(i), r > 0 ? 1 : (r < 0 ? -1 : 0));
+        draw_text(fb, x + 30, ly + 2, WHO_NAME[i], 1, PALETTE[C_BONE]);
+
+        // The gate as a sentence. world_can_recruit owns the rule; this asks it
+        // rather than restating it, because a second copy of a gate is how this
+        // project has repeatedly ended up with two answers to one question.
+        const char *line; int col;
+        if (aboard)                            { line = T_WATCH_ABOARD; col = C_GOOD; }
+        else if (world_can_recruit(w, i))      { line = T_WATCH_READY;  col = C_GOOD; }
+        else if (world_char_is_enemy(i) && r < 1) { line = T_WATCH_ENEMY; col = C_WARN; }
+        else if (r < 0)                        { line = T_WATCH_COLD;   col = C_BAD;  }
+        else                                   { line = T_WATCH_CLOSE;  col = C_WARN; }
+        draw_text(fb, x + 30, ly + 14, line, 1, PALETTE[col]);
+
+        ly += 32;
+        INSTR_UI(ui_watchlist_rows++);
+        if (ly > y + cw + 180) break;   // never run off the panel
+    }
+}
+
 // ---------------------------------------------------------------- trade
 void ui_trade(Framebuffer *fb, GameState *gs) {
     World *w = &gs->w;
     Node *nd = &w->node[w->sector][w->index];
 
     const int x = 26, y = 58, pw = 420, rowh = 32;
+    // The right column. 180px wide starting at 452, empty since the game had a
+    // trade screen at all.
+    draw_watchlist(fb, w, 452, y + 4, 180);
     // One extra row below the goods for the depart action, so leaving the
     // market looks like another menu choice rather than a hidden key.
     // 64, not 50: the row block moved down 14px to give PRICE and HELD their

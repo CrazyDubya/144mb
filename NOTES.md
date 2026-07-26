@@ -3,17 +3,24 @@
 Cross-game findings. Read before starting a new entry; add to it when something
 costs you an afternoon.
 
-## The budget is not the hard part
+## Spend the disk on the game
 
 1.44MB is enormous for code and tiny for assets. One uncompressed 320×200
 256-colour image is 64,000 bytes — about 22 of them fills the disk. But a
 complete Win32 platform layer with a framebuffer blit, keyboard input, frame
 pacing and audio costs **under 60KB**.
 
-The practical consequence: **generate content, do not author it.** Palettes from
-formulas, worlds from a seed, music from a sequencer. Do that and the floppy
-stops being a constraint at all — convoy is a finished-shape game at under 5% of
-the disk.
+That is a reason to spend deliberately, not a reason to celebrate the smallest
+possible executable. Establish the code baseline, reserve 5–15% for build
+headroom, then use the remaining bytes wherever a player will feel them:
+authored scenes, readable interfaces, distinctive characters, sampled sound,
+music, animation, scenarios, writing and endings.
+
+Use procedural generation for repetition and large possibility spaces: terrain,
+weather, crowds, economy variation and daily challenges. Author the things a
+player is meant to remember: signature locations, tutorial moments, dramatic
+beats, character performances and visual landmarks. A formula is not better
+than an asset merely because it is smaller.
 
 The real constraint is the deadline, not the byte count.
 
@@ -55,31 +62,31 @@ This is not architectural purity — it buys three concrete things:
 Use a fixed timestep and integer maths throughout. Determinism means a seed
 reproduces a run exactly, which makes bugs reportable and balance measurable.
 
-## Judging is in Korean
+## Write the game plainly in English
 
-Assume judges read Korean, are working through many entries, and will give any
-one game a few minutes. Two consequences:
+English is the shipping language. Use direct labels, complete instructions and
+natural dialogue where the game benefits from them. Do not make the interface
+cryptic in anticipation of a language requirement that does not exist.
 
-- **Make it language-free.** Icons, colours, signs and Arabic numerals only. The
-  strongest version of this is to ship no alphabetic font at all, which makes
-  accidental English impossible rather than merely unlikely. Keycaps (`Z`, `X`,
-  `↵`) are fine — they label physical keys, not words.
-
-  > **Superseded.** This was tried and reversed. See *Do not mistake "no text"
-  > for "universally readable"* below: a game with no words turned out to be a
-  > guessing game, and the fix was a 32-glyph uppercase font costing about 300
-  > bytes. Read that section before acting on this one.
-- **Be legible in 30 seconds.** Anything that takes twenty minutes to become
-  interesting will not be seen.
+The first thirty seconds still matter. State the goal, label the controls beside
+their actions, and make success, cost and consequence visibly different. Icons
+are useful for recognition, but they support words rather than replace them.
 
 A trap worth naming: an icon with a quantity and no sign is ambiguous. `water ×2`
 reads identically as a gain or a loss. Always draw an explicit `−` or `+`.
 
 ## Audio
 
-Synthesise it. A drone, a square lead over a step sequencer, an LFSR noise layer
-and a handful of one-shot effects cost about **2KB of code and zero bytes of
-data**. Integer maths only — no libm, and bit-identical output everywhere.
+Use synthesis, samples, or both according to what the game needs. A drone, a
+square lead over a step sequencer, an LFSR noise layer and a handful of one-shot
+effects cost about **2KB of code and zero bytes of data**. That makes synthesis
+excellent for variation and continuous systems. Sampled impacts, ambience,
+instruments or short performances are equally valid when their specificity is
+worth the bytes. Budget audio against the full disk instead of ruling it out in
+advance.
+
+Keep deterministic synthesis integer-only where reproducibility matters. Do not
+force recorded material through that constraint.
 
 Two defects that will not be obvious without measuring:
 
@@ -123,11 +130,11 @@ roguelike wants.
 
 Balance against the bot, not against the script.
 
-## Do not mistake "no text" for "universally readable"
+## Do not mistake "no text" for clarity
 
 convoy originally shipped with no alphabetic font at all, reasoning that icons,
-colours and Arabic numerals read identically to a Korean judge and an English
-one. That reasoning is sound and the conclusion was still wrong.
+colours and Arabic numerals would be universally readable. The conclusion was
+wrong.
 
 Read your own screenshots as a stranger would. Nothing said the droplet was
 *water* rather than coolant, that the number beside it was a *price* rather than
@@ -138,11 +145,11 @@ wrapped around the actual game, solvable only by dying repeatedly.
 Judging weights entertainment value. A confused judge scores badly no matter how
 principled the constraint was.
 
-Keep the icons — they carry meaning at a glance, and they survive translation.
-Add words so the glance is not a guess: name every good, label every column,
-title every encounter, and ship a **how to play** screen. An uppercase-only 5x7
-Latin font is 32 glyphs and about 300 bytes. Put every string in one header so a
-translation is a data swap rather than a hunt through the drawing code.
+Keep the icons because they carry meaning at a glance. Add plain English so the
+glance is not a guess: name every good, label every column, title every
+encounter, and ship a **how to play** screen. Spend enough bytes on a font and
+layout to make that English pleasant to read rather than treating legibility as
+an extravagance.
 
 ## Provisioning depth is a hidden design constraint
 

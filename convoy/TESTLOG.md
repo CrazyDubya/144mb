@@ -2515,3 +2515,50 @@ attribution failure in this log, arriving from a new direction.
 
     -Y -N 200, all three difficulties:  0 collisions
     win rates 68/50/32 unchanged, ASan clean, -X clean, STRIP ok
+
+---
+
+# v6 P2d — the journal becomes the watchlist
+
+The journal left the tab strip for the right column. It was never a location:
+it has no selectable row and you do not walk to it, and it was holding one of
+five slots in a strip that now names places. The fifth slot is free for P4's
+situation.
+
+It also stopped being a stat. "REGARD GOOD" is a number with a label; the
+watchlist states the gate as a plan:
+
+    PEOPLE
+    VULTURE      WOULD DRIVE FOR YOU
+    OKONJO       WANTS NOTHING TO DO
+    THE WALKER   WOULD DRIVE FOR YOU
+
+Specified in v5 and not built. It asks `world_can_recruit` rather than
+restating the rule, because a second copy of a gate is how this project has
+repeatedly ended up with two answers to one question.
+
+Drawn at every stop rather than behind a tab the player had to remember.
+
+## The assertion was replaced, not deleted
+
+`-J` used to press RIGHT until the journal tab appeared and fail if it never
+did. With the journal out of the strip that question no longer has an answer —
+and deleting the check because the thing it guarded moved is exactly how the
+next unreachable screen gets missed. It was the only reason the last one was
+caught.
+
+It now asks the question that still means something: did the watchlist actually
+draw for a convoy that has met somebody? Same failure, new location.
+
+## First version was unreadable
+
+Drawn straight onto the sky with no panel, the coloured standing lines — the
+entire point of the block — were illegible against a sunset. Panel added, sized
+to the people actually met so it never leaves an empty box on screen.
+
+## Gate
+
+    -Y overlap sweep, n=150 x 3 difficulties   0
+    win rates                          68/50/32   unchanged
+    watchlist assertion                    pass
+    ASan/UBSan                            clean

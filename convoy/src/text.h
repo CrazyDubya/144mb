@@ -197,6 +197,14 @@
 #define T_REGARD_BAD   "HOLDS A GRUDGE"
 #define T_REGARD_NEUT  "NO OPINION EITHER WAY"
 #define T_TAB_JOURNAL  "PEOPLE"
+// The watchlist, stated as a plan rather than a number. "REGARD +2" is a stat;
+// "ONE MORE GOOD TURN" tells a player what to do with the rest of their run.
+#define T_WATCH_TITLE   "PEOPLE"
+#define T_WATCH_ABOARD  "DRIVING FOR YOU"
+#define T_WATCH_READY   "WOULD DRIVE FOR YOU"
+#define T_WATCH_CLOSE   "ONE MORE GOOD TURN"
+#define T_WATCH_COLD    "WANTS NOTHING TO DO"
+#define T_WATCH_ENEMY   "WOULD HAVE TO BE WON"
 #define T_NOBODY_YET   "NOBODY WORTH REMEMBERING YET"
 #define T_TIMES        "TIMES"
 #define T_TIME         "TIME"

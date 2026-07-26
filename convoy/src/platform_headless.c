@@ -967,10 +967,25 @@ int main(int argc, char **argv) {
                 }
             }
 
-            if (journal_at && r.journal_tab != TAB_JOURNAL) {
-                fprintf(stderr, "journal unreachable on seed %d: tab=%d wanted %d\n",
-                        sd, r.journal_tab, TAB_JOURNAL);
-                return 4;
+            // The journal left the tab strip for the right column, so "can the
+            // cursor reach the journal tab" is no longer a question with an
+            // answer. REPLACED rather than deleted: this assertion is the only
+            // reason a screen going unreachable was ever caught, and deleting
+            // it because the thing it guarded moved is how the next one gets
+            // missed. It now asks the question that still means something --
+            // did the watchlist actually draw for a convoy that has met
+            // somebody -- which is the same failure in its new location.
+            if (journal_at) {
+#ifdef CONVOY_INSTRUMENT
+                extern int ui_watchlist_rows;
+                int met = 0;
+                for (int i = 0; i < CHAR_COUNT; ++i) if (r.w.met[i]) met = 1;
+                if (met && ui_watchlist_rows == 0) {
+                    fprintf(stderr, "watchlist never drew on seed %d "
+                                    "despite having met somebody\n", sd);
+                    return 4;
+                }
+#endif
             }
 
             print_run(&r);

@@ -1,4 +1,4 @@
-# Five Games for a 1.44 MB Floppy
+# Five Full Games for a 1.44 MB Floppy
 
 ## The constraint
 
@@ -6,25 +6,42 @@ Despite the repository name, `144mb` is not a 144 MB game. It is a collection
 of standalone games that must each fit on one 1.44 MB floppy: exactly
 **1,474,560 bytes after decompression**.
 
-The existing game, `convoy`, proves that the limit is practical:
+The existing game, `convoy`, proves that the platform cost is small:
 
 - Its complete Windows executable is roughly 117 KB.
 - It supplies a 640×480 framebuffer, keyboard input, fixed-timestep simulation,
   synthesized stereo audio, procedural graphics, and a headless test harness.
-- Runtime memory does not count against the disk limit. A game can allocate
-  megabytes while running.
-- Generated graphics, maps, animation, music, and sound effects cost very
-  little executable space.
-- Stored images, recorded audio, large fonts, and general-purpose engines are
-  the expensive choices.
+- Runtime memory does not count against the disk limit, so simulations and
+  working buffers can be large.
+- Approximately 1.35 MB remains after a `convoy`-sized program. That capacity
+  should improve what the player sees, hears, reads, and does.
 
 Every new game must remain a complete standalone program. Useful techniques and
 code can be copied from `convoy`, but the new games cannot rely on it or on a
 shared engine.
 
-A realistic new entry should land between 100 and 350 KB, leaving most of the
-floppy unused. The real constraint is development and balancing time before the
-4 September 2026 deadline.
+These concepts target **1.18–1.40 MB**, or 80–95% of the disk. This is a
+quality target rather than a padding target: every allocation must produce
+clearer play, stronger atmosphere, more authored variety, or a more complete
+campaign. Each build retains 5–15% headroom beneath the hard limit.
+
+Every budget includes a separate **60,000-byte Win32 platform allowance** for
+the window, framebuffer blit, keyboard input, fixed timestep, memory allocation,
+and audio output. All listed game code and assets are embedded into the same
+standalone Windows executable. Development-only headless harness and bot code do
+not consume submission bytes.
+
+All five games are written and presented straightforwardly in English. Icons
+can improve scanning, but controls, objectives, costs, consequences, tutorials,
+dialogue, and story are allowed to use as many clear English words as they need.
+
+The production rule is hybrid:
+
+- Generate systems that benefit from variation: layouts, weather, populations,
+  schedules, acoustics, and daily challenges.
+- Author what gives the game identity: key locations, characters, missions,
+  tutorials, performances, music, dramatic scenes, and endings.
+- Use the disk as a creative budget. A tiny executable is not a design goal.
 
 ---
 
@@ -115,16 +132,22 @@ power:
 
 This preserves uncertainty instead of allowing progression to eliminate it.
 
-### Presentation
+### Authored content and presentation
 
-The visual identity can be strong despite requiring almost no stored artwork:
+The procedural trench provides replayable structure, but each depth band gets
+authored visual and narrative material:
 
 - Black or deep-blue background
 - Sonar waves drawn as expanding circles
 - Terrain revealed as fading, stippled contours
 - Contacts leaving temporary echo silhouettes
-- Instrument lights and compact oscilloscope displays
+- Illustrated instrument panels for each submarine class
 - Particles showing current direction
+- Hand-drawn wreck interiors and research installations
+- Distinct multi-frame silhouettes for twelve major organisms
+- Full-screen discovery plates for rare species and abyssal structures
+- Captain portraits, contract briefings, specimen records, and debriefings
+- Authored ascent sequences and six illustrated endings
 
 Audio becomes part of the simulation:
 
@@ -133,27 +156,30 @@ Audio becomes part of the simulation:
 - Sonar pings with distance-dependent echoes
 - Pressure creaks
 - Hydrophone static
-- Low synthesized musical layers merged with environmental sound
+- Recorded or carefully authored acoustic signatures for major creatures
+- Sampled metal impacts, cable strain, water movement, and machinery
+- A multi-part ambient score blended with procedural sonar and engine sound
 
 Stereo positioning can assist navigation, but every essential cue needs a
 visual equivalent for accessibility and machines without an audio device.
 
-### How it fits
+### 1.44 MB production budget
 
-`DEEPSCAN` is exceptionally well suited to the constraint. It needs no stored
-backgrounds, creature recordings, or music tracks. Seeded noise, spline
-segments, and cellular cave fields generate the trench. Creatures can be
-parameterized articulated silhouettes. Sonar visuals consist of rasterized
-geometry and fading history buffers.
+Seeded noise, spline segments, and cellular fields still generate the large
+trench because variation is valuable there. Storage is concentrated on the
+things procedural output cannot replace: recognizable creatures, readable
+instruments, discoveries, story beats, and an authored acoustic identity.
 
-| Component | Approximate size |
+| Component | Planned bytes |
 |---|---:|
-| Win32 platform and framebuffer | 55–65 KB |
-| Simulation, physics, and world generation | 25–45 KB |
-| Rendering and interface | 25–40 KB |
-| Synthesized audio and acoustics | 15–30 KB |
-| Contracts, discoveries, and endings | 10–25 KB |
-| **Expected total** | **130–205 KB** |
+| Standalone Win32 platform, framebuffer, input, and audio output | 60,000 |
+| Game simulation, acoustics, world generation, and rendering | 150,000 |
+| Instrument panels, wrecks, organisms, and discovery art | 390,000 |
+| Sampled ambience, creature signatures, effects, and score | 320,000 |
+| Contracts, logs, encounters, specimen records, and endings | 260,000 |
+| Fonts, interface graphics, palettes, and metadata | 80,000 |
+| **Shipping target** | **1,260,000 (85.45%)** |
+| **Remaining headroom** | **214,560 (14.55%)** |
 
 The primary risk is clarity: sound-based information must feel mysterious
 without becoming frustrating or arbitrary.
@@ -248,47 +274,55 @@ consistent rules:
 Easier difficulties can provide pause-and-plan operation. Harder difficulties
 keep the network running continuously.
 
-### Presentation
+### Authored content and presentation
 
-The visual style should resemble a railway control panel:
+The control diagram remains the functional center, but the campaign should not
+look like one abstract panel repeated forever:
 
 - Thick geometric track lines
 - Bright block-occupancy colors
 - Small numbered train markers
 - Mechanical signal lamps
-- Minimal station architecture behind the diagram
+- Illustrated station backdrops and region-specific control desks
 - A timetable strip showing upcoming pressure
+- Eight hand-designed districts with multiple operating eras and conditions
+- Distinct passenger, freight, maintenance, heritage, and emergency trains
+- Dispatcher portraits, shift briefings, newspaper reports, and route maps
+- Authored incidents such as a derby crowd, landslip, signal failure, stranded
+  train, royal special, evacuation, and winter shutdown
+- A complete graduated tutorial campaign before unrestricted timetables
 
 Audio reinforces state:
 
 - Relay clicks when routes lock
 - Signal bells
-- Distant train horns
+- Distinct sampled horns and traction sounds for train classes
 - Wheel rhythms based on train speed
 - Alarm tones for unsafe or deadlocked states
-- A restrained procedural pulse that intensifies with congestion
+- Station ambience, rain, wind, public announcements, and control-room sound
+- Regional music cues and an adaptive score that intensifies with congestion
 
-No realistic train artwork is required. The network itself is the game board.
+The network remains readable, but the allotted storage makes each district feel
+like a place and each service like a physical train rather than an anonymous
+number.
 
-### How it fits
+### 1.44 MB production budget
 
 Track networks can be compact node-and-edge tables. Even a large authored
-scenario occupies only a few kilobytes. Timetables are similarly tiny, and
-procedural variations can reuse the same layouts.
+scenario occupies only a few kilobytes, allowing dozens of carefully designed
+shifts. Procedural timetables extend those layouts after the campaign instead
+of replacing authored progression.
 
-A train needs only an identifier, route, speed, length, priority, schedule, and
-current block. Graphics consist almost entirely of lines, circles, symbols, and
-text.
-
-| Component | Approximate size |
+| Component | Planned bytes |
 |---|---:|
-| Platform layer | 55–65 KB |
-| Rail simulation and safety rules | 30–50 KB |
-| Scenario and timetable generation | 20–35 KB |
-| Diagram renderer and interface | 20–35 KB |
-| Synthesized audio | 8–18 KB |
-| Scenarios and tutorial text | 10–25 KB |
-| **Expected total** | **145–225 KB** |
+| Standalone Win32 platform, framebuffer, input, and audio output | 60,000 |
+| Rail simulation, timetable system, renderer, and game logic | 160,000 |
+| Eight districts, control desks, train art, maps, and weather | 340,000 |
+| Train, station, control-room, incident, and music audio | 280,000 |
+| Campaign shifts, tutorials, incidents, and daily variants | 270,000 |
+| Fonts, briefings, reports, interface art, and metadata | 150,000 |
+| **Shipping target** | **1,260,000 (85.45%)** |
+| **Remaining headroom** | **214,560 (14.55%)** |
 
 This is the safest of the five projects. Its principal risk is interface
 clarity, not technology or content volume.
@@ -373,16 +407,21 @@ rules are active, but every campaign must remain logically solvable.
 Ambiguity may be atmospheric, but outcomes cannot be arbitrary. After losing,
 the player should be able to identify the clue they misunderstood or ignored.
 
-### Presentation
+### Authored content and presentation
 
-The art direction uses a tiny palette:
+The art direction uses a controlled palette without using darkness as an excuse
+to omit authored art:
 
 - Near-black sea and sky
 - Warm amber lighthouse interior
 - Cold blue-green exterior light
 - Distant colored navigation points
 - Procedural rain, spray, and fog
-- Large shapes suggested rather than fully shown
+- Detailed illustrated rooms that visibly deteriorate across seven nights
+- Portraits and signal profiles for ships, crews, and recurring callers
+- Hand-authored maritime charts, logbook pages, photographs, and evidence
+- Full-screen contact sightings when the player obtains a clear view
+- Bespoke wreck, rescue, revelation, and ending scenes
 
 The lighthouse beam is a rotating, dithered cone whose visibility changes with
 rain and fog density.
@@ -390,38 +429,37 @@ rain and fog density.
 Audio carries much of the atmosphere:
 
 - Procedural wind and rain
-- Foghorns with identifiable patterns
-- Generated radio interference and signaling tones
+- Sampled foghorns with identifiable patterns
+- Distinct English radio performances for major contacts
+- Authored radio interference and signaling tones
 - Generator rhythm
 - Lens machinery
 - Unexplained knocks and footsteps
+- A scored opening, nightly transitions, escalating storm, and each ending
 
-Recorded dialogue should be avoided. Radio exchanges can use text accompanied
-by synthesized interference.
+Every clue is also written in clear English in the radio transcript and
+journal, so audio quality never becomes a deduction barrier.
 
-### How it fits
+### 1.44 MB production budget
 
-The world consists mostly of darkness, particles, geometry, and text. A detailed
-lighthouse interior can be constructed from rectangles, line art, and a few
-tiny monochrome masks.
+Procedural weather and contact scheduling create variation. Storage goes to the
+authored rooms, evidence, contact performances, mystery writing, and payoffs
+that make a narrative game memorable.
 
-Several thousand words of writing consume only tens of kilobytes. A compact
-Latin font costs hundreds of bytes, although Korean localization would require
-a more selective glyph strategy.
-
-| Component | Approximate size |
+| Component | Planned bytes |
 |---|---:|
-| Platform layer | 55–65 KB |
-| Contact simulation and deduction system | 20–35 KB |
-| Lighthouse scenes and weather renderer | 30–50 KB |
-| Synthesized audio | 15–25 KB |
-| Story events, clues, and endings | 25–60 KB |
-| Interface and journal | 15–25 KB |
-| **Expected total** | **160–260 KB** |
+| Standalone Win32 platform, framebuffer, input, and audio output | 60,000 |
+| Contact simulation, deduction logic, weather, and rendering | 140,000 |
+| Rooms, contacts, evidence, sightings, rescues, and ending art | 390,000 |
+| Radio performances, ambience, effects, and score | 430,000 |
+| Seven-night script, mystery variants, logs, and endings | 270,000 |
+| English fonts, journal, charts, interface art, and metadata | 100,000 |
+| **Shipping target** | **1,390,000 (94.26%)** |
+| **Remaining headroom** | **84,560 (5.74%)** |
 
-The main risk is localization. The game depends on textual clues, while the
-contest judges are Korean. It needs either a Korean translation with a compact
-glyph set or an unusually strong symbolic clue language.
+The main risk is deduction fairness. Recorded performances and atmospheric
+effects may enrich a clue, but the transcript, chart, and journal must preserve
+all information needed to solve it.
 
 ---
 
@@ -519,46 +557,45 @@ bacteria and select for resistance.
 Between missions, discoveries enter a compact organism catalog. Date-seeded
 samples can provide continuing challenges after the campaign.
 
-### Presentation
+### Authored content and presentation
 
-The game can generate its entire visual identity:
+The simulation generates behavior, while authored art makes its organisms
+recognizable and its laboratory believable:
 
-- Translucent organisms with procedural internal structures
-- Cilia, flagella, spores, and cell division
+- Translucent organisms assembled from a large library of painted body parts
+- Authored cilia, flagella, spores, feeding, infection, and division animation
 - Colored chemical gradients
 - Fluid currents represented by drifting particles
 - Smooth zoom from the entire dish to individual organisms
 - Evolutionary family trees and population graphs
+- Six illustrated laboratory environments and story interludes
+- A detailed field guide with English names, behavior, habitat, and discoveries
+- Hand-designed tutorial samples that demonstrate one feedback loop at a time
+- Major organisms and mission specimens with unique art rather than recombined
+  generic parts
 
-An organism requires no bitmap. It can be assembled from:
+Audio combines microscope and laboratory ambience, tactile tool sounds,
+organism-scale abstract effects, and musical layers driven by population
+balance. Each laboratory and campaign chapter receives a distinct soundscape.
 
-- An ellipse or deforming polygon
-- A generated membrane
-- Several internal circles
-- Parameterized appendages
-- A palette selected from its traits
-
-Audio can remain abstract: soft pulses, bubbling noise, and musical layers
-driven by population balance.
-
-### How it fits
+### 1.44 MB production budget
 
 The simulation operates on compact arrays and grids. Thousands of agents consume
-runtime memory but almost no executable storage. Every visual is generated from
-organism traits.
+runtime memory but little executable storage. The disk is therefore available
+for a broad component library, hero-species animation, laboratories, tutorials,
+an encyclopedia, and richer audio instead of another layer of simulation for
+its own sake.
 
-Even 100 defined species would not need 100 sets of artwork. They would need 100
-small parameter records, potentially only 16–32 bytes each.
-
-| Component | Approximate size |
+| Component | Planned bytes |
 |---|---:|
-| Platform layer | 55–65 KB |
-| Organism and chemical simulation | 40–70 KB |
-| Procedural organism renderer | 30–55 KB |
-| Laboratory interface and graphs | 20–35 KB |
-| Missions and species definitions | 15–35 KB |
-| Synthesized audio | 8–18 KB |
-| **Expected total** | **170–275 KB** |
+| Standalone Win32 platform, framebuffer, input, and audio output | 60,000 |
+| Ecosystem simulation, chemistry, game logic, and renderer | 200,000 |
+| Organism components, hero species, laboratories, and interludes | 440,000 |
+| Laboratory ambience, tools, organism effects, and adaptive music | 260,000 |
+| Missions, tutorials, sample definitions, and campaign events | 230,000 |
+| Field guide, fonts, graphs, overlays, and interface art | 130,000 |
+| **Shipping target** | **1,320,000 (89.52%)** |
+| **Remaining headroom** | **154,560 (10.48%)** |
 
 The risks are computational and educational. The ecosystem must be rich enough
 to surprise players while remaining readable enough that failure does not feel
@@ -678,39 +715,46 @@ The rules need to be deterministic and understandable:
 Planning displays predicted paths but cannot guarantee them because other
 characters may alter the scene before an action executes.
 
-### Presentation
+### Authored content and presentation
 
-A stylized side-on or three-quarter view minimizes art requirements:
+A stylized side-on or three-quarter view keeps combat readable while the disk
+supports a substantially richer western:
 
-- Flat silhouettes with generated hats, coats, and poses
+- Layered character sprites with distinct faces, hats, coats, weapons, and poses
 - High-contrast desert palette
-- Destructible line-and-rectangle environments
+- Twelve hand-authored, destructible tactical arenas
 - Dust, smoke, muzzle flashes, and splinters as particles
 - Brief cinematic camera movement during execution
 - Timeline icons during planning
+- Portraits and dialogue scenes for the recurring cast
+- Authored execution, injury, surrender, interaction, and reaction animation
+- Illustrated location introductions, travel transitions, and endings
 
-Procedural skeletal animation needs only a head, torso, upper and lower limbs,
-weapon, and a handful of mathematically blended poses.
+Procedural skeletal animation handles interpolation and unusual action
+combinations, but it draws from authored body parts and key poses. Major
+characters and set pieces receive unique animation.
 
-Audio includes synthesized gunshots with different envelopes, ricochets,
-footsteps, environmental loops, and sparse procedural western music.
+Audio includes distinct sampled weapons, ricochets by surface, footsteps,
+destruction, crowd and animal ambience, short English character barks, and an
+authored western score that rearranges during planning and execution.
 
-### How it fits
+### 1.44 MB production budget
 
 The executable stores character and environment descriptions instead of
-animation frames. A saloon is a compact set of walls, doors, tables, lamps, and
-cover polygons. Characters are assembled from shapes and palette choices.
-Narrative encounters are small condition-and-consequence tables.
+full-screen video or redundant frames. Arenas remain compact geometry, while
+storage is spent on their visible materials, props, cast, animation, sound,
+campaign scenes, and consequences.
 
-| Component | Approximate size |
+| Component | Planned bytes |
 |---|---:|
-| Platform layer | 55–65 KB |
-| Timeline and deterministic combat | 40–70 KB |
-| Enemy planning and personality AI | 30–55 KB |
-| Procedural animation and rendering | 35–60 KB |
-| Campaign events and dialogue | 20–50 KB |
-| Synthesized audio | 12–25 KB |
-| **Expected total** | **195–325 KB** |
+| Standalone Win32 platform, framebuffer, input, and audio output | 60,000 |
+| Combat, timelines, AI, animation system, renderer, and game logic | 250,000 |
+| Arenas, character sprites, portraits, props, scenes, and endings | 430,000 |
+| Weapons, impacts, ambience, voices, effects, and score | 300,000 |
+| Campaign encounters, dialogue, consequences, and tutorials | 260,000 |
+| Fonts, timeline icons, interface art, and metadata | 100,000 |
+| **Shipping target** | **1,400,000 (94.94%)** |
+| **Remaining headroom** | **74,560 (5.06%)** |
 
 The risk is development scope. Simultaneous plans create many interacting
 combinations, requiring the strongest automated replay and scenario-testing
@@ -721,54 +765,56 @@ the actual limitations.
 
 ## Direct comparison
 
-| Game | Primary experience | Typical run | Asset pressure | Technical risk | Deadline safety |
+| Game | Primary experience | Typical run | Shipping target | Technical risk | Deadline safety |
 |---|---|---:|---:|---:|---:|
-| `DEEPSCAN` | Suspense and exploration | 20–35 min | Very low | Medium | High |
-| `SWITCHYARD` | Real-time systems puzzle | 8–15 min shifts | Extremely low | Low–medium | Very high |
-| `LAST LIGHT` | Deduction and horror | 60–90 min campaign | Low | Medium | Medium |
-| `MICROCOLONY` | Emergent ecosystem strategy | 15–30 min | Very low | High | Medium |
-| `TEN PACES` | Predictive tactical action | 30–50 min | Medium | High | Low–medium |
+| `DEEPSCAN` | Suspense and exploration | 20–35 min | 1,260,000 bytes | Medium | High |
+| `SWITCHYARD` | Real-time systems puzzle | 8–15 min shifts | 1,260,000 bytes | Low–medium | Very high |
+| `LAST LIGHT` | Deduction and horror | 60–90 min campaign | 1,390,000 bytes | Medium | Medium |
+| `MICROCOLONY` | Emergent ecosystem strategy | 15–30 min | 1,320,000 bytes | High | Medium |
+| `TEN PACES` | Predictive tactical action | 30–50 min | 1,400,000 bytes | High | Low–medium |
 
 ## Recommendations
 
 ### Best artistic fit: DEEPSCAN
 
-`DEEPSCAN` has the strongest identity and uses the storage constraint as an
-artistic advantage. Darkness, sonar, procedural terrain, and synthesized audio
-remove the need for expensive assets while reinforcing the game's central
-mechanic. A tightly scoped version targeting a 25-minute run and an executable
-around 180 KB is realistic.
+`DEEPSCAN` has the strongest identity. Its procedural trench supports
+replayability, while authored wrecks, creatures, instruments, acoustic
+signatures, discoveries, and endings give the expedition substance. It uses
+darkness as a mechanic, not as a reason to avoid making art.
 
 ### Safest contest entry: SWITCHYARD
 
 `SWITCHYARD` has the highest probability of becoming polished before the
-deadline. Its content is compact, its rules are deterministic, and generated
-timetables can be validated automatically. It is also readable within seconds,
-which matters when judges are evaluating many entries.
+deadline. Its deterministic rules allow generated timetables to be validated
+automatically, and its compact scenario representation leaves ample room for
+many authored districts, shifts, incidents, train identities, and soundscapes.
 
 ### Highest ceiling: TEN PACES
 
-`TEN PACES` may offer the most immediately exciting result, but it has the
-largest implementation and testing surface. It is a better choice only if the
-scope is aggressively limited to a few reusable environments and a short
-campaign.
+`TEN PACES` may offer the most immediately exciting result and makes excellent
+use of a nearly full disk through arenas, animation, cast, audio, and campaign
+consequences. It also has the largest implementation and testing surface.
 
 ### Most experimental: MICROCOLONY
 
-`MICROCOLONY` is technically and visually original. Its challenge is making an
-emergent simulation understandable. It needs excellent overlays, tutorials, and
-automated balance sweeps.
+`MICROCOLONY` is technically and visually original. Its large authored organism
+library, laboratories, field guide, and graduated experiments are essential to
+making the emergent simulation understandable. It also needs automated balance
+sweeps.
 
 ### Strongest narrative atmosphere: LAST LIGHT
 
-`LAST LIGHT` can create a memorable experience with minimal visual assets, but
-its deduction and story depend on language. Localization is a significant
-contest risk unless addressed from the beginning.
+`LAST LIGHT` can create a memorable English-language narrative by spending
+heavily on illustrated evidence, radio performances, environmental audio,
+mystery variants, and endings. Its risk is ensuring that atmosphere never
+obscures the facts required for fair deduction.
 
 ## Overall order
 
-1. **DEEPSCAN** — best combination of identity, feasibility, and constraint fit.
-2. **SWITCHYARD** — safest and fastest route to another polished entry.
-3. **TEN PACES** — highest entertainment ceiling, with substantially more risk.
-4. **LAST LIGHT** — memorable but localization-dependent.
-5. **MICROCOLONY** — original but hardest to teach and balance.
+1. **DEEPSCAN** — best combination of identity, authored spectacle, and
+   feasible systems.
+2. **SWITCHYARD** — safest route to a content-rich, polished entry.
+3. **TEN PACES** — highest action and presentation ceiling, with the most
+   interaction risk.
+4. **LAST LIGHT** — strongest authored narrative and audio opportunity.
+5. **MICROCOLONY** — most original simulation, but hardest to teach and balance.
