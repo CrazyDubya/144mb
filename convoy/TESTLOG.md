@@ -2435,3 +2435,83 @@ string table — which is precisely why it is asserted rather than eyeballed.
 The journal has not yet moved out of the strip to the right column, so the
 fifth slot for the situation is not free yet. That, and the `-J` reachability
 assertion that must be replaced rather than deleted when it does.
+
+---
+
+# v6 P2c — a detector for the collisions, and what it found
+
+Three layout collisions were found in this release by a person looking at a
+screenshot, and none by reading the code. That does not scale, so the harness
+now finds them.
+
+## The detector
+
+`draw_text`, `draw_number` and `draw_key` record a bounding box per call, and a
+new `-Y` flag fails any frame where two text boxes intersect. Harness-only —
+the shipped exe is byte-identical and carries none of it.
+
+Text-on-text only. `fill_rect`, `draw_rect`, `draw_panel`, `fill_scrim` and
+icons are never recorded, because drawing text on a panel or a selection
+highlight is correct and a detector that cries about it would be turned off
+within a day.
+
+Four geometry decisions that decide whether it is useful or noise:
+
+- The box is the **ink**, not the cell — the font occupies rows 1..6 of an
+  8-row cell, so a full-cell box would flag every pair of 15px-pitch lines at
+  scale 2.
+- `draw_text` tracks the first and last *inked* glyph, so leading and trailing
+  spaces cannot collide.
+- Rectangles are half-open with a full trailing advance, so the ubiquitous
+  `tx += draw_text(...)` idiom touches without colliding.
+- One exemption: identical string, identical size, within 4px is a drop shadow,
+  which is how the title is drawn. Nothing else is excused.
+
+`-Y` refuses `-Q`: the quick sweep shrinks the logical framebuffer to 32x32 and
+clips almost everything away, so a probe run under it would see nothing and
+report success.
+
+## Proof it can fail
+
+A detector that cannot fail is worth nothing, and this codebase has paid for
+that twice. Before trusting a clean result: a positive control (two strings 6px
+apart) was reported; two negative controls (edge-to-edge on one line, and 15px
+apart on adjacent lines) were not. Controls removed, binary rebuilt, and the
+400-line BOT diff taken after removal.
+
+## What it found: 43 collisions in 100 seeds, two real bugs
+
+**A. Arrival notices printed through the archetype line.** `kit_failed` and
+`job_paid` drew at `y+32`; the archetype line is at `y+30`. Six pixels of ink
+each, two pixels apart — a red-on-grey mush. 41 of the 43 reports.
+
+Nobody caught this in a screenshot because it needs the right seed **and** the
+right step: kit has to fail, or a job pay out, on the exact frame photographed.
+Moved to the title line, right-aligned, where the space actually is.
+
+**B. The errand's keycaps on the DEPART keycap.** Mine, introduced two edits
+earlier — `draw_errand` hung off the roster while the depart row sits at a fixed
+offset. That is the same fixed-offset-against-a-growing-list fault the crew
+warning in the same branch had just been fixed for, reintroduced by stacking a
+three-line block on the same anchor.
+
+Fixed in two steps, and the first was wrong:
+
+1. Pinned the warning above the depart row instead — which only moved the
+   collision, because the errand's 22px keycaps then landed on the warning.
+2. The two now take turns, and the errand is clamped so it cannot reach the
+   depart row. The warning explains what a hand costs before you take one; once
+   somebody is aboard and asking a favour, the favour is what the screen is for.
+
+## The number that matters most here
+
+After the turn-taking fix, **`-Y -N 100 -D 1` reported zero**. Widening to
+n=200 across all three difficulties found the clamp was still missing:
+`<KEY Z>` x `<KEY ENTER>` at EASY and HARD, and nothing at NORMAL.
+
+A hundred seeds at one difficulty said the layout was correct. It was not. The
+sample was the thing that was wrong, which is the same lesson as every
+attribution failure in this log, arriving from a new direction.
+
+    -Y -N 200, all three difficulties:  0 collisions
+    win rates 68/50/32 unchanged, ASan clean, -X clean, STRIP ok

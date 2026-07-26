@@ -706,18 +706,32 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
 
     int th = draw_tabs(fb, gs, x, y + 44, pw);
 
-    // Salvaged kit giving out is announced, not silently accounted.
-    if (w->kit_failed >= 0) {
-        int px = x + 12;
-        px += draw_text(fb, px, y + 32, UPG_NAME[w->kit_failed], 1, PALETTE[C_BAD]) + 8;
-        draw_text(fb, px, y + 32, T_KIT_BROKE, 1, PALETTE[C_BAD]);
-    }
-
-    // A delivery that paid out on arrival says so before anything else.
-    if (w->job_paid > 0) {
-        int px = x + pw - 150;
-        px += draw_text(fb, px, y + 32, T_JOB_DONE, 1, PALETTE[C_GOOD]) + 8;
-        draw_number(fb, px, y + 32, w->job_paid, 1, PALETTE[C_WARN]);
+    // Arrival notices, right-aligned on the title line.
+    //
+    // Both used to be drawn at y+32, two pixels below the archetype line at
+    // y+30 -- six pixels of ink each, so they overlapped it completely and
+    // rendered as a red-on-grey mush. Nobody caught it in a screenshot because
+    // it needs the right seed AND the right step: kit has to fail, or a job has
+    // to pay out, on the frame you happened to photograph. The text-overlap
+    // probe found 41 instances of it in a hundred seeds.
+    //
+    // They go on the title line because that is where the space actually is:
+    // the town name ends around x+180 and the panel runs to x+420.
+    {
+        int ny = y + 14;
+        if (w->kit_failed >= 0) {
+            int tw = text_w(UPG_NAME[w->kit_failed], 1) + 8 + text_w(T_KIT_BROKE, 1);
+            int px = x + pw - 12 - tw;
+            px += draw_text(fb, px, ny, UPG_NAME[w->kit_failed], 1, PALETTE[C_BAD]) + 8;
+            draw_text(fb, px, ny, T_KIT_BROKE, 1, PALETTE[C_BAD]);
+            ny += 12;   // if both fire, they stack rather than share a line
+        }
+        if (w->job_paid > 0) {
+            int tw = text_w(T_JOB_DONE, 1) + 8 + number_w(w->job_paid, 1);
+            int px = x + pw - 12 - tw;
+            px += draw_text(fb, px, ny, T_JOB_DONE, 1, PALETTE[C_GOOD]) + 8;
+            draw_number(fb, px, ny, w->job_paid, 1, PALETTE[C_WARN]);
+        }
     }
 
     if (gs->tab != TAB_MARKET) {
@@ -747,8 +761,50 @@ void ui_trade(Framebuffer *fb, GameState *gs) {
             // the returned y; this one was written with a number that happened
             // to be right for an empty crew, which was the only crew there was
             // when it was written.
-            draw_text(fb, x + 14, below + 10, T_CREW_WARN, 1, PALETTE[C_BAD]);
-            draw_errand(fb, &gs->w, x, below + 30, pw);
+            // The errand goes directly under the roster; the water warning is
+            // pinned just above the depart row.
+            //
+            // Both used to hang off `below`, and with a hand aboard AND a
+            // favour being asked the errand's Z/X keycaps landed on the DEPART
+            // keycap 16px below -- 22px caps, so they overlapped outright, and
+            // the block ran off the bottom of the panel with it. That is the
+            // same fixed-offset-against-a-growing-list fault as the warning
+            // this branch had already been fixed for, reintroduced two edits
+            // later by stacking a three-line block on the same anchor.
+            //
+            // So the growing thing hangs off `below` and the one-line thing is
+            // measured back from the fixed row it must not touch.
+            // One anchor, and only one of the two ever drawn.
+            //
+            // The roster grows a line per hand, so anything below it must hang
+            // off `below`. Pinning the warning to the depart row instead just
+            // moved the collision: the errand's keycaps are 22px tall and
+            // landed on it. Stacking both off `below` fails differently -- a
+            // full crew pushes the pair through the bottom of the panel.
+            //
+            // So they take turns. The warning exists to explain what a hand
+            // costs before you take one; once somebody is aboard and asking a
+            // favour, the favour is what the screen is for. This is a decision
+            // about which of two things matters, which is the honest way out of
+            // a space problem -- the alternative was shrinking both until they
+            // fit and neither could be read.
+            //
+            // The errand is also clamped so it cannot reach the depart row. It
+            // needs about 54px and hangs off a roster that grows a line per
+            // hand, so a full crew pushed its keycaps onto the DEPART keycap --
+            // and a 100-seed sweep at NORMAL reported zero collisions while
+            // 150 seeds at EASY and HARD found it. The clamp is what makes the
+            // layout correct for every roster rather than for the ones that
+            // happened to be sampled.
+            const Errand *er = &gs->w.errand;
+            int depart_y = y + 62 + th + GOODS_COUNT * rowh;
+            if (er->state != ERR_NONE && er->state != ERR_DONE) {
+                int ey = below + 12;
+                if (ey > depart_y - 58) ey = depart_y - 58;
+                draw_errand(fb, &gs->w, x, ey, pw);
+            } else {
+                draw_text(fb, x + 14, below + 12, T_CREW_WARN, 1, PALETTE[C_BAD]);
+            }
         }
         // Departing is always available, whatever tab is open.
         int dy = y + 62 + th + GOODS_COUNT * rowh;

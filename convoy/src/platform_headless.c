@@ -380,7 +380,8 @@ static int probe_report(void) {
     }
     printf("OVERLAP frames=%ld worst=\"%s\" x \"%s\"\n",
            probe_frames, probe_uniq[worst].a.s, probe_uniq[worst].b.s);
-    printf("OVERLAP distinct=%d total_hits=%ld\n", probe_nuniq, probe_hits);
+    printf("OVERLAP distinct=%d total_hits=%ld%s\n", probe_nuniq, probe_hits,
+           probe_nuniq >= PROBE_UNIQUE ? "  (store full, later ones dropped)" : "");
     return 1;
 }
 #endif

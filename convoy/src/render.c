@@ -401,6 +401,22 @@ static int probe_hit(const TextBox *a, const TextBox *b) {
            a->y < b->y + b->h && b->y < a->y + a->h;
 }
 
+// The one text-on-text overlap that is deliberate: the same string drawn twice,
+// same size, a couple of pixels apart, is a drop shadow or an outline -- the
+// title does exactly that. Nothing else is excused; a panel or a highlight
+// under text is not text, so it never reaches here in the first place.
+static int probe_shadow(const TextBox *a, const TextBox *b) {
+    int dx = a->x - b->x, dy = a->y - b->y;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    if (dx > 4 || dy > 4 || a->w != b->w || a->h != b->h || !a->s[0]) return 0;
+    for (int i = 0; i < (int)sizeof a->s; ++i) {
+        if (a->s[i] != b->s[i]) return 0;
+        if (!a->s[i]) break;
+    }
+    return 1;
+}
+
 // Records one drawn box, clipped to the framebuffer: text scrolled off the
 // edge is not on screen and cannot collide with anything that is.
 static void probe_add(const Framebuffer *fb, int x, int y, int w, int h,
@@ -420,6 +436,7 @@ static void probe_add(const Framebuffer *fb, int x, int y, int w, int h,
 
     for (int i = 0; i < probe_nbox; ++i) {
         if (!probe_hit(&nb, &probe_box[i])) continue;
+        if (probe_shadow(&nb, &probe_box[i])) continue;
         if (probe_npair < PROBE_MAX_PAIR) {
             probe_a[probe_npair] = probe_box[i];
             probe_b[probe_npair] = nb;
