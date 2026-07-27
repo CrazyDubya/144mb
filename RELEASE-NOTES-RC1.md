@@ -18,7 +18,7 @@ six RGB565 campaign plates, and three RGB332 narrative plates.
 ## Platform changes since beta
 
 - Fixed 60 Hz simulation pacing
-- Queued key edges so brief presses are not dropped between ticks
+- Queued `WM_KEYDOWN` edges so brief presses are not dropped between ticks
 - Automatic simulation pause when the game loses focus
 - Hold-`H` help/pause and `M` audio mute
 - Date-derived daily challenge seeds and persisted mute/completion settings
@@ -29,8 +29,9 @@ six RGB565 campaign plates, and three RGB332 narrative plates.
 
 ## Candidate limitations
 
-- Windows executables are cross-built locally. Actual target launch, input, and
-  screenshot evidence is produced by the Windows CI job.
+- Actual Windows launch, title transition, keyboard input, continued rendering,
+  and screenshot capture passed on Windows Server 2022 in GitHub Actions run
+  30229548698 for commit `0a6dc8f`.
 - Audio is synthesized rather than performed speech. Every clue and essential
   state is also written in English.
 - RC1 intentionally retains roughly 12% disk headroom for defects found during

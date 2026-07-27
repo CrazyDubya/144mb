@@ -100,8 +100,23 @@ proves, for all five games:
 Longer deterministic campaign sweeps and the defects they exposed are recorded
 in [SOAKLOG-RC1.md](SOAKLOG-RC1.md).
 
-The Windows workflow additionally foregrounds each executable, enters gameplay,
-sends all action keys, toggles help and mute, waits for continued execution, and
-captures a screenshot. That target-runtime result remains pending until this
-candidate is run by GitHub Actions; it cannot be substituted by the successful
-cross-build.
+The target-runtime gate passed on Windows Server 2022 for commit `0a6dc8f` in
+[GitHub Actions run 30229548698](https://github.com/CrazyDubya/144mb/actions/runs/30229548698).
+The workflow builds each executable natively on the Windows runner, waits for a
+real top-level window, captures its title frame, foregrounds it, sends Enter and
+the action/help/mute keys, then captures the game window again. It fails unless
+at least 500 sampled pixels change between title and gameplay. The observed
+changes were:
+
+| Game | Changed sampled pixels |
+|---|---:|
+| DEEPSCAN | 3,917 |
+| SWITCHYARD | 4,153 |
+| LAST LIGHT | 4,021 |
+| MICROCOLONY | 4,478 |
+| TEN PACES | 4,512 |
+
+The same run passed warning-free Windows builds, sanitizers, deterministic
+replay, 100-seed completion sweeps, 20-seed deliberate failure sweeps, size
+reporting, and artifact upload. Its `windows-build` artifact contains both the
+onboarding and gameplay screenshots plus the exact executables tested.
