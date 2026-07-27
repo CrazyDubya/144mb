@@ -37,7 +37,7 @@ entertainment value — in that order.
 | [switchyard](switchyard/) | 1.0 RC1 | 1,302,528 | 88.33% |
 | [last-light](last-light/) | 1.0 RC1 | 1,301,504 | 88.26% |
 | [microcolony](microcolony/) | 1.0 RC1 | 1,301,504 | 88.26% |
-| [ten-paces](ten-paces/) | 1.0 RC1 | 1,302,528 | 88.33% |
+| [ten-paces](ten-paces/) | 1.0 RC1 | 1,303,040 | 88.37% |
 
 ## Building
 

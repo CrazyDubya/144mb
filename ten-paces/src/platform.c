@@ -7,6 +7,7 @@
 #include "onboarding_win.h"
 static uint32_t pixels[FB_W * FB_H];
 static int running = 1;
+static uint8_t key_edges[10];
 typedef struct { uint32_t magic; int muted, wins; } ReleaseSettings;
 static char settings_path[512];
 static ReleaseSettings settings = { 0x31434d42u, 0, 0 };
@@ -32,9 +33,22 @@ static void settings_save(void) {
     FILE *f = fopen(settings_path, "wb");
     if (f) { fwrite(&settings, sizeof settings, 1, f); fclose(f); }
 }
+static int key_index(WPARAM key) {
+    const int vk[10] = {
+        VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'C', 'V',
+        VK_RETURN, 'H'
+    };
+    for (int i = 0; i < 10; i++) if ((WPARAM)vk[i] == key) return i;
+    return -1;
+}
 static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_CLOSE || m == WM_DESTROY) { running = 0; return 0; }
-    if (m == WM_KEYDOWN && w == VK_ESCAPE) { running = 0; return 0; }
+    if (m == WM_KEYDOWN) {
+        if (w == VK_ESCAPE) { running = 0; return 0; }
+        int i = key_index(w);
+        if (i >= 0 && !(l & (1L << 30))) key_edges[i] = 1;
+        return 0;
+    }
     return DefWindowProcA(h, m, w, l);
 }
 static void text_panel(HDC dc, const RECT *rect, COLORREF color) {
@@ -106,7 +120,8 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE hp,LPSTR cmd,int show){
         }
         for(int i=0;i<10;i++){
             uint8_t raw=(GetAsyncKeyState(vk[i])&0x8000)!=0;
-            pending[i]|=raw&&!held[i];held[i]=raw;
+            pending[i]|=key_edges[i]||(raw&&!held[i]);
+            key_edges[i]=0;held[i]=raw;
         }
         if(GetAsyncKeyState('M')&1){
             settings.muted=!settings.muted;release_audio_mute(settings.muted);
