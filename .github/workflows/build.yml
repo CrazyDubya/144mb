@@ -192,42 +192,118 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path shots | Out-Null
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class WindowProbe {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(
+              IntPtr hWnd, out RECT rect);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(
+              IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern bool ShowWindowAsync(
+              IntPtr hWnd, int command);
+          }
+          "@
           $failed = $false
-          $shell = New-Object -ComObject WScript.Shell
+
+          function Capture-Window([IntPtr] $handle) {
+            $rect = New-Object WindowProbe+RECT
+            if (-not [WindowProbe]::GetWindowRect($handle, [ref]$rect)) {
+              throw "GetWindowRect failed"
+            }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -lt 640 -or $height -lt 480) {
+              throw "unexpected window bounds ${width}x${height}"
+            }
+            $bmp = New-Object System.Drawing.Bitmap $width, $height
+            $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+            $gfx.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bmp.Size)
+            $gfx.Dispose()
+            return $bmp
+          }
+
+          function Count-SampledChanges(
+            [System.Drawing.Bitmap] $before,
+            [System.Drawing.Bitmap] $after
+          ) {
+            $changed = 0
+            $width = [Math]::Min($before.Width, $after.Width)
+            $height = [Math]::Min($before.Height, $after.Height)
+            for ($y = 24; $y -lt $height; $y += 8) {
+              for ($x = 0; $x -lt $width; $x += 8) {
+                if ($before.GetPixel($x, $y).ToArgb() -ne
+                    $after.GetPixel($x, $y).ToArgb()) {
+                  $changed++
+                }
+              }
+            }
+            return $changed
+          }
 
           foreach ($e in $exes) {
             Write-Host "launching $($e.Name)"
             $p = Start-Process -FilePath $e.FullName -PassThru
 
-            # Long enough to open a window, initialise audio and render frames.
-            Start-Sleep -Seconds 10
+            # Wait for a real top-level window, not merely a live process.
+            $deadline = (Get-Date).AddSeconds(15)
+            do {
+              Start-Sleep -Milliseconds 200
+              $p.Refresh()
+            } while ($p.MainWindowHandle -eq 0 -and
+                     -not $p.HasExited -and (Get-Date) -lt $deadline)
 
             if ($p.HasExited) {
               Write-Host "::error::$($e.Name) exited early with code $($p.ExitCode)"
               $failed = $true
               continue
             }
+            if ($p.MainWindowHandle -eq 0) {
+              Write-Host "::error::$($e.Name) did not create a main window"
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              $failed = $true
+              continue
+            }
+
+            $handle = $p.MainWindowHandle
+            $null = [WindowProbe]::ShowWindowAsync($handle, 9)
+            $null = [WindowProbe]::SetForegroundWindow($handle)
+            Start-Sleep -Seconds 1
+            $title = Capture-Window $handle
+            $title.Save("shots/$($e.BaseName)-title.png",
+                        [System.Drawing.Imaging.ImageFormat]::Png)
 
             # Exercise the title transition, game input, help path and mute
             # path rather than proving only that an idle title window exists.
-            $null = $shell.AppActivate($p.Id)
-            Start-Sleep -Milliseconds 300
-            $shell.SendKeys("{ENTER}")
-            Start-Sleep -Milliseconds 300
-            $shell.SendKeys("{ENTER}")
-            $shell.SendKeys("ZXCVHM")
-            Start-Sleep -Seconds 2
+            $null = [WindowProbe]::SetForegroundWindow($handle)
+            [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+            Start-Sleep -Seconds 1
+            [System.Windows.Forms.SendKeys]::SendWait("ZXCV")
+            [System.Windows.Forms.SendKeys]::SendWait("H")
+            [System.Windows.Forms.SendKeys]::SendWait("M")
+            Start-Sleep -Seconds 3
 
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-            $gfx = [System.Drawing.Graphics]::FromImage($bmp)
-            $gfx.CopyFromScreen($b.X, $b.Y, 0, 0, $bmp.Size)
-            $bmp.Save("shots/$($e.BaseName).png",
-                      [System.Drawing.Imaging.ImageFormat]::Png)
-            $gfx.Dispose(); $bmp.Dispose()
+            $gameplay = Capture-Window $handle
+            $gameplay.Save("shots/$($e.BaseName)-gameplay.png",
+                           [System.Drawing.Imaging.ImageFormat]::Png)
+            $changes = Count-SampledChanges $title $gameplay
+            $title.Dispose()
+            $gameplay.Dispose()
+
+            # A live but unfocused title window used to pass this job. Require
+            # substantial rendered change after Enter so gameplay is evidenced.
+            if ($changes -lt 500) {
+              Write-Host "::error::$($e.Name) did not leave its title frame " +
+                         "($changes sampled pixels changed)"
+              $failed = $true
+            } else {
+              Write-Host "$($e.Name) entered gameplay; " +
+                         "$changes sampled pixels changed"
+            }
 
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            Write-Host "$($e.Name) survived 10s and was screenshotted"
           }
 
           if ($failed) { exit 1 }
